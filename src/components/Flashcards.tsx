@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { ArrowLeft, Plus, Search, RotateCcw, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Share, Link, Upload, Bell } from 'lucide-react';
+import { ArrowLeft, Plus, Search, RotateCcw, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Share, Link, Upload, Bell, Pencil, Trash2 } from 'lucide-react';
 import CreateFlashcardSet from './CreateFlashcardSet';
+import StudyFlashcardsWrapper from './StudyFlashcardsWrapper';
 
 interface Flashcard {
     id: number;
@@ -54,37 +55,237 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
     const [isLoading, setIsLoading] = useState(true);
     const [studySets, setStudySets] = useState<StudySet[]>([]);
     const { user } = useAuth();
+    const [viewingFlashcardSetId, setViewingFlashcardSetId] = useState<number | null>(null);
+    const [viewingFlashcards, setViewingFlashcards] = useState<Array<{ id: string; term: string; definition: string; termImage?: string; definitionImage?: string }>>([]);
+    const [isLoadingViewing, setIsLoadingViewing] = useState<boolean>(false);
+    const [editingSetId, setEditingSetId] = useState<number | null>(null);
+    const [editingName, setEditingName] = useState('');
+    const [allUserStudySets, setAllUserStudySets] = useState<StudySet[]>([]);
+    const [showStudySetDropdown, setShowStudySetDropdown] = useState<boolean>(false);
+    const [selectedStudySetId, setSelectedStudySetId] = useState<string>(studySetId);
+    const [selectedStudySetName, setSelectedStudySetName] = useState<string>(studySetName);
+    const [studySetSearch, setStudySetSearch] = useState<string>('');
+    // Folder (frontend only)
+    type Folder = { id: number; name: string; color: string; setIds: number[] };
+    const [folders, setFolders] = useState<Folder[]>([]);
+    const [showCreateFolder, setShowCreateFolder] = useState<boolean>(false);
+    const [newFolderName, setNewFolderName] = useState<string>('');
+    const [newFolderColor, setNewFolderColor] = useState<string>('#a78bfa');
+    const [viewingFolderId, setViewingFolderId] = useState<number | null>(null);
+    const [flashcardCounts, setFlashcardCounts] = useState<Record<number, number>>({});
+    // Handler sửa tên set
+    const startEditSet = (id: number, name: string) => {
+        setEditingSetId(id); setEditingName(name);
+    };
+    const cancelEditSet = () => { setEditingSetId(null); setEditingName(''); };
+    const saveEditSet = async (id: number) => {
+        try {
+            const res = await fetch(`http://localhost:3001/api/flashcard-sets/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: editingName }) });
+            if (res.ok) {
+                setEditingSetId(null); setEditingName('');
+                await reloadSets(); // reload
+            }
+        } catch (e) { console.error(e); }
+    }
+    // Xóa set
+    const deleteSet = async (id: number) => {
+        if (!window.confirm('Bạn chắc chắn muốn xóa bộ thẻ này?')) return;
+        try {
+            const res = await fetch(`http://localhost:3001/api/flashcard-sets/${id}`, { method: 'DELETE' });
+            if (res.ok) await reloadSets();
+        } catch (e) { console.error(e); }
+    };
+    // Refetch sets
+    const reloadSets = async () => {
+        try {
+            const res = await fetch(`http://localhost:3001/api/flashcard-sets`);
+            if (!res.ok) return setStudySets([]);
+            const data = await res.json();
+            const curSetId = String(studySetId ?? '').trim();
+            const filtered = Array.isArray(data)
+                ? data.filter((s: any) => String(s.study_set_id) === curSetId)
+                : [];
+            setStudySets(filtered || []);
+            if (Array.isArray(filtered)) {
+                loadCountsForSets(filtered as any);
+            }
+        } catch (e) { setStudySets([]); }
+    };
 
     // Load flashcards and materials
     useEffect(() => {
         loadFlashcards();
         loadMaterials();
-    }, [studySetId]);
+    }, [selectedStudySetId]);
 
-    // Load study sets for current user and log them
+    // Load all flashcard sets, filter theo study_set_id hiện tại
     useEffect(() => {
         const loadStudySets = async () => {
-            if (!user?.id) return;
             try {
-                const res = await fetch(`http://localhost:3001/api/study-sets?userId=${encodeURIComponent(user.id)}`);
+                const res = await fetch(`http://localhost:3001/api/flashcard-sets`);
                 if (!res.ok) {
                     console.error('Failed to load study sets');
+                    setStudySets([]);
                     return;
                 }
-                const data: StudySet[] = await res.json();
-                console.log('flashcard_sets (study_sets) data:', data);
-                setStudySets(data || []);
+                const data = await res.json();
+                // Lấy studySetId string hiện tại từ dropdown
+                const curSetId = String(selectedStudySetId ?? '').trim();
+                // Chỉ hiển thị bộ thẻ với study_set_id đúng
+                const filtered = Array.isArray(data)
+                    ? data.filter((s: any) => String(s.study_set_id) === curSetId)
+                    : [];
+                setStudySets(filtered || []);
+                // nạp số lượng flashcards cho từng set
+                if (Array.isArray(filtered)) {
+                    loadCountsForSets(filtered as any);
+                }
             } catch (err) {
-                console.error('Error loading study sets:', err);
+                setStudySets([]);
             }
         };
         loadStudySets();
-    }, [user]);
+    }, [selectedStudySetId]);
+
+    // Load all study sets for current user (for dropdown)
+    useEffect(() => {
+        const fetchUserStudySets = async () => {
+            try {
+                if (!user?.id) return;
+                const res = await fetch(`http://localhost:3001/api/study-sets?userId=${encodeURIComponent(user.id)}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                setAllUserStudySets(Array.isArray(data) ? data : []);
+            } catch { }
+        };
+        fetchUserStudySets();
+    }, [user?.id]);
+
+    // Load folders from API per study set
+    const fetchFolders = async () => {
+        try {
+            const res = await fetch(`http://localhost:3001/api/folders?studySetId=${encodeURIComponent(String(selectedStudySetId))}`);
+            if (!res.ok) return setFolders([]);
+            const data = await res.json();
+            setFolders(Array.isArray(data) ? data : []);
+        } catch { setFolders([]); }
+    };
+    useEffect(() => { fetchFolders(); }, [selectedStudySetId]);
+
+    const createFolder = async () => {
+        const name = newFolderName.trim();
+        if (!name) return;
+        try {
+            const res = await fetch('http://localhost:3001/api/folders', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, color: newFolderColor, studySetId: Number(selectedStudySetId) })
+            });
+            if (res.ok) {
+                await fetchFolders();
+                setShowCreateFolder(false);
+                setNewFolderName('');
+            }
+        } catch { }
+    };
+
+    const onDropToFolder = async (folderId: number, e: React.DragEvent) => {
+        e.preventDefault();
+        const data = e.dataTransfer.getData('text/plain');
+        const setId = Number(data);
+        if (!setId) return;
+        try {
+            await fetch(`http://localhost:3001/api/folders/${folderId}/sets`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ flashcardSetId: setId })
+            });
+            await fetchFolders();
+        } catch { }
+    };
+
+    const loadCountsForSets = async (sets: Array<{ id: number }>) => {
+        try {
+            const entries = await Promise.all(
+                sets.map(async (s) => {
+                    try {
+                        const res = await fetch(`http://localhost:3001/api/flashcards?flashcardSetId=${s.id}`);
+                        if (!res.ok) return [s.id, 0] as [number, number];
+                        const data = await res.json();
+                        const count = Array.isArray(data) ? data.length : 0;
+                        return [s.id, count] as [number, number];
+                    } catch {
+                        return [s.id, 0] as [number, number];
+                    }
+                })
+            );
+            const map: Record<number, number> = {};
+            for (const [id, count] of entries) map[id] = count;
+            setFlashcardCounts(map);
+        } catch {
+            setFlashcardCounts({});
+        }
+    };
+
+    // Load flashcards by flashcard_set id
+    const openFlashcardSet = async (flashcardSetId: number) => {
+        try {
+            setIsLoadingViewing(true);
+            setViewingFlashcardSetId(flashcardSetId);
+            const res = await fetch(`http://localhost:3001/api/flashcards?flashcardSetId=${flashcardSetId}`);
+            if (!res.ok) {
+                console.error('Failed to load flashcards by flashcard_set id');
+                setViewingFlashcards([]);
+                return;
+            }
+            const data = await res.json();
+            const mapped = Array.isArray(data)
+                ? data.map((c: any) => ({
+                    id: String(c.id),
+                    term: c.front || '',
+                    definition: c.back || '',
+                    termImage: c.term_image || c.termImage,
+                    definitionImage: c.definition_image || c.definitionImage
+                }))
+                : [];
+            setViewingFlashcards(mapped);
+        } catch (e) {
+            console.error('Error loading flashcards by set:', e);
+            setViewingFlashcards([]);
+        } finally {
+            setIsLoadingViewing(false);
+        }
+    };
+
+    // If viewing a specific flashcard set, render StudyFlashcardsWrapper
+    if (viewingFlashcardSetId !== null) {
+        if (isLoadingViewing) {
+            return (
+                <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                    <div className="text-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                        <p className="text-gray-600">Đang tải thẻ ghi nhớ...</p>
+                    </div>
+                </div>
+            );
+        }
+        const viewingName = (studySets.find(s => s.id === viewingFlashcardSetId)?.name) || `Flashcard Set #${viewingFlashcardSetId}`;
+        return (
+            <StudyFlashcardsWrapper
+                flashcards={viewingFlashcards}
+                onBack={() => setViewingFlashcardSetId(null)}
+                isCollapsed={isCollapsed}
+                flashcardName={viewingName}
+            />
+        );
+    }
+
+    // No separate screen: folder filter will be applied in the main list
 
     const loadFlashcards = async () => {
         try {
             setIsLoading(true);
-            const response = await fetch(`http://localhost:3001/api/flashcards/${studySetId}`);
+            const response = await fetch(`http://localhost:3001/api/flashcards/${selectedStudySetId}`);
             if (response.ok) {
                 const data = await response.json();
                 setFlashcards(data);
@@ -100,7 +301,7 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
 
     const loadMaterials = async () => {
         try {
-            const response = await fetch(`http://localhost:3001/api/materials/${studySetId}`);
+            const response = await fetch(`http://localhost:3001/api/materials/${selectedStudySetId}`);
             if (response.ok) {
                 const data = await response.json();
                 setMaterials(data);
@@ -254,9 +455,9 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
                     {/* Top Section */}
                     <div className="flex items-center justify-between mb-8">
                         <div>
-                            <h1 className="text-3xl font-bold text-gray-900 mb-2">Flashcards</h1>
+                            <h1 className="text-3xl font-bold text-gray-900 mb-2">Thẻ ghi nhớ</h1>
                             <p className="text-gray-600">
-                                Manage, create, and review flashcards for your study set.
+                                Quản lý, tạo và ôn luyện thẻ ghi nhớ cho bộ học của bạn.
                             </p>
                         </div>
                         <button
@@ -264,32 +465,56 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
                             className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg flex items-center space-x-2 transition-colors"
                         >
                             <Plus className="w-4 h-4" />
-                            <span>Create Flashcard Set</span>
+                            <span>Tạo bộ thẻ</span>
                         </button>
                     </div>
 
                     {/* Viewing Flashcards Section */}
                     <div className="flex items-center justify-between mb-8">
-                        <div className="flex items-center space-x-4">
-                            <span className="text-gray-600">Viewing Flashcards for</span>
-                            <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2">
-                                <span>{studySetName}</span>
+                        <div className="flex items-center space-x-4 relative">
+                            <span className="text-gray-600">Đang xem thẻ cho</span>
+                            <button onClick={() => setShowStudySetDropdown(v => !v)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center space-x-2">
+                                <span>{selectedStudySetName}</span>
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                 </svg>
                             </button>
-                            <button className="px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg">
-                                View All
-                            </button>
+                            {showStudySetDropdown && (
+                                <div className="absolute top-full mt-2 left-0 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-20 p-3">
+                                    <div className="text-sm font-semibold text-gray-700 mb-2">Bộ học của bạn</div>
+                                    <div className="mb-2">
+                                        <input
+                                            value={studySetSearch}
+                                            onChange={(e) => setStudySetSearch(e.target.value)}
+                                            placeholder="Tìm bộ học..."
+                                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                                        />
+                                    </div>
+                                    <div className="max-h-64 overflow-y-auto">
+                                        {(studySetSearch ? allUserStudySets.filter(ss => ss.name.toLowerCase().includes(studySetSearch.toLowerCase())) : allUserStudySets).map(ss => (
+                                            <button
+                                                key={ss.id}
+                                                onClick={() => { setSelectedStudySetId(String(ss.id)); setSelectedStudySetName(ss.name); setShowStudySetDropdown(false); }}
+                                                className={`w-full text-left px-3 py-2 rounded hover:bg-gray-50 ${String(ss.id) === String(selectedStudySetId) ? 'bg-blue-50' : ''}`}
+                                            >
+                                                {ss.name}
+                                            </button>
+                                        ))}
+                                        {allUserStudySets.length === 0 && (
+                                            <div className="text-sm text-gray-500 px-2 py-1">Không có bộ học</div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <div className="flex items-center space-x-4">
-                            <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                                Combine
+                            <button onClick={() => setShowCreateFolder(true)} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                                Tạo thư mục
                             </button>
                             <div className="relative">
                                 <input
                                     type="text"
-                                    placeholder="Search..."
+                                    placeholder="Tìm kiếm..."
                                     className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                 />
                                 <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
@@ -297,52 +522,119 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
                         </div>
                     </div>
 
-                    {/* Flashcard Sets List (from study_sets) */}
-                    <div className="mb-10">
-                        <h2 className="text-xl font-semibold text-gray-900 mb-3">Danh sách bộ thẻ (flashcard_sets)</h2>
-                        {studySets.length === 0 ? (
-                            <p className="text-gray-500">Không có bộ thẻ nào.</p>
-                        ) : (
-                            <ul className="divide-y divide-gray-200 rounded-lg border border-gray-200 bg-white">
-                                {studySets.map((s) => (
-                                    <li key={s.id} className="px-4 py-3 flex items-center justify-between">
-                                        <div className="flex items-center space-x-3">
-                                            <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-                                            <div>
-                                                <div className="font-medium text-gray-900">{s.name}</div>
-                                                <div className="text-sm text-gray-500">{s.description}</div>
+                    {/* Folders Section */}
+                    {folders.length > 0 && (
+                        <div className="mb-8">
+                            <h2 className="text-xl font-semibold text-gray-900 mb-3">Thư mục</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                {folders.map(folder => (
+                                    <div
+                                        key={folder.id}
+                                        className="border border-gray-200 rounded-xl bg-white p-4 shadow-sm cursor-pointer"
+                                        onDragOver={(e) => e.preventDefault()}
+                                        onDrop={(e) => onDropToFolder(folder.id, e)}
+                                        onClick={() => setViewingFolderId(folder.id)}
+                                    >
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center space-x-2">
+                                                <div className="w-6 h-6 rounded" style={{ backgroundColor: folder.color }}></div>
+                                                <div className="font-semibold text-gray-900">{folder.name}</div>
                                             </div>
+                                            <div className="text-xs text-gray-500">{folder.setIds.length} bộ thẻ</div>
                                         </div>
-                                        <span className="text-xs text-gray-400">ID: {s.id}</span>
-                                    </li>
+                                        {/* Hidden list of set ids; no direct display */}
+                                        <div className="text-xs text-gray-400 mt-2">Kéo thả bộ thẻ vào đây để thêm</div>
+                                    </div>
                                 ))}
-                            </ul>
-                        )}
-                    </div>
-
-                    {/* Main Content Area - Always show the center section */}
-                    <div className="text-center py-20">
-                        {/* Overlapping squares icon */}
-                        <div className="w-24 h-24 mx-auto mb-6 relative">
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                {/* Bottom square (yellow/orange) */}
-                                <div className="w-16 h-16 bg-yellow-400 rounded-lg transform rotate-12"></div>
-                                {/* Top square (teal/mint) */}
-                                <div className="w-16 h-16 bg-teal-400 rounded-lg transform -rotate-6 absolute"></div>
                             </div>
                         </div>
-                        <h3 className="text-3xl font-bold text-gray-900 mb-4">Flashcards</h3>
-                        <p className="text-gray-600 mb-8 max-w-md mx-auto text-lg">
-                            Generate flashcards from your materials to practice memorizing concepts.
-                        </p>
-                        <button
-                            onClick={() => setShowCreateSet(true)}
-                            className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-4 rounded-lg flex items-center space-x-2 mx-auto transition-colors text-lg"
-                        >
-                            <Plus className="w-5 h-5" />
-                            <span>Create New</span>
-                        </button>
+                    )}
+
+                    {/* Folder filter chip */}
+                    {viewingFolderId !== null && (
+                        <div className="mb-4 flex items-center space-x-2">
+                            <span className="text-sm text-gray-600">Đang lọc theo thư mục:</span>
+                            <div className="px-2 py-1 rounded-lg border text-sm flex items-center space-x-2">
+                                <div className="w-3 h-3 rounded" style={{ backgroundColor: (folders.find(f => f.id === viewingFolderId)?.color) || '#ddd' }} />
+                                <span>{folders.find(f => f.id === viewingFolderId)?.name || ''}</span>
+                                <button onClick={() => setViewingFolderId(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Flashcard Sets Grid */}
+                    <div className="mb-10">
+                        <h2 className="text-xl font-semibold text-gray-900 mb-3">Danh sách bộ thẻ (flashcard_sets)</h2>
+                        {(() => {
+                            const folder = viewingFolderId !== null ? folders.find(f => f.id === viewingFolderId) : null;
+                            const list = folder ? studySets.filter(s => folder?.setIds.includes(s.id)) : studySets;
+                            return list.length === 0 ? (
+                                <p className="text-gray-500">Không có bộ thẻ nào.</p>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                    {list.map((s) => (
+                                        <div
+                                            key={s.id}
+                                            className="border border-gray-200 rounded-xl bg-white p-4 shadow-sm hover:shadow transition cursor-pointer"
+                                            onClick={() => openFlashcardSet(Number(s.id))}
+                                            role="button"
+                                            tabIndex={0}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') openFlashcardSet(Number(s.id)); }}
+                                            draggable
+                                            onDragStart={(e) => e.dataTransfer.setData('text/plain', String(s.id))}
+                                        >
+                                            <div className="flex items-start justify-between">
+                                                <div className="flex items-center space-x-3">
+                                                    <div className="w-9 h-9 rounded-lg bg-green-100 flex items-center justify-center">
+                                                        <img src={(process.env.PUBLIC_URL || '') + '/card.png'} alt="" className="w-5 h-5 object-contain" />
+                                                    </div>
+                                                    <div>
+                                                        {editingSetId === s.id ? (
+                                                            <div className="flex items-center space-x-2">
+                                                                <input value={editingName} onChange={e => setEditingName(e.target.value)} className="border rounded px-2 py-1 text-gray-900" style={{ width: 200 }} />
+                                                                <button className="text-blue-600 hover:underline" onClick={() => saveEditSet(s.id)}>Lưu</button>
+                                                                <button className="text-gray-400 hover:text-red-500" onClick={cancelEditSet}>Hủy</button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="font-semibold text-gray-900">{s.name}</div>
+                                                        )}
+                                                        <div className="text-xs text-gray-500">{flashcardCounts[s.id] ?? 0} Flashcards</div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center space-x-2">
+                                                    <button title="Sửa" className="p-2 text-gray-500 hover:text-gray-800" onClick={(e) => { e.stopPropagation(); try { sessionStorage.setItem('editingFlashcardSetId', String(s.id)); } catch { } setShowCreateSet(true); }}><Pencil className="w-4 h-4" /></button>
+                                                    <button title="Xóa" className="p-2 text-red-500 hover:text-red-700" onClick={(e) => { e.stopPropagation(); deleteSet(s.id); }}><Trash2 className="w-4 h-4" /></button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
                     </div>
+
+                    {/* Empty State - only show when there is no flashcard set */}
+                    {studySets.length === 0 && (
+                        <div className="text-center py-20">
+                            <div className="w-24 h-24 mx-auto mb-6 relative">
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="w-16 h-16 bg-yellow-400 rounded-lg transform rotate-12"></div>
+                                    <div className="w-16 h-16 bg-teal-400 rounded-lg transform -rotate-6 absolute"></div>
+                                </div>
+                            </div>
+                            <h3 className="text-3xl font-bold text-gray-900 mb-4">Flashcards</h3>
+                            <p className="text-gray-600 mb-8 max-w-md mx-auto text-lg">
+                                Generate flashcards from your materials to practice memorizing concepts.
+                            </p>
+                            <button
+                                onClick={() => setShowCreateSet(true)}
+                                className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-4 rounded-lg flex items-center space-x-2 mx-auto transition-colors text-lg"
+                            >
+                                <Plus className="w-5 h-5" />
+                                <span>Create New</span>
+                            </button>
+                        </div>
+                    )}
 
 
                     {/* Calendar Grid */}
@@ -447,6 +739,29 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
                             >
                                 Tạo thẻ
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Create Folder Modal */}
+            {showCreateFolder && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Tạo thư mục</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Tên thư mục</label>
+                                <input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="Nhập tên thư mục" className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Màu thư mục</label>
+                                <input type="color" value={newFolderColor} onChange={(e) => setNewFolderColor(e.target.value)} className="w-12 h-10 p-0 border border-gray-300 rounded" />
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end space-x-3 mt-6">
+                            <button onClick={() => setShowCreateFolder(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors">Hủy</button>
+                            <button onClick={createFolder} disabled={!newFolderName.trim()} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors">Tạo</button>
                         </div>
                     </div>
                 </div>

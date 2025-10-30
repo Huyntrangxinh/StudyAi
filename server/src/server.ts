@@ -16,6 +16,8 @@ import db, { User, File, Summary } from "./database/database";
 // Import routes
 import materialsRouter from "./routes/materials";
 import studySetsRouter from "./routes/studySets";
+import flashcardSetsRouter from "./routes/flashcardSets";
+import foldersRouter from "./routes/folders";
 import aiRouter from "./routes/ai";
 import chatHistoryRouter from "./routes/chatHistory";
 import flashcardsRouter from "./routes/flashcards";
@@ -52,6 +54,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Use routes
 app.use('/api/materials', materialsRouter);
 app.use('/api/study-sets', studySetsRouter);
+app.use('/api/flashcard-sets', flashcardSetsRouter);
+app.use('/api/folders', foldersRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/chat-history', chatHistoryRouter);
 app.use('/api/flashcards', flashcardsRouter);

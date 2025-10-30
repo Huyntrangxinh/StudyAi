@@ -49,7 +49,8 @@ const initDb = () => {
             }
         });
 
-        db.run(`ALTER TABLE study_sets ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`, (err) => {
+        // SQLite doesn't allow non-constant defaults in ALTER TABLE; add column without default
+        db.run(`ALTER TABLE study_sets ADD COLUMN updated_at DATETIME`, (err) => {
             if (err && !err.message.includes('duplicate column name')) {
                 console.error('Error adding updated_at column:', err);
             }

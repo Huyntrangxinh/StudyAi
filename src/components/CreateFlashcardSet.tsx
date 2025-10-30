@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Share, Upload, User, Link, Plus, Search, FileCog, GraduationCap } from 'lucide-react';
 import StudyFlashcardsWrapper from './StudyFlashcardsWrapper';
+import { useAuth } from '../hooks/useAuth';
 
 interface CreateFlashcardSetProps {
     onBack: () => void;
@@ -16,15 +17,21 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
     const [definitionText, setDefinitionText] = useState<string>('');
     const [isSaving, setIsSaving] = useState<boolean>(false);
     const [createdCount, setCreatedCount] = useState<number>(0);
-    const [flashcardName] = useState<string>(() => `Flashcard ${Math.floor(Math.random() * 1000000)}`);
+    const [flashcardName, setFlashcardName] = useState<string>(() => `Flashcard ${Math.floor(Math.random() * 1000000)}`);
     const [isReverseEnabled, setIsReverseEnabled] = useState<boolean>(false);
     const [isAudioEnabled, setIsAudioEnabled] = useState<boolean>(false);
+    const { user } = useAuth();
+    const [createdStudySetId, setCreatedStudySetId] = useState<number | null>(null);
+    const [editingFlashcardSetId, setEditingFlashcardSetId] = useState<number | null>(null);
     type Card = {
         id: string;
         term: string;
         definition: string;
         termImage?: string;
         definitionImage?: string;
+        // Tùy chọn khi học - copy từ thanh tuỳ chọn chung lúc tạo
+        reverseEnabled?: boolean;
+        audioEnabled?: boolean;
         saved?: boolean;   // đã lưu DB hay chưa
         dbId?: number;     // id trong DB (nếu có)
     };
@@ -50,6 +57,31 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
     // Keep the exact flashcards created in this editor session to study immediately
     const [studyFlashcardsForSession, setStudyFlashcardsForSession] = useState<Array<{ id: string; term: string; definition: string; termImage?: string; definitionImage?: string }>>([]);
 
+    const loadFlashcardsByFlashcardSetId = async (flashcardSetId: number) => {
+        try {
+            setIsLoadingFlashcards(true);
+            const res = await fetch(`http://localhost:3001/api/flashcards?flashcardSetId=${flashcardSetId}`);
+            if (!res.ok) return setFlashcards([]);
+            const data = await res.json();
+            const formatted = Array.isArray(data)
+                ? data.map((c: any) => ({
+                    id: String(c.id),
+                    term: c.front || '',
+                    definition: c.back || '',
+                    termImage: c.term_image || c.termImage,
+                    definitionImage: c.definition_image || c.definitionImage,
+                    saved: true,
+                    dbId: Number(c.id)
+                }))
+                : [];
+            setFlashcards(formatted);
+        } catch (e) {
+            setFlashcards([]);
+        } finally {
+            setIsLoadingFlashcards(false);
+        }
+    };
+
     // Load flashcards from database when entering study mode
     const loadFlashcardsFromDB = async () => {
         try {
@@ -73,7 +105,12 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                     }));
 
                     console.log('Formatted flashcards:', formattedData);
-                    setFlashcards(formattedData);
+                    // Khi nạp từ DB, gán mặc định theo tuỳ chọn chung hiện tại
+                    setFlashcards(formattedData.map(c => ({
+                        ...c,
+                        reverseEnabled: isReverseEnabled,
+                        audioEnabled: isAudioEnabled
+                    })));
                 } else {
                     console.error('Data is not an array:', data);
                     setFlashcards([]);
@@ -89,6 +126,33 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
             setIsLoadingFlashcards(false);
         }
     };
+
+    // If opened from pencil icon: jump straight into editor with existing set
+    useEffect(() => {
+        try {
+            const raw = sessionStorage.getItem('editingFlashcardSetId');
+            if (raw) {
+                const id = Number(raw);
+                sessionStorage.removeItem('editingFlashcardSetId');
+                setEditingFlashcardSetId(id);
+                setCreatedStudySetId(id); // use as current working set id
+                setShowScratchEditor(true);
+                loadFlashcardsByFlashcardSetId(id);
+                // load set name
+                (async () => {
+                    try {
+                        const res = await fetch('http://localhost:3001/api/flashcard-sets');
+                        if (res.ok) {
+                            const data = await res.json();
+                            const hit = Array.isArray(data) ? data.find((s: any) => Number(s.id) === id) : null;
+                            if (hit?.name) setFlashcardName(hit.name);
+                        }
+                    } catch { }
+                })();
+            }
+        } catch { }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Load flashcards when entering study mode
     useEffect(() => {
@@ -118,10 +182,42 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
         }
     ];
 
-    const handleContinue = () => {
+    const handleContinue = async () => {
         if (!selectedOption) return;
         if (selectedOption === 'scratch') {
-            setShowScratchEditor(true);
+            // Create a new study set first, then open editor
+            try {
+                // If we already created one in this session, reuse it
+                if (!createdStudySetId) {
+                    const payload = {
+                        name: flashcardName,
+                        studySetId: Number(studySetId)
+                    };
+                    console.log('payload:', payload);
+                    if (!payload.studySetId) {
+                        console.error('Missing studySetId to create flashcard set');
+                    } else {
+                        const res = await fetch('http://localhost:3001/api/flashcard-sets', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (!res.ok) {
+                            const txt = await res.text();
+                            console.error('Failed to create study set:', txt);
+                        } else {
+                            const created = await res.json();
+                            console.log('Created flashcard_set:', created);
+                            setCreatedStudySetId(Number(created.id));
+                            if (created?.name) setFlashcardName(created.name);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('Error creating study set:', e);
+            } finally {
+                setShowScratchEditor(true);
+            }
             return;
         }
         // Các lựa chọn khác có thể được xử lý sau
@@ -141,8 +237,9 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                 body: JSON.stringify({
                     front: currentTerm,
                     back: currentDefinition,
-                    studySetId: Number(studySetId),
-                    materialId: null
+                    materialId: null,
+                    flashcardSetId: Number(createdStudySetId ?? studySetId),
+                    studySetId: Number(studySetId)
                 })
             });
 
@@ -158,6 +255,8 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                     definition: currentDefinition,
                     termImage: termImage || '',
                     definitionImage: definitionImage || '',
+                    reverseEnabled: isReverseEnabled,
+                    audioEnabled: isAudioEnabled,
                     saved: true,
                     dbId: Number(savedCard.id)
                 }
@@ -206,8 +305,9 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                         body: JSON.stringify({
                             front: fc.term,
                             back: fc.definition,
-                            studySetId: Number(studySetId),
-                            materialId: null
+                            materialId: null,
+                            flashcardSetId: Number(createdStudySetId ?? studySetId),
+                            studySetId: Number(studySetId)
                         })
                     });
                     if (!res.ok) throw new Error(await res.text());
@@ -333,6 +433,16 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
     };
 
     const closeImageModal = () => {
+        // If editing a card, apply selected image to that card
+        if (editingCardId && selectedImage && imageModalType) {
+            setFlashcards(prev => prev.map(card => {
+                if (card.id !== editingCardId) return card;
+                if (imageModalType === 'term') {
+                    return { ...card, termImage: selectedImage };
+                }
+                return { ...card, definitionImage: selectedImage };
+            }));
+        }
         setShowImageModal(false);
         setImageModalType(null);
         setShowImageSearch(false);
@@ -572,26 +682,76 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
 
                                     {editingCardId === flashcard.id ? (
                                         // Edit Mode
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-3">Thuật ngữ</label>
-                                                <textarea
-                                                    value={editTerm}
-                                                    onChange={(e) => setEditTerm(e.target.value)}
-                                                    className="w-full h-24 rounded-lg border border-gray-200 p-4 bg-purple-50 text-sm resize-none"
-                                                    placeholder="Nhập thuật ngữ..."
-                                                />
+                                        <>
+                                            {/* Hàng tuỳ chọn giống "Thẻ ghi nhớ mới" */}
+                                            <div className="flex flex-wrap items-center gap-6 mb-4">
+                                                <div className="flex items-center space-x-2">
+                                                    <span className="text-sm font-medium text-gray-700">Loại</span>
+                                                    <select className="text-sm border border-gray-300 rounded-lg px-3 py-2 min-w-48" defaultValue="pair">
+                                                        <option value="pair">Thuật ngữ và Định nghĩa</option>
+                                                    </select>
+                                                </div>
+                                                <div className="flex items-center space-x-2">
+                                                    <span className="text-sm font-medium text-gray-700">Tạo ngược</span>
+                                                    <button
+                                                        onClick={() => setFlashcards(prev => prev.map(c => c.id === flashcard.id ? { ...c, reverseEnabled: !c.reverseEnabled } : c))}
+                                                        className={`w-10 h-5 rounded-full relative transition-colors duration-200 ${flashcard.reverseEnabled ? 'bg-green-500' : 'bg-red-500'}`}
+                                                    >
+                                                        <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform duration-200 ${flashcard.reverseEnabled ? 'right-0.5' : 'left-0.5'}`}></div>
+                                                    </button>
+                                                    <span className={`text-xs ${flashcard.reverseEnabled ? 'text-green-500' : 'text-red-500'}`}>{flashcard.reverseEnabled ? 'BẬT' : 'TẮT'}</span>
+                                                </div>
+                                                <div className="flex items-center space-x-2">
+                                                    <span className="text-sm font-medium text-gray-700">Thuật ngữ dạng âm thanh</span>
+                                                    <button
+                                                        onClick={() => setFlashcards(prev => prev.map(c => c.id === flashcard.id ? { ...c, audioEnabled: !c.audioEnabled } : c))}
+                                                        className={`w-10 h-5 rounded-full relative transition-colors duration-200 ${flashcard.audioEnabled ? 'bg-green-500' : 'bg-red-500'}`}
+                                                    >
+                                                        <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform duration-200 ${flashcard.audioEnabled ? 'right-0.5' : 'left-0.5'}`}></div>
+                                                    </button>
+                                                    <span className={`text-xs ${flashcard.audioEnabled ? 'text-green-500' : 'text-red-500'}`}>{flashcard.audioEnabled ? 'BẬT' : 'TẮT'}</span>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-3">Định nghĩa</label>
-                                                <textarea
-                                                    value={editDefinition}
-                                                    onChange={(e) => setEditDefinition(e.target.value)}
-                                                    className="w-full h-24 rounded-lg border border-gray-200 p-4 bg-purple-50 text-sm resize-none"
-                                                    placeholder="Nhập định nghĩa..."
-                                                />
+
+                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-3">Thuật ngữ</label>
+                                                    <textarea
+                                                        value={editTerm}
+                                                        onChange={(e) => setEditTerm(e.target.value)}
+                                                        className="w-full h-24 rounded-lg border border-gray-200 p-4 bg-purple-50 text-sm resize-none"
+                                                        placeholder="Nhập thuật ngữ..."
+                                                    />
+                                                    <button
+                                                        onClick={() => openImageModal('term')}
+                                                        className="mt-3 px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg flex items-center space-x-2"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                        </svg>
+                                                        <span>Thêm hình ảnh</span>
+                                                    </button>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-3">Định nghĩa</label>
+                                                    <textarea
+                                                        value={editDefinition}
+                                                        onChange={(e) => setEditDefinition(e.target.value)}
+                                                        className="w-full h-24 rounded-lg border border-gray-200 p-4 bg-purple-50 text-sm resize-none"
+                                                        placeholder="Nhập định nghĩa..."
+                                                    />
+                                                    <button
+                                                        onClick={() => openImageModal('definition')}
+                                                        className="mt-3 px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg flex items-center space-x-2"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                        </svg>
+                                                        <span>Thêm hình ảnh</span>
+                                                    </button>
+                                                </div>
                                             </div>
-                                        </div>
+                                        </>
                                     ) : (
                                         // View Mode
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

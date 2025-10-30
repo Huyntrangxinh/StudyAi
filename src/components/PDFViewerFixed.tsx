@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -43,6 +43,27 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
     const [refreshChatHistory, setRefreshChatHistory] = useState(0);
     const [noteContent, setNoteContent] = useState('');
     const [currentMaterial, setCurrentMaterial] = useState<{ name: string; totalPages: number } | null>(null);
+    const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+    const copySelectedOrMessage = (index: number) => {
+        try {
+            const selection = window.getSelection();
+            const selectedText = selection ? selection.toString() : '';
+            if (selectedText && selectedText.trim().length > 0) {
+                navigator.clipboard.writeText(selectedText);
+                return;
+            }
+            const node = messageRefs.current[index];
+            if (node) {
+                const text = node.innerText || '';
+                if (text.trim().length > 0) {
+                    navigator.clipboard.writeText(text);
+                }
+            }
+        } catch (e) {
+            console.error('Copy failed:', e);
+        }
+    };
 
     const applyFormatting = (command: string, value?: string) => {
         document.execCommand(command, false, value);
@@ -947,12 +968,15 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
                                     <div className="space-y-4">
                                         {chatHistory.map((msg, index) => (
                                             <div key={index} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                                <div className={`max-w-[80%] p-3 rounded-lg ${msg.type === 'user'
+                                                <div className={`relative max-w-[80%] p-3 rounded-lg ${msg.type === 'user'
                                                     ? 'bg-blue-500 text-white'
                                                     : 'bg-gray-100 text-gray-800'
                                                     }`}>
                                                     {msg.type === 'ai' ? (
-                                                        <div className="text-sm prose prose-sm max-w-none">
+                                                        <div
+                                                            ref={(el) => { messageRefs.current[index] = el; }}
+                                                            className="text-sm prose prose-sm max-w-none ai-markdown"
+                                                        >
                                                             <ReactMarkdown
                                                                 remarkPlugins={[remarkGfm]}
                                                                 components={{
@@ -970,6 +994,15 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
                                                         </div>
                                                     ) : (
                                                         <p className="text-sm">{msg.message}</p>
+                                                    )}
+                                                    {msg.type === 'ai' && (
+                                                        <button
+                                                            onClick={() => copySelectedOrMessage(index)}
+                                                            className="absolute -top-2 -right-2 px-2 py-1 text-xs bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
+                                                            title="Copy (ưu tiên phần đang bôi, nếu không sẽ copy block này)"
+                                                        >
+                                                            Copy
+                                                        </button>
                                                     )}
                                                 </div>
                                             </div>
