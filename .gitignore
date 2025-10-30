@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+server/node_modules/
+
+# Builds / Bundles
+build/
+server/dist/
+
+# Environment
+.env
+server/.env
+
+# Local data/uploads
+uploads/
+server/uploads/
+
+# Databases
+server/database/*.db
+server/database/*.db.backup
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+server/npm-debug.log*
+
+# Editor/OS
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Generated maps
+*.map
+
+# Misc
+coverage/
+*.local

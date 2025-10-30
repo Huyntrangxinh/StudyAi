@@ -1,0 +1,295 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ripple animation for navigation buttons */
+@keyframes ripple {
+    0% {
+        transform: scale(0);
+        opacity: 1;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 0;
+    }
+}
+
+@layer base {
+    html {
+        font-family: 'Inter', system-ui, sans-serif;
+    }
+
+    body {
+        overflow-x: hidden;
+    }
+
+    /* PDF Viewer specific styles */
+    .pdf-viewer-container {
+        overflow-x: hidden !important;
+        max-width: 95vw !important;
+        width: 95vw !important;
+        margin: 0 auto !important;
+    }
+
+    /* Ensure fixed width layout */
+    .pdf-viewer-container>* {
+        max-width: 100% !important;
+    }
+
+    /* Chat input field constraints */
+    .chat-input-container {
+        max-width: 100% !important;
+        overflow: hidden !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    .chat-input-container input {
+        max-width: 100% !important;
+        overflow: hidden !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        min-width: 0 !important;
+    }
+
+    .chat-input-container button {
+        flex-shrink: 0 !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Strict width constraints for all panels */
+    .note-panel {
+        max-width: 100% !important;
+        overflow: hidden !important;
+    }
+
+    .note-panel * {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Header constraints */
+    .note-header {
+        max-width: 100% !important;
+        overflow: hidden !important;
+    }
+
+    .note-header * {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Global page constraints */
+    .pdf-viewer-container * {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Ensure no horizontal overflow */
+    .pdf-viewer-container,
+    .pdf-viewer-container * {
+        overflow-x: hidden !important;
+    }
+}
+
+/* Custom scrollbar styles */
+.scrollbar-thin {
+    scrollbar-width: thin;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+@layer components {
+    .btn-primary {
+        @apply bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+    }
+
+    .btn-secondary {
+        @apply bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+    }
+
+    .input-field {
+        @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+    }
+
+    .card {
+        @apply bg-white rounded-xl shadow-lg p-6;
+    }
+
+    /* Custom scrollbar for sidebar */
+    .sidebar-scroll {
+        scrollbar-width: thin;
+        scrollbar-color: #d1d5db #f3f4f6;
+    }
+
+    .sidebar-scroll::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .sidebar-scroll::-webkit-scrollbar-track {
+        background: #f3f4f6;
+        border-radius: 3px;
+    }
+
+    .sidebar-scroll::-webkit-scrollbar-thumb {
+        background: #d1d5db;
+        border-radius: 3px;
+    }
+
+    .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af;
+    }
+
+    /* Line clamp utilities */
+    .line-clamp-1 {
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 1;
+    }
+
+    .line-clamp-2 {
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+    }
+
+    .line-clamp-3 {
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+    }
+
+    /* React-PDF styles - FIXED VERSION */
+    .pdf-document {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+    }
+
+    .pdf-page {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        margin: 16px 0;
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        overflow: hidden;
+    }
+
+    .pdf-page:hover {
+        box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.1);
+        transform: translateY(-2px);
+    }
+
+    .react-pdf__Page {
+        margin: 0 auto;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .react-pdf__Page__canvas {
+        display: block;
+        margin: 0 auto;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        image-rendering: auto;
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+    }
+
+    /* Smooth scrolling for PDF pages */
+    .pdf-scroll-container {
+        scroll-behavior: smooth;
+    }
+
+    /* Page spacing in scroll view */
+    .pdf-page+.pdf-page {
+        margin-top: 24px;
+    }
+
+    /* Fixed PDF Viewer Styles */
+    .pdf-page-container {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        background: white;
+    }
+
+    .pdf-page-container canvas {
+        display: block;
+        width: 100%;
+        height: auto;
+        image-rendering: auto;
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+    }
+
+    /* Hide scrollbars but keep functionality */
+    .hide-scrollbar {
+        -ms-overflow-style: none;
+        /* Internet Explorer 10+ */
+        scrollbar-width: none;
+        /* Firefox */
+    }
+
+    .hide-scrollbar::-webkit-scrollbar {
+        display: none;
+        /* Safari and Chrome */
+    }
+
+    /* Toolbar scrollbar - show horizontal scrollbar when needed */
+    .toolbar-scroll {
+        overflow-x: auto;
+        scrollbar-width: thin;
+        scrollbar-color: #cbd5e0 #f7fafc;
+        white-space: nowrap;
+    }
+
+    .toolbar-scroll::-webkit-scrollbar {
+        height: 8px;
+    }
+
+    .toolbar-scroll::-webkit-scrollbar-track {
+        background: #f7fafc;
+        border-radius: 4px;
+    }
+
+    .toolbar-scroll::-webkit-scrollbar-thumb {
+        background: #cbd5e0;
+        border-radius: 4px;
+    }
+
+    .toolbar-scroll::-webkit-scrollbar-thumb:hover {
+        background: #a0aec0;
+    }
+}
