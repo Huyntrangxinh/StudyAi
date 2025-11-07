@@ -38,7 +38,8 @@ class DatabaseService {
 
     constructor() {
         // Ensure database directory exists
-        const dbDir = path.join(process.cwd(), 'database');
+        // Use server/database/app.db (same as routes)
+        const dbDir = path.join(__dirname, '../../database');
         if (!fs.existsSync(dbDir)) {
             fs.mkdirSync(dbDir, { recursive: true });
         }
@@ -53,8 +54,31 @@ class DatabaseService {
         // Initialize schema
         this.initializeSchema();
 
+        // Run migrations (add new columns if they don't exist)
+        this.runMigrations();
+
         // Create default admin user if not exists
         this.createDefaultAdmin();
+    }
+
+    private runMigrations() {
+        try {
+            // Check if transcript column exists in videos table
+            const columns = this.db.prepare("PRAGMA table_info(videos)").all() as any[];
+            const columnNames = columns.map(c => c.name);
+
+            if (!columnNames.includes('transcript')) {
+                console.log('Adding transcript column to videos table...');
+                this.db.exec('ALTER TABLE videos ADD COLUMN transcript TEXT');
+            }
+
+            if (!columnNames.includes('highlights')) {
+                console.log('Adding highlights column to videos table...');
+                this.db.exec('ALTER TABLE videos ADD COLUMN highlights TEXT');
+            }
+        } catch (error: any) {
+            console.error('Migration error:', error.message);
+        }
     }
 
     private initializeSchema() {
@@ -65,7 +89,25 @@ class DatabaseService {
         const statements = schema.split(';').filter(stmt => stmt.trim());
         for (const statement of statements) {
             if (statement.trim()) {
-                this.db.exec(statement);
+                try {
+                    this.db.exec(statement);
+                } catch (error: any) {
+                    // Ignore errors for "already exists" or "duplicate" cases
+                    // This allows schema to be idempotent
+                    if (error.message && (
+                        error.message.includes('already exists') ||
+                        error.message.includes('duplicate') ||
+                        error.message.includes('no such table') ||
+                        error.message.includes('no such column')
+                    )) {
+                        console.warn('Schema statement warning (ignored):', error.message);
+                        console.warn('Statement:', statement.substring(0, 100));
+                    } else {
+                        // Log other errors but don't fail completely
+                        console.error('Schema execution error:', error.message);
+                        console.error('Statement:', statement.substring(0, 100));
+                    }
+                }
             }
         }
     }

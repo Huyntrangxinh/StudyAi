@@ -4,6 +4,14 @@ import { ArrowLeft, Plus, Search, RotateCcw, ChevronLeft, ChevronRight, Eye, Eye
 import CreateFlashcardSet from './CreateFlashcardSet';
 import StudyFlashcardsWrapper from './StudyFlashcardsWrapper';
 
+// Debug: Check if components are loaded
+if (!CreateFlashcardSet) {
+    console.error('CreateFlashcardSet is undefined');
+}
+if (!StudyFlashcardsWrapper) {
+    console.error('StudyFlashcardsWrapper is undefined');
+}
+
 interface Flashcard {
     id: number;
     front: string;
@@ -56,7 +64,7 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
     const [studySets, setStudySets] = useState<StudySet[]>([]);
     const { user } = useAuth();
     const [viewingFlashcardSetId, setViewingFlashcardSetId] = useState<number | null>(null);
-    const [viewingFlashcards, setViewingFlashcards] = useState<Array<{ id: string; term: string; definition: string; termImage?: string; definitionImage?: string }>>([]);
+    const [viewingFlashcards, setViewingFlashcards] = useState<Array<{ id: string; term: string; definition: string; termImage?: string; definitionImage?: string; type?: string; fillBlankAnswers?: string[]; multipleChoiceOptions?: string[]; correctAnswerIndex?: number }>>([]);
     const [isLoadingViewing, setIsLoadingViewing] = useState<boolean>(false);
     const [editingSetId, setEditingSetId] = useState<number | null>(null);
     const [editingName, setEditingName] = useState('');
@@ -240,13 +248,93 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
             }
             const data = await res.json();
             const mapped = Array.isArray(data)
-                ? data.map((c: any) => ({
-                    id: String(c.id),
-                    term: c.front || '',
-                    definition: c.back || '',
-                    termImage: c.term_image || c.termImage,
-                    definitionImage: c.definition_image || c.definitionImage
-                }))
+                ? data.map((c: any) => {
+                    const card: any = {
+                        id: String(c.id),
+                        term: c.front || '',
+                        definition: c.back || '',
+                        termImage: c.term_image || c.termImage,
+                        definitionImage: c.definition_image || c.definitionImage,
+                        type: c.type || 'pair'
+                    };
+
+                    // Parse Multiple Choice data - prioritize database columns, fallback to back field
+                    if (c.type === 'multiplechoice') {
+                        if (c.multiple_choice_options) {
+                            try {
+                                const options = typeof c.multiple_choice_options === 'string'
+                                    ? JSON.parse(c.multiple_choice_options)
+                                    : c.multiple_choice_options;
+                                if (Array.isArray(options)) {
+                                    card.multipleChoiceOptions = options;
+                                    card.correctAnswerIndex = c.correct_answer_index !== undefined
+                                        ? c.correct_answer_index
+                                        : (c.correctAnswerIndex ?? 0);
+                                }
+                            } catch (e) {
+                                console.error('Error parsing multiple_choice_options from DB:', e);
+                            }
+                        } else if (c.back) {
+                            try {
+                                const backData = typeof c.back === 'string' ? JSON.parse(c.back) : c.back;
+                                if (backData.options && Array.isArray(backData.options)) {
+                                    card.multipleChoiceOptions = backData.options;
+                                    card.correctAnswerIndex = backData.correctIndex ?? backData.correctAnswerIndex ?? 0;
+                                }
+                            } catch (e) {
+                                console.error('Error parsing multiple choice data from back:', e);
+                            }
+                        }
+                    }
+
+                    // Parse Fill in the blank data - prioritize database column, fallback to back field
+                    const hasFillBlankSyntax = (c.front || '').match(/\{\{[^}]+\}\}/);
+                    if (c.type === 'fillblank' || hasFillBlankSyntax) {
+                        if (c.fill_blank_answers) {
+                            try {
+                                const answers = typeof c.fill_blank_answers === 'string'
+                                    ? JSON.parse(c.fill_blank_answers)
+                                    : c.fill_blank_answers;
+                                if (Array.isArray(answers)) {
+                                    card.fillBlankAnswers = answers;
+                                    if (!c.type && hasFillBlankSyntax) {
+                                        card.type = 'fillblank';
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('Error parsing fill_blank_answers from DB:', e);
+                            }
+                        }
+
+                        // Fallback to parsing from back field if fill_blank_answers column not available
+                        if (!card.fillBlankAnswers && c.back) {
+                            try {
+                                const backData = typeof c.back === 'string' ? JSON.parse(c.back) : c.back;
+                                if (Array.isArray(backData)) {
+                                    card.fillBlankAnswers = backData;
+                                } else if (typeof backData === 'string') {
+                                    card.fillBlankAnswers = [backData];
+                                }
+                                if (!c.type && hasFillBlankSyntax) {
+                                    card.type = 'fillblank';
+                                }
+                            } catch (e) {
+                                // If can't parse, try to extract from term
+                                if (hasFillBlankSyntax) {
+                                    if (!c.type) {
+                                        card.type = 'fillblank';
+                                    }
+                                    const matches = (c.front || '').match(/\{\{([^}]+)\}\}/g);
+                                    if (matches) {
+                                        card.fillBlankAnswers = matches.map((m: string) => m.replace(/\{\{|\}\}/g, '').trim()).filter((a: string) => a);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    return card;
+                })
                 : [];
             setViewingFlashcards(mapped);
         } catch (e) {
@@ -276,6 +364,7 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
                 onBack={() => setViewingFlashcardSetId(null)}
                 isCollapsed={isCollapsed}
                 flashcardName={viewingName}
+                studySetId={selectedStudySetId}
             />
         );
     }
@@ -564,7 +653,7 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
 
                     {/* Flashcard Sets Grid */}
                     <div className="mb-10">
-                        <h2 className="text-xl font-semibold text-gray-900 mb-3">Danh sách bộ thẻ (flashcard_sets)</h2>
+                        <h2 className="text-xl font-semibold text-gray-900 mb-3">Danh sách bộ thẻ ghi nhớ</h2>
                         {(() => {
                             const folder = viewingFolderId !== null ? folders.find(f => f.id === viewingFolderId) : null;
                             const list = folder ? studySets.filter(s => folder?.setIds.includes(s.id)) : studySets;

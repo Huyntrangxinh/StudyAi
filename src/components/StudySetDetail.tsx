@@ -60,18 +60,19 @@ const StudySetDetail: React.FC<StudySetDetailProps> = ({ studySet, onBack, onVie
             console.log('📄 Materials for study set', studySet.id, ':', materialsData.length, materialsData);
             setMaterials(materialsData);
 
-            // Load flashcards count - DISABLED
-            // const flashcardsResponse = await fetch(`http://localhost:3001/api/flashcards/${studySet.id}`);
-            // const flashcards = flashcardsResponse.ok ? await flashcardsResponse.json() : [];
-            // console.log('🃏 Flashcards for study set', studySet.id, ':', flashcards.length, flashcards);
+            // Load flashcard sets count belonging to this study set
+            const setResp = await fetch('http://localhost:3001/api/flashcard-sets');
+            const allSets = setResp.ok ? await setResp.json() : [];
+            const flashcardSetCount = Array.isArray(allSets)
+                ? allSets.filter((s: any) => String(s.study_set_id) === String(studySet.id)).length
+                : 0;
 
             setStats(prev => prev.map(stat => {
                 if (stat.label === 'Tài liệu') {
                     console.log('📊 Setting materials count to:', materialsData.length);
                     return { ...stat, count: materialsData.length };
                 } else if (stat.label === 'Thẻ ghi nhớ') {
-                    // Keep flashcards count at 0
-                    return { ...stat, count: 0 };
+                    return { ...stat, count: flashcardSetCount };
                 }
                 return stat;
             }));

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { ArrowLeft, ArrowRight, Star, Shuffle, RotateCcw, GraduationCap, Share, Upload, User, Lightbulb, Brain, Book, Send, Plus, Link, History } from 'lucide-react';
 
 interface StudyFlashcardsProps {
@@ -8,13 +8,18 @@ interface StudyFlashcardsProps {
         definition: string;
         termImage?: string;
         definitionImage?: string;
+        type?: string; // 'pair', 'fillblank', 'multiplechoice'
+        fillBlankAnswers?: string[]; // Correct answers for fill in the blank
+        multipleChoiceOptions?: string[]; // Options for multiple choice
+        correctAnswerIndex?: number; // Correct answer index for multiple choice
     }>;
     onBack: () => void;
     isCollapsed: boolean;
     flashcardName?: string;
+    studySetId?: string;
 }
 
-const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, isCollapsed, flashcardName }) => {
+const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, isCollapsed, flashcardName, studySetId }) => {
     const [currentCardIndex, setCurrentCardIndex] = useState(0);
     const [isFlipped, setIsFlipped] = useState(false);
     const [isShuffled, setIsShuffled] = useState(false);
@@ -25,7 +30,22 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
     const [chatHistory, setChatHistory] = useState<Array<{ type: 'user' | 'ai', message: string }>>([]);
     const [isLoadingChat, setIsLoadingChat] = useState<boolean>(false);
     const [slideDirection, setSlideDirection] = useState<'left' | 'right' | null>(null);
+    // Text-to-Speech toggle
+    const [audioEnabled, setAudioEnabled] = useState<boolean>(() => {
+        try { return localStorage.getItem('ttsEnabled') === '1'; } catch { return false; }
+    });
     const [isSliding, setIsSliding] = useState(false);
+    // Fill in the blank states
+    const [fillBlankInput, setFillBlankInput] = useState<string>('');
+    const [fillBlankChecked, setFillBlankChecked] = useState<boolean>(false);
+    const [fillBlankIsCorrect, setFillBlankIsCorrect] = useState<boolean | null>(null);
+    const [fillBlankHint, setFillBlankHint] = useState<string>(''); // Hint character
+    const [showCorrectAnswer, setShowCorrectAnswer] = useState<boolean>(false); // Show correct answer
+    const [correctAnswer, setCorrectAnswer] = useState<string>(''); // Correct answer text
+    // Multiple Choice states
+    const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null); // Selected option index
+    const [multipleChoiceChecked, setMultipleChoiceChecked] = useState<boolean>(false); // Is answer checked
+    const [multipleChoiceIsCorrect, setMultipleChoiceIsCorrect] = useState<boolean | null>(null); // Is answer correct
 
     // Debug log
     console.log('StudyFlashcards received flashcards:', flashcards);
@@ -48,6 +68,449 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
             setCurrentCardIndex(0);
         }
     }, [flashcards, currentCardIndex]);
+
+    // Reset fillBlank state when card changes
+    useEffect(() => {
+        setFillBlankInput('');
+        setFillBlankChecked(false);
+        setFillBlankIsCorrect(null);
+        setFillBlankHint('');
+        setShowCorrectAnswer(false);
+        setCorrectAnswer('');
+        // Reset Multiple Choice state
+        setSelectedOptionIndex(null);
+        setMultipleChoiceChecked(false);
+        setMultipleChoiceIsCorrect(null);
+    }, [currentCardIndex]);
+
+    // Helper function to parse fill-in-the-blank text and render with input
+    const parseFillBlankText = (text: string) => {
+        const parts: Array<{ type: 'text' | 'blank', content: string }> = [];
+        let currentIndex = 0;
+        const regex = /\{\{([^}]*)\}\}/g;
+        let match;
+
+        while ((match = regex.exec(text)) !== null) {
+            // Add text before the blank
+            if (match.index > currentIndex) {
+                parts.push({
+                    type: 'text',
+                    content: text.substring(currentIndex, match.index)
+                });
+            }
+            // Add the blank
+            parts.push({
+                type: 'blank',
+                content: match[1] // The content inside {{ }}
+            });
+            currentIndex = match.index + match[0].length;
+        }
+
+        // Add remaining text
+        if (currentIndex < text.length) {
+            parts.push({
+                type: 'text',
+                content: text.substring(currentIndex)
+            });
+        }
+
+        // If no blanks found, return the whole text
+        if (parts.length === 0) {
+            parts.push({ type: 'text', content: text });
+        }
+
+        return parts;
+    };
+
+    // Helper function to detect if card is fill-in-the-blank
+    const isFillBlankCard = (card: any) => {
+        if (!card) return false;
+        // Check explicit type
+        if (card.type === 'fillblank') return true;
+        // Auto-detect if term contains {{ }}
+        if (card.term && /\{\{[^}]+\}\}/.test(card.term)) return true;
+        // Auto-detect if has fillBlankAnswers
+        if (card.fillBlankAnswers && Array.isArray(card.fillBlankAnswers) && card.fillBlankAnswers.length > 0) return true;
+        // Auto-detect if definition is an array (JSON string)
+        if (card.definition) {
+            try {
+                const parsed = typeof card.definition === 'string' ? JSON.parse(card.definition) : card.definition;
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    // Check if it's not a multiple choice (which also has array structure)
+                    return !card.type || card.type !== 'multiplechoice';
+                }
+            } catch (e) {
+                // Not JSON, ignore
+            }
+        }
+        return false;
+    };
+
+    // Helper function to detect if card is multiple choice
+    const isMultipleChoiceCard = (card: any) => {
+        if (!card) return false;
+        if (card.type === 'multiplechoice') return true;
+        // Auto-detect if has multipleChoiceOptions
+        if (card.multipleChoiceOptions && Array.isArray(card.multipleChoiceOptions) && card.multipleChoiceOptions.length > 0) return true;
+        // Auto-detect if definition has options structure
+        if (card.definition) {
+            try {
+                const parsed = typeof card.definition === 'string' ? JSON.parse(card.definition) : card.definition;
+                if (parsed && parsed.options && Array.isArray(parsed.options)) return true;
+            } catch (e) {
+                // Not JSON, ignore
+            }
+        }
+        return false;
+    };
+
+    // Function to check multiple choice answer
+    const checkMultipleChoiceAnswer = () => {
+        const currentCard = flashcards[currentCardIndex];
+        if (selectedOptionIndex === null) return;
+
+        let correctIndex = currentCard.correctAnswerIndex;
+        let options = currentCard.multipleChoiceOptions;
+
+        // Parse from definition if needed
+        if (!options && currentCard.definition) {
+            try {
+                const parsed = typeof currentCard.definition === 'string' ? JSON.parse(currentCard.definition) : currentCard.definition;
+                if (parsed && parsed.options) {
+                    options = parsed.options;
+                    correctIndex = parsed.correctIndex ?? parsed.correctAnswerIndex ?? 0;
+                }
+            } catch (e) {
+                console.error('Error parsing multiple choice data:', e);
+            }
+        }
+
+        if (!options || correctIndex === undefined) return;
+
+        const isCorrect = selectedOptionIndex === correctIndex;
+        setMultipleChoiceIsCorrect(isCorrect);
+        setMultipleChoiceChecked(true);
+    };
+
+    // Function to show hint (one character from the answer)
+    const showFillBlankHint = () => {
+        const currentCard = flashcards[currentCardIndex];
+        let answers = currentCard.fillBlankAnswers;
+
+        // If no fillBlankAnswers, try to extract from term
+        if (!answers || answers.length === 0) {
+            const matches = currentCard.term?.match(/\{\{([^}]+)\}\}/g);
+            if (matches) {
+                answers = matches.map((m: string) => m.replace(/\{\{|\}\}/g, '').trim()).filter((a: string) => a);
+            }
+        }
+
+        if (!answers || answers.length === 0) {
+            return;
+        }
+
+        // Get the first answer and show first character as hint
+        const firstAnswer = answers[0].trim();
+        if (firstAnswer.length > 0) {
+            setFillBlankHint(firstAnswer[0]);
+        }
+    };
+
+    // Function to check fill-in-the-blank answer
+    const checkFillBlankAnswer = () => {
+        const currentCard = flashcards[currentCardIndex];
+        let answers = currentCard.fillBlankAnswers;
+
+        // If no fillBlankAnswers, try to extract from term
+        if (!answers || answers.length === 0) {
+            const matches = currentCard.term?.match(/\{\{([^}]+)\}\}/g);
+            if (matches) {
+                answers = matches.map((m: string) => m.replace(/\{\{|\}\}/g, '').trim()).filter((a: string) => a);
+            }
+        }
+
+        if (!answers || answers.length === 0) {
+            return;
+        }
+
+        const userAnswer = fillBlankInput.trim().toLowerCase();
+        const isCorrect = answers.some((answer: string) =>
+            answer.trim().toLowerCase() === userAnswer
+        );
+
+        setFillBlankIsCorrect(isCorrect);
+        setFillBlankChecked(true);
+
+        // Save first correct answer for display
+        if (answers.length > 0) {
+            setCorrectAnswer(answers[0]);
+        }
+    };
+
+    // Function to show correct answer
+    const handleShowCorrectAnswer = () => {
+        setShowCorrectAnswer(true);
+    };
+
+    // Track utterance đang chạy để tránh cancel nhầm
+    const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+    const isSpeakingRef = useRef<boolean>(false);
+
+    // Unlock TTS sau user gesture (một lần duy nhất)
+    const unlockTTS = () => {
+        if (typeof window === 'undefined') {
+            console.log('unlockTTS: window not available');
+            return;
+        }
+        const synth = (window as any).speechSynthesis as SpeechSynthesis | undefined;
+        if (!synth) {
+            console.log('unlockTTS: speechSynthesis not available');
+            return;
+        }
+
+        console.log('🔄 unlockTTS called - attempting to unlock TTS...');
+        try {
+            // Một số bản Chrome cần resume() sau gesture
+            synth.resume();
+            console.log('✅ synth.resume() called');
+
+            // Warm-up utterance rất ngắn để "mở khóa" audio/tts
+            const u = new SpeechSynthesisUtterance(' ');
+            u.volume = 0.01; // gần như im lặng
+            u.onend = () => console.log('✅ TTS unlocked (warm-up utterance finished)');
+            u.onerror = (e) => {
+                console.warn('unlockTTS warm-up error (ignored):', e.error);
+            };
+            synth.speak(u);
+            console.log('✅ unlockTTS warm-up utterance sent');
+        } catch (e) {
+            console.warn('unlockTTS error', e);
+        }
+    };
+
+    // Speak helper using Web Speech API với error handling tốt hơn
+    const speakText = async (text: string) => {
+        if (typeof window === 'undefined') {
+            console.warn('Window not available for TTS');
+            return;
+        }
+
+        const synth = (window as any).speechSynthesis as SpeechSynthesis | undefined;
+        if (!synth) {
+            console.warn('SpeechSynthesis not supported in this browser');
+            alert('Trình duyệt của bạn không hỗ trợ đọc văn bản. Vui lòng dùng Chrome, Edge, hoặc Safari.');
+            return;
+        }
+
+        try {
+            // 1) Đảm bảo voices có sẵn
+            await new Promise<void>(resolve => {
+                const v = synth.getVoices();
+                if (v.length) return resolve();
+                const h = () => {
+                    if (synth.getVoices().length) {
+                        synth.onvoiceschanged = null;
+                        resolve();
+                    }
+                };
+                synth.onvoiceschanged = h;
+                setTimeout(() => {
+                    synth.onvoiceschanged = null;
+                    resolve();
+                }, 2000);
+            });
+
+            // 2) Đừng hủy nếu chỉ pending
+            if (synth.speaking && !synth.pending && currentUtteranceRef.current) {
+                synth.cancel();
+                await new Promise(r => setTimeout(r, 120));
+            }
+
+            // 3) Resume phòng khi paused
+            try {
+                synth.resume();
+            } catch { }
+
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.rate = 1.0;
+            utter.pitch = 1.0;
+            utter.volume = 1.0;
+            utter.lang = 'en-US';
+
+            // 4) LUÔN set voice cụ thể (fix silent-bug trên macOS/Chrome/Safari)
+            const voices = synth.getVoices();
+            const chooseVoice = () => {
+                const pref = ['Google US English', 'Google UK English Male', 'Samantha', 'Alex'];
+                for (const n of pref) {
+                    const v = voices.find(vo => vo.name.includes(n));
+                    if (v) return v;
+                }
+                return voices.find(v => v.lang?.startsWith('en-US'))
+                    || voices.find(v => v.default)
+                    || voices[0]
+                    || null;
+            };
+            const voice = chooseVoice();
+            if (voice) {
+                utter.voice = voice;
+                console.log('Using voice:', voice.name, voice.lang);
+            } else {
+                console.warn('No voice picked, may be silent on some browsers');
+            }
+
+            currentUtteranceRef.current = utter;
+
+            utter.onstart = () => {
+                console.log('🎤 Speech started:', text.substring(0, 50));
+                isSpeakingRef.current = true;
+            };
+            utter.onend = () => {
+                console.log('✅ Speech finished successfully');
+                isSpeakingRef.current = false;
+                currentUtteranceRef.current = null;
+            };
+            utter.onerror = (e) => {
+                const errorType = (e.error as string);
+                console.error('TTS error event:', {
+                    error: e.error,
+                    type: e.type,
+                    errorType: errorType,
+                    text: text.substring(0, 30)
+                });
+                if (errorType !== 'canceled') {
+                    console.error('TTS error', e);
+                }
+                isSpeakingRef.current = false;
+                currentUtteranceRef.current = null;
+            };
+
+            // Log trạng thái trước khi speak
+            console.log('Synth status before speak:', {
+                speaking: synth.speaking,
+                pending: synth.pending,
+                paused: synth.paused
+            });
+
+            synth.speak(utter);
+            console.log('✅ synth.speak() called for:', text.substring(0, 50));
+
+            // Log trạng thái sau khi speak
+            console.log('Synth status after speak:', {
+                speaking: synth.speaking,
+                pending: synth.pending,
+                paused: synth.paused
+            });
+
+            // 5) Nếu sau 700ms chưa nói, thử resume()
+            setTimeout(() => {
+                console.log('Checking speech status after 700ms:', {
+                    isSpeakingRef: isSpeakingRef.current,
+                    synthSpeaking: synth.speaking,
+                    synthPending: synth.pending,
+                    synthPaused: synth.paused
+                });
+                if (!isSpeakingRef.current && !synth.speaking) {
+                    console.warn('No speech yet; calling resume()');
+                    try {
+                        synth.resume();
+                        console.log('resume() called, checking again...');
+                        setTimeout(() => {
+                            console.log('Status after resume():', {
+                                speaking: synth.speaking,
+                                pending: synth.pending,
+                                paused: synth.paused
+                            });
+                        }, 200);
+                    } catch (e) {
+                        console.error('resume() failed:', e);
+                    }
+                }
+            }, 700);
+
+        } catch (err: any) {
+            console.error('❌ Error in speakText:', err);
+            currentUtteranceRef.current = null;
+            isSpeakingRef.current = false;
+        }
+    };
+
+    // Track user interaction để đảm bảo TTS có thể chạy
+    const [hasUserInteracted, setHasUserInteracted] = useState(false);
+
+    // Preload voices ngay khi component mount
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const synth = (window as any).speechSynthesis as SpeechSynthesis | undefined;
+        if (!synth) return;
+
+        // Trigger voices load ngay
+        const loadVoicesNow = () => {
+            try {
+                const voices = synth.getVoices();
+                console.log('Voices loaded on mount:', voices.length);
+                if (voices.length > 0) {
+                    console.log('Sample voices:', voices.slice(0, 3).map(v => `${v.name} (${v.lang})`));
+                }
+            } catch (e) {
+                console.error('Error loading voices:', e);
+            }
+        };
+
+        // Thử load ngay
+        loadVoicesNow();
+
+        // Listen cho event voiceschanged
+        synth.onvoiceschanged = loadVoicesNow;
+
+        // Fallback: thử lại sau 1 giây
+        const timer = setTimeout(loadVoicesNow, 1000);
+
+        return () => {
+            synth.onvoiceschanged = null;
+            clearTimeout(timer);
+        };
+    }, []);
+
+    // Unlock TTS sau user gesture (gọi unlockTTS ngay trong callback)
+    useEffect(() => {
+        const onGesture = () => {
+            setHasUserInteracted(true);
+            unlockTTS(); // Quan trọng: gọi ngay trong gesture
+        };
+
+        // Listen for any user interaction
+        window.addEventListener('click', onGesture, { once: true });
+        window.addEventListener('keydown', onGesture, { once: true });
+        window.addEventListener('touchstart', onGesture, { once: true });
+
+        return () => {
+            window.removeEventListener('click', onGesture);
+            window.removeEventListener('keydown', onGesture);
+            window.removeEventListener('touchstart', onGesture);
+        };
+    }, []);
+
+    // Auto speak when moving to a new card (front side)
+    useEffect(() => {
+        if (!audioEnabled) return;
+        if (!currentCard) return;
+        if (isFlipped) return; // chỉ đọc mặt trước
+        if (!hasUserInteracted) {
+            console.log('Waiting for user interaction before TTS');
+            return;
+        }
+
+        const term = currentCard.term?.toString().trim();
+        if (term) {
+            // Đợi một chút sau khi card đã render xong
+            const timer = setTimeout(() => {
+                speakText(term);
+            }, 400); // Đợi animation slide hoàn tất
+
+            return () => clearTimeout(timer);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentCardIndex, audioEnabled, isFlipped, hasUserInteracted]);
     // Resizable divider state
     const [sidebarWidth, setSidebarWidth] = useState<number>(300); // compact default
     const [showAiSidebar, setShowAiSidebar] = useState<boolean>(true);
@@ -109,6 +572,11 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
     };
 
     const flipCard = () => {
+        // Don't flip if it's a fill-in-the-blank or multiple choice card
+        const currentCard = flashcards[currentCardIndex];
+        if (isFillBlankCard(currentCard) || isMultipleChoiceCard(currentCard)) {
+            return;
+        }
         setIsFlipped(!isFlipped);
     };
 
@@ -124,31 +592,106 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
         setChatHistory(prev => [...prev, { type: 'user', message: userMessage }]);
         setIsLoadingChat(true);
 
+        // Retry mechanism với exponential backoff
+        const maxRetries = 3;
+        let lastError: Error | null = null;
+
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
             // Tạo prompt riêng cho flashcard với thông tin thẻ hiện tại
             const currentTerm = currentCard?.term || '';
+                // Ẩn Definition trong UI nhưng vẫn gửi cho AI để có thể trả lời khi được hỏi
+                const shouldHideDefinitionInUI = currentCard && (isMultipleChoiceCard(currentCard) || isFillBlankCard(currentCard));
+
+                let flashcardInfoSection = `Thông tin flashcard hiện tại:
+- Term (Thuật ngữ): ${currentTerm}`;
+
+                // Xử lý Multiple Choice
+                if (isMultipleChoiceCard(currentCard)) {
+                    let options = currentCard.multipleChoiceOptions;
+                    let correctIndex = currentCard.correctAnswerIndex;
+
+                    // Parse từ definition nếu cần
+                    if (!options && currentCard.definition) {
+                        try {
+                            const parsed = typeof currentCard.definition === 'string' ? JSON.parse(currentCard.definition) : currentCard.definition;
+                            if (parsed && parsed.options) {
+                                options = parsed.options;
+                                correctIndex = parsed.correctIndex ?? parsed.correctAnswerIndex ?? 0;
+                            }
+                        } catch (e) {
+                            console.error('Error parsing multiple choice:', e);
+                        }
+                    }
+
+                    if (options && Array.isArray(options) && options.length > 0) {
+                        flashcardInfoSection += `\n- Loại câu hỏi: Trắc nghiệm (Multiple Choice)`;
+                        flashcardInfoSection += `\n- Các đáp án (Options):`;
+                        options.forEach((opt: string, idx: number) => {
+                            const isCorrect = idx === correctIndex;
+                            flashcardInfoSection += `\n  ${idx + 1}. ${opt}${isCorrect ? ' (ĐÁP ÁN ĐÚNG)' : ''}`;
+                        });
+                        flashcardInfoSection += `\n- Lưu ý: Thông tin này chỉ dùng để trợ giúp học tập khi người dùng yêu cầu. Không hiển thị đáp án đúng trừ khi được yêu cầu cụ thể.`;
+                    }
+                }
+                // Xử lý Fill in the Blank
+                else if (isFillBlankCard(currentCard)) {
+                    let answers = currentCard.fillBlankAnswers;
+
+                    // Parse từ definition nếu cần
+                    if (!answers && currentCard.definition) {
+                        try {
+                            const parsed = typeof currentCard.definition === 'string' ? JSON.parse(currentCard.definition) : currentCard.definition;
+                            if (Array.isArray(parsed)) {
+                                answers = parsed;
+                            }
+                        } catch (e) {
+                            // Nếu không parse được, thử extract từ term với {{ }} syntax
+                            const matches = currentCard.term?.match(/\{\{([^}]+)\}\}/g);
+                            if (matches) {
+                                answers = matches.map(m => m.replace(/\{\{|\}\}/g, ''));
+                            }
+                        }
+                    }
+
+                    if (answers && Array.isArray(answers) && answers.length > 0) {
+                        flashcardInfoSection += `\n- Loại câu hỏi: Điền vào chỗ trống (Fill in the Blank)`;
+                        flashcardInfoSection += `\n- Các đáp án đúng (Correct Answers): ${answers.join(', ')}`;
+                        flashcardInfoSection += `\n- Lưu ý: Thông tin này chỉ dùng để trợ giúp học tập khi người dùng yêu cầu. Không hiển thị đáp án trừ khi được yêu cầu cụ thể.`;
+                    }
+                }
+                // Flashcard thường (Term and Definition)
+                else {
             const currentDefinition = currentCard?.definition || '';
+                    if (currentDefinition) {
+                        flashcardInfoSection += `\n- Definition (Định nghĩa): ${currentDefinition}`;
+                    }
+                }
 
             const flashcardPrompt = `Bạn là AI tutor chuyên giúp học flashcard tên Huyền Trang. 
             
-Thông tin flashcard hiện tại:
-- Term (Thuật ngữ): ${currentTerm}
-- Definition (Định nghĩa): ${currentDefinition}
+${flashcardInfoSection}
 
 Câu hỏi của Huyền Trang: ${userMessage}
 
 Hãy trả lời theo format sau:
 1. Bắt đầu với "Chào Huyền Trang! 🎉 Rất vui khi được giúp bạn hiểu rõ hơn về từ này! 😊"
-2. Hiển thị thông tin flashcard: "Flashcard của chúng ta hôm nay là: **Thuật ngữ:** [term] **Định nghĩa:** [definition]"
-3. Nếu có lỗi chính tả, nhắc nhở nhẹ nhàng như "Có lẽ có một chút nhầm lẫn ở đây về từ [từ đúng] đó Huyền Trang ơi! 😉"
-4. **Giải thích chi tiết** với:
+2. Hiển thị thông tin flashcard: "Flashcard của chúng ta hôm nay là: **Thuật ngữ:** [term]"
+3. **QUAN TRỌNG**: Nếu người dùng yêu cầu dịch/giải thích đáp án (ví dụ: "dịch cho tôi từng đáp án", "giải thích các đáp án", "translate the options"), hãy dịch và giải thích từng đáp án một cách chi tiết, rõ ràng.
+4. Nếu có lỗi chính tả, nhắc nhở nhẹ nhàng như "Có lẽ có một chút nhầm lẫn ở đây về từ [từ đúng] đó Huyền Trang ơi! 😉"
+5. **Giải thích chi tiết** với:
    - Định nghĩa rõ ràng và dễ hiểu
    - **Ví dụ câu tiếng Anh** sử dụng từ đó
    - **Ví dụ câu tiếng Việt** tương ứng
    - Các từ liên quan hoặc từ đồng nghĩa
    - Lưu ý về cách sử dụng trong ngữ cảnh
-5. Kết thúc bằng "Huyền Trang có muốn mình giải thích kỹ hơn phần nào không? Mình luôn sẵn sàng giúp bạn học tập vui vẻ! 🎉😊"
-6. Sử dụng nhiều emoji, tone giáo dục thân thiện, và gọi tên "Huyền Trang" trong câu trả lời.`;
+6. Kết thúc bằng "Huyền Trang có muốn mình giải thích kỹ hơn phần nào không? Mình luôn sẵn sàng giúp bạn học tập vui vẻ! 🎉😊"
+7. Sử dụng nhiều emoji, tone giáo dục thân thiện, và gọi tên "Huyền Trang" trong câu trả lời.
+8. **QUAN TRỌNG**: Không tự động hiển thị đáp án đúng hoặc định nghĩa cho câu hỏi trắc nghiệm/điền chỗ trống trừ khi người dùng yêu cầu cụ thể.`;
+
+                // Thêm timeout 30 giây cho mỗi request
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000);
 
             const response = await fetch('http://localhost:3001/api/ai/chat', {
                 method: 'POST',
@@ -157,22 +700,53 @@ Hãy trả lời theo format sau:
                 },
                 body: JSON.stringify({
                     message: flashcardPrompt,
-                    studySetId: '13'
-                })
+                    studySetId: studySetId || ''
+                    }),
+                    signal: controller.signal
             });
+
+                clearTimeout(timeoutId);
 
             if (response.ok) {
                 const data = await response.json();
                 setChatHistory(prev => [...prev, { type: 'ai', message: data.response }]);
+                    setIsLoadingChat(false);
+                    return; // Thành công, thoát khỏi retry loop
             } else {
+                    // Nếu là lỗi server (5xx), thử lại; nếu là lỗi client (4xx), không retry
+                    if (response.status >= 500 && attempt < maxRetries - 1) {
+                        lastError = new Error(`Server error: ${response.status}`);
+                        // Đợi trước khi retry: exponential backoff (1s, 2s, 4s)
+                        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+                        continue;
+                    } else {
+                        // Lỗi client hoặc đã hết retry
                 setChatHistory(prev => [...prev, { type: 'ai', message: 'Xin lỗi, có lỗi xảy ra khi gửi tin nhắn.' }]);
-            }
-        } catch (error) {
-            console.error('Error sending chat message:', error);
-            setChatHistory(prev => [...prev, { type: 'ai', message: 'Xin lỗi, có lỗi xảy ra khi gửi tin nhắn.' }]);
-        } finally {
+                        setIsLoadingChat(false);
+                        return;
+                    }
+                }
+            } catch (error: any) {
+                console.error(`Error sending chat message (attempt ${attempt + 1}/${maxRetries}):`, error);
+
+                // Nếu là AbortError (timeout) hoặc network error, thử lại
+                if ((error.name === 'AbortError' || error.message?.includes('fetch')) && attempt < maxRetries - 1) {
+                    lastError = error;
+                    // Đợi trước khi retry
+                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+                    continue;
+                } else {
+                    // Đã hết retry hoặc lỗi không thể retry
+                    setChatHistory(prev => [...prev, { type: 'ai', message: 'Xin lỗi, có lỗi xảy ra khi gửi tin nhắn. Vui lòng thử lại sau.' }]);
             setIsLoadingChat(false);
+                    return;
+                }
+            }
         }
+
+        // Nếu tất cả retry đều thất bại
+        setChatHistory(prev => [...prev, { type: 'ai', message: 'Xin lỗi, không thể kết nối với AI tutor. Vui lòng thử lại sau vài giây.' }]);
+        setIsLoadingChat(false);
     };
 
     const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -230,28 +804,94 @@ Hãy trả lời theo format sau:
         try {
             // Tạo prompt riêng cho flashcard với thông tin thẻ hiện tại
             const currentTerm = currentCard?.term || '';
+            // Ẩn Definition trong UI nhưng vẫn gửi cho AI để có thể trả lời khi được hỏi
+            const shouldHideDefinitionInUI = currentCard && (isMultipleChoiceCard(currentCard) || isFillBlankCard(currentCard));
+
+            let flashcardInfoSection = `Thông tin flashcard hiện tại:
+- Term (Thuật ngữ): ${currentTerm}`;
+
+            // Xử lý Multiple Choice
+            if (isMultipleChoiceCard(currentCard)) {
+                let options = currentCard.multipleChoiceOptions;
+                let correctIndex = currentCard.correctAnswerIndex;
+
+                // Parse từ definition nếu cần
+                if (!options && currentCard.definition) {
+                    try {
+                        const parsed = typeof currentCard.definition === 'string' ? JSON.parse(currentCard.definition) : currentCard.definition;
+                        if (parsed && parsed.options) {
+                            options = parsed.options;
+                            correctIndex = parsed.correctIndex ?? parsed.correctAnswerIndex ?? 0;
+                        }
+                    } catch (e) {
+                        console.error('Error parsing multiple choice:', e);
+                    }
+                }
+
+                if (options && Array.isArray(options) && options.length > 0) {
+                    flashcardInfoSection += `\n- Loại câu hỏi: Trắc nghiệm (Multiple Choice)`;
+                    flashcardInfoSection += `\n- Các đáp án (Options):`;
+                    options.forEach((opt: string, idx: number) => {
+                        const isCorrect = idx === correctIndex;
+                        flashcardInfoSection += `\n  ${idx + 1}. ${opt}${isCorrect ? ' (ĐÁP ÁN ĐÚNG)' : ''}`;
+                    });
+                    flashcardInfoSection += `\n- Lưu ý: Thông tin này chỉ dùng để trợ giúp học tập khi người dùng yêu cầu. Không hiển thị đáp án đúng trừ khi được yêu cầu cụ thể.`;
+                }
+            }
+            // Xử lý Fill in the Blank
+            else if (isFillBlankCard(currentCard)) {
+                let answers = currentCard.fillBlankAnswers;
+
+                // Parse từ definition nếu cần
+                if (!answers && currentCard.definition) {
+                    try {
+                        const parsed = typeof currentCard.definition === 'string' ? JSON.parse(currentCard.definition) : currentCard.definition;
+                        if (Array.isArray(parsed)) {
+                            answers = parsed;
+                        }
+                    } catch (e) {
+                        // Nếu không parse được, thử extract từ term với {{ }} syntax
+                        const matches = currentCard.term?.match(/\{\{([^}]+)\}\}/g);
+                        if (matches) {
+                            answers = matches.map(m => m.replace(/\{\{|\}\}/g, ''));
+                        }
+                    }
+                }
+
+                if (answers && Array.isArray(answers) && answers.length > 0) {
+                    flashcardInfoSection += `\n- Loại câu hỏi: Điền vào chỗ trống (Fill in the Blank)`;
+                    flashcardInfoSection += `\n- Các đáp án đúng (Correct Answers): ${answers.join(', ')}`;
+                    flashcardInfoSection += `\n- Lưu ý: Thông tin này chỉ dùng để trợ giúp học tập khi người dùng yêu cầu. Không hiển thị đáp án trừ khi được yêu cầu cụ thể.`;
+                }
+            }
+            // Flashcard thường (Term and Definition)
+            else {
             const currentDefinition = currentCard?.definition || '';
+                if (currentDefinition) {
+                    flashcardInfoSection += `\n- Definition (Định nghĩa): ${currentDefinition}`;
+                }
+            }
 
             const flashcardPrompt = `Bạn là AI tutor chuyên giúp học flashcard tên Huyền Trang. 
             
-Thông tin flashcard hiện tại:
-- Term (Thuật ngữ): ${currentTerm}
-- Definition (Định nghĩa): ${currentDefinition}
+${flashcardInfoSection}
 
 Yêu cầu của Huyền Trang: ${prompt}
 
 Hãy trả lời theo format sau:
 1. Bắt đầu với "Chào Huyền Trang! 🎉 Rất vui khi được giúp bạn hiểu rõ hơn về từ này! 😊"
-2. Hiển thị thông tin flashcard: "Flashcard của chúng ta hôm nay là: **Thuật ngữ:** [term] **Định nghĩa:** [definition]"
-3. Nếu có lỗi chính tả, nhắc nhở nhẹ nhàng như "Có lẽ có một chút nhầm lẫn ở đây về từ [từ đúng] đó Huyền Trang ơi! 😉"
-4. **Giải thích chi tiết** với:
+2. Hiển thị thông tin flashcard: "Flashcard của chúng ta hôm nay là: **Thuật ngữ:** [term]"
+3. **QUAN TRỌNG**: Nếu người dùng yêu cầu dịch/giải thích đáp án (ví dụ: "dịch cho tôi từng đáp án", "giải thích các đáp án", "translate the options"), hãy dịch và giải thích từng đáp án một cách chi tiết, rõ ràng.
+4. Nếu có lỗi chính tả, nhắc nhở nhẹ nhàng như "Có lẽ có một chút nhầm lẫn ở đây về từ [từ đúng] đó Huyền Trang ơi! 😉"
+5. **Giải thích chi tiết** với:
    - Định nghĩa rõ ràng và dễ hiểu
    - **Ví dụ câu tiếng Anh** sử dụng từ đó
    - **Ví dụ câu tiếng Việt** tương ứng
    - Các từ liên quan hoặc từ đồng nghĩa
    - Lưu ý về cách sử dụng trong ngữ cảnh
-5. Kết thúc bằng "Huyền Trang có muốn mình giải thích kỹ hơn phần nào không? Mình luôn sẵn sàng giúp bạn học tập vui vẻ! 🎉😊"
-6. Sử dụng nhiều emoji, tone giáo dục thân thiện, và gọi tên "Huyền Trang" trong câu trả lời.`;
+6. Kết thúc bằng "Huyền Trang có muốn mình giải thích kỹ hơn phần nào không? Mình luôn sẵn sàng giúp bạn học tập vui vẻ! 🎉😊"
+7. Sử dụng nhiều emoji, tone giáo dục thân thiện, và gọi tên "Huyền Trang" trong câu trả lời.
+8. **QUAN TRỌNG**: Không tự động hiển thị đáp án đúng hoặc định nghĩa cho câu hỏi trắc nghiệm/điền chỗ trống trừ khi người dùng yêu cầu cụ thể.`;
 
             const response = await fetch('http://localhost:3001/api/ai/chat', {
                 method: 'POST',
@@ -351,6 +991,28 @@ Hãy trả lời theo format sau:
     }
 
     return (
+        <>
+            <style>{`
+                .scrollbar-thin::-webkit-scrollbar {
+                    width: 6px;
+                    height: 6px;
+                }
+                .scrollbar-thin::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .scrollbar-thin::-webkit-scrollbar-thumb {
+                    background: rgba(156, 163, 175, 0.3);
+                    border-radius: 3px;
+                }
+                .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+                    background: rgba(156, 163, 175, 0.5);
+                }
+                /* Firefox */
+                .scrollbar-thin {
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+                }
+            `}</style>
         <div className={`min-h-screen bg-gray-50 transition-all duration-300 ${isCollapsed ? 'ml-16' : 'ml-48'}`}>
             {/* Top Header (copied from CreateFlashcardSet) */}
             <div className={`bg-white fixed top-0 right-0 z-10 transition-all duration-300 ${isCollapsed ? 'left-16' : 'left-40'}`}>
@@ -456,9 +1118,24 @@ Hãy trả lời theo format sau:
                                 >
                                     {/* Front */}
                                     <div
-                                        className="absolute inset-0 bg-white rounded-2xl shadow-xl p-8 flex flex-col items-center justify-center text-center"
-                                        style={{ backfaceVisibility: 'hidden' }}
-                                    >
+                                            className="absolute inset-0 bg-white rounded-2xl shadow-xl p-8 flex flex-col items-center text-center cursor-pointer overflow-y-auto scrollbar-hover"
+                                            style={{ backfaceVisibility: 'hidden', justifyContent: isMultipleChoiceCard(currentCard) ? 'flex-start' : 'center' }}
+                                        >
+                                            {/* Hint icon for fill-in-the-blank (top left) */}
+                                            {isFillBlankCard(currentCard) && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        showFillBlankHint();
+                                                    }}
+                                                    className="absolute top-3 left-3 p-2 rounded-full transition-colors text-gray-400 hover:text-yellow-500 hover:bg-yellow-50"
+                                                    aria-label="hint"
+                                                    title="Gợi ý"
+                                                >
+                                                    <Lightbulb className="w-5 h-5" />
+                                                </button>
+                                            )}
+
                                         <button
                                             onClick={(e) => { e.stopPropagation(); toggleBookmark(); }}
                                             className={`absolute top-3 right-3 p-2 rounded-full transition-colors ${bookmarkedCards.has(currentCard.id) ? 'text-yellow-500 bg-yellow-50' : 'text-gray-400 hover:text-yellow-500'}`}
@@ -466,7 +1143,240 @@ Hãy trả lời theo format sau:
                                         >
                                             <Star className="w-5 h-5" />
                                         </button>
-                                        <p className="text-2xl text-gray-800 mb-4">
+
+                                            {isFillBlankCard(currentCard) ? (
+                                                // Fill in the blank UI
+                                                <div className="w-full flex flex-col items-center space-y-4">
+                                                    <div className="text-2xl text-gray-800 mb-4 flex items-center flex-wrap justify-center gap-2">
+                                                        {parseFillBlankText(currentCard.term).map((part, index) => (
+                                                            part.type === 'text' ? (
+                                                                <span key={index}>{part.content}</span>
+                                                            ) : (
+                                                                <div key={index} className="relative inline-block">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={fillBlankInput}
+                                                                        onChange={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setFillBlankInput(e.target.value);
+                                                                        }}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter' && !fillBlankChecked) {
+                                                                                e.stopPropagation();
+                                                                                checkFillBlankAnswer();
+                                                                            }
+                                                                        }}
+                                                                        onFocus={(e) => {
+                                                                            // Đảm bảo hint không chặn focus
+                                                                            if (fillBlankHint && fillBlankInput.length === 0) {
+                                                                                e.target.style.color = 'transparent';
+                                                                            }
+                                                                        }}
+                                                                        onBlur={(e) => {
+                                                                            if (fillBlankInput.length === 0) {
+                                                                                e.target.style.color = '';
+                                                                            }
+                                                                        }}
+                                                                        disabled={fillBlankChecked}
+                                                                        className={`min-w-[120px] px-3 py-2 text-2xl text-center border-b-2 border-gray-400 focus:outline-none focus:border-blue-500 ${fillBlankChecked
+                                                                            ? fillBlankIsCorrect
+                                                                                ? 'border-green-500 bg-green-50'
+                                                                                : 'border-red-500 bg-red-50'
+                                                                            : ''
+                                                                            } ${fillBlankHint && fillBlankInput.length === 0 ? 'relative' : ''}`}
+                                                                        style={fillBlankHint && fillBlankInput.length === 0 ? { color: 'transparent' } : {}}
+                                                                        autoFocus
+                                                                    />
+                                                                    {fillBlankHint && fillBlankInput.length === 0 && (
+                                                                        <span
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setFillBlankInput(fillBlankHint);
+                                                                                // Focus vào input sau khi điền hint
+                                                                                const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                                                                                if (input) {
+                                                                                    setTimeout(() => {
+                                                                                        input.focus();
+                                                                                        // Đặt cursor ở cuối
+                                                                                        const length = fillBlankHint.length;
+                                                                                        input.setSelectionRange(length, length);
+                                                                                        input.style.color = '';
+                                                                                    }, 0);
+                                                                                }
+                                                                            }}
+                                                                            className="absolute inset-0 flex items-center justify-center text-2xl font-bold text-orange-500 cursor-pointer hover:text-orange-600 pointer-events-auto"
+                                                                            title="Click để điền chữ đầu tiên"
+                                                                        >
+                                                                            {fillBlankHint}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            )
+                                                        ))}
+                                                    </div>
+                                                    {fillBlankChecked && fillBlankIsCorrect === false && (
+                                                        <div className="text-sm text-gray-600 mb-2">
+                                                            You got 1 incorrect.
+                                                        </div>
+                                                    )}
+                                                    {showCorrectAnswer && (
+                                                        <div className="text-2xl text-gray-800 mb-4">
+                                                            {correctAnswer}
+                                                        </div>
+                                                    )}
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (fillBlankChecked && fillBlankIsCorrect === false) {
+                                                                handleShowCorrectAnswer();
+                                                            } else {
+                                                                checkFillBlankAnswer();
+                                                            }
+                                                        }}
+                                                        disabled={!fillBlankInput.trim() || (fillBlankChecked && fillBlankIsCorrect === true)}
+                                                        className={`px-6 py-3 text-white font-semibold rounded-lg transition-colors ${fillBlankChecked && fillBlankIsCorrect === false
+                                                            ? 'bg-purple-900 hover:bg-purple-800' // Dark purple for "Show Correct Answers"
+                                                            : 'bg-purple-700 hover:bg-purple-800' // Regular purple for "Check Answers"
+                                                            } disabled:bg-gray-400 disabled:cursor-not-allowed`}
+                                                    >
+                                                        {fillBlankChecked && fillBlankIsCorrect === false ? 'Show Correct Answers' : 'Check Answers'}
+                                                    </button>
+                                                    {currentCard.termImage && (
+                                                        <img
+                                                            src={currentCard.termImage}
+                                                            alt="Term"
+                                                            className="w-full max-w-md mx-auto rounded-lg object-contain mt-4"
+                                                        />
+                                                    )}
+                                                </div>
+                                            ) : isMultipleChoiceCard(currentCard) ? (
+                                                // Multiple Choice UI
+                                                <div className="w-full flex flex-col items-center space-y-4 py-4">
+                                                    {/* Term/Question */}
+                                                    <div className="text-2xl text-gray-800 mb-4 max-w-4xl w-full px-4 break-words overflow-y-auto max-h-40 scrollbar-hover">
+                                                        {currentCard.term}
+                                                    </div>
+                                                    {currentCard.termImage && (
+                                                        <img
+                                                            src={currentCard.termImage}
+                                                            alt="Term"
+                                                            className="w-full max-w-md mx-auto rounded-lg object-contain mb-4"
+                                                        />
+                                                    )}
+
+                                                    {/* Options Grid */}
+                                                    {(() => {
+                                                        let options = currentCard.multipleChoiceOptions;
+                                                        let correctIndex = currentCard.correctAnswerIndex;
+
+                                                        // Parse from definition if needed
+                                                        if (!options && currentCard.definition) {
+                                                            try {
+                                                                const parsed = typeof currentCard.definition === 'string' ? JSON.parse(currentCard.definition) : currentCard.definition;
+                                                                if (parsed && parsed.options) {
+                                                                    options = parsed.options;
+                                                                    correctIndex = parsed.correctIndex ?? parsed.correctAnswerIndex ?? 0;
+                                                                }
+                                                            } catch (e) {
+                                                                console.error('Error parsing multiple choice:', e);
+                                                            }
+                                                        }
+
+                                                        if (!options || options.length === 0) {
+                                                            return <div className="text-gray-500">No options available</div>;
+                                                        }
+
+                                                        return (
+                                                            <div className="w-full max-w-2xl">
+                                                                <div className="grid grid-cols-2 gap-4 mb-4">
+                                                                    {options.map((option: string, index: number) => {
+                                                                        const isSelected = selectedOptionIndex === index;
+                                                                        const isCorrect = correctIndex === index;
+                                                                        const showResult = multipleChoiceChecked;
+
+                                                                        let bgColor = 'bg-white';
+                                                                        let borderColor = 'border-gray-300';
+                                                                        let textColor = 'text-gray-800';
+                                                                        let icon = null;
+
+                                                                        if (showResult) {
+                                                                            if (isCorrect) {
+                                                                                bgColor = 'bg-green-50';
+                                                                                borderColor = 'border-green-500';
+                                                                                textColor = 'text-green-800';
+                                                                                icon = (
+                                                                                    <div className="absolute top-2 right-2">
+                                                                                        <svg className="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                );
+                                                                            } else {
+                                                                                // All incorrect options show red X
+                                                                                bgColor = 'bg-red-50';
+                                                                                borderColor = 'border-red-500';
+                                                                                textColor = 'text-red-800';
+                                                                                icon = (
+                                                                                    <div className="absolute top-2 right-2">
+                                                                                        <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                                                        </svg>
+                                                                                    </div>
+                                                                                );
+                                                                            }
+                                                                        } else if (isSelected) {
+                                                                            borderColor = 'border-blue-500';
+                                                                        }
+
+                                                                        return (
+                                                                            <div
+                                                                                key={index}
+                                                                                data-option
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    if (!multipleChoiceChecked) {
+                                                                                        setSelectedOptionIndex(index);
+                                                                                    }
+                                                                                }}
+                                                                                className={`relative p-6 rounded-lg border-2 ${borderColor} ${bgColor} ${textColor} cursor-pointer transition-all overflow-y-auto min-h-[80px] max-h-56 scrollbar-hover ${!multipleChoiceChecked ? 'hover:border-blue-400 hover:shadow-md' : ''
+                                                                                    }`}
+                                                                            >
+                                                                                {icon}
+                                                                                <div className="text-lg font-medium break-words pr-8">
+                                                                                    {option || `Option ${index + 1}`}
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+
+                                                                {multipleChoiceChecked && multipleChoiceIsCorrect === false && (
+                                                                    <div className="text-center text-xl font-semibold text-gray-900 mb-4">
+                                                                        You are incorrect!
+                                                                    </div>
+                                                                )}
+
+                                                                <button
+                                                                    data-check-button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (selectedOptionIndex !== null && !multipleChoiceChecked) {
+                                                                            checkMultipleChoiceAnswer();
+                                                                        }
+                                                                    }}
+                                                                    disabled={selectedOptionIndex === null || multipleChoiceChecked}
+                                                                    className="px-6 py-3 bg-purple-700 hover:bg-purple-800 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
+                                                                >
+                                                                    Check Answers
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            ) : (
+                                                // Default UI (Term and Definition)
+                                                <>
+                                                    <p className="text-2xl text-gray-800 mb-4 cursor-pointer">
                                             {currentCard.term}
                                             <span className="ml-2 text-xs text-red-500">
                                             </span>
@@ -475,14 +1385,16 @@ Hãy trả lời theo format sau:
                                             <img
                                                 src={currentCard.termImage}
                                                 alt="Term"
-                                                className="w-full max-w-md mx-auto rounded-lg object-contain"
+                                                            className="w-full max-w-md mx-auto rounded-lg object-contain cursor-pointer"
                                             />
+                                                    )}
+                                                </>
                                         )}
                                     </div>
 
                                     {/* Back */}
                                     <div
-                                        className="absolute inset-0 bg-white rounded-2xl shadow-xl p-8 flex flex-col items-center justify-center text-center"
+                                            className="absolute inset-0 bg-white rounded-2xl shadow-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer overflow-y-auto scrollbar-hover"
                                         style={{
                                             backfaceVisibility: 'hidden',
                                             transform: 'rotateX(180deg)'
@@ -495,6 +1407,55 @@ Hãy trả lời theo format sau:
                                         >
                                             <Star className="w-5 h-5" />
                                         </button>
+                                            {isMultipleChoiceCard(currentCard) ? (
+                                                // Multiple Choice Back: Show explanation or correct answer info
+                                                <div className="w-full">
+                                                    {(() => {
+                                                        // Try to parse definition as JSON to get explanation
+                                                        let explanation = null;
+                                                        let correctAnswer = null;
+
+                                                        if (currentCard.definition) {
+                                                            try {
+                                                                const parsed = typeof currentCard.definition === 'string'
+                                                                    ? JSON.parse(currentCard.definition)
+                                                                    : currentCard.definition;
+                                                                if (parsed && parsed.options && parsed.correctIndex !== undefined) {
+                                                                    correctAnswer = parsed.options[parsed.correctIndex];
+                                                                    explanation = parsed.explanation || `Đáp án đúng: ${correctAnswer}`;
+                                                                } else {
+                                                                    explanation = currentCard.definition;
+                                                                }
+                                                            } catch (e) {
+                                                                // Not JSON, use as is
+                                                                explanation = currentCard.definition;
+                                                            }
+                                                        }
+
+                                                        // If we have options from multipleChoiceOptions, use that for correct answer
+                                                        if (!explanation && currentCard.multipleChoiceOptions && currentCard.correctAnswerIndex !== undefined) {
+                                                            const correctOpt = currentCard.multipleChoiceOptions[currentCard.correctAnswerIndex];
+                                                            explanation = `Đáp án đúng: ${correctOpt}`;
+                                                        }
+
+                                                        return (
+                                                            <div className="space-y-4">
+                                                                {explanation && (
+                                                                    <p className="text-2xl text-gray-800 mb-4">{explanation}</p>
+                                                                )}
+                                                                {correctAnswer && (
+                                                                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                                                        <p className="text-lg font-semibold text-green-800">Đáp án đúng:</p>
+                                                                        <p className="text-xl text-green-900 mt-2">{correctAnswer}</p>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            ) : (
+                                                // Default: Show definition as text
+                                                <>
                                         <p className="text-2xl text-gray-800 mb-4">{currentCard.definition}</p>
                                         {currentCard.definitionImage && (
                                             <img
@@ -502,6 +1463,8 @@ Hãy trả lời theo format sau:
                                                 alt="Definition"
                                                 className="w-full max-w-md mx-auto rounded-lg object-contain"
                                             />
+                                                    )}
+                                                </>
                                         )}
                                     </div>
                                 </div>
@@ -546,6 +1509,47 @@ Hãy trả lời theo format sau:
                                 <Shuffle className="w-4 h-4" />
                                 <span className="text-sm">Shuffle Flashcards</span>
                             </button>
+                                <button
+                                    onClick={() => {
+                                        const v = !audioEnabled;
+                                        setAudioEnabled(v);
+                                        setHasUserInteracted(true);
+
+                                        // QUAN TRỌNG: Phải unlock TTS ngay trong gesture
+                                        if (v) {
+                                            unlockTTS();
+                                        }
+
+                                        try { localStorage.setItem('ttsEnabled', v ? '1' : '0'); } catch { }
+
+                                        // Nếu bật, đọc ngay thẻ hiện tại
+                                        if (v && currentCard && !isFlipped) {
+                                            setTimeout(() => {
+                                                const term = currentCard.term?.toString().trim();
+                                                if (term) speakText(term);
+                                            }, 300);
+                                        }
+                                    }}
+                                    className={`pointer-events-auto px-4 py-2 rounded-full ${audioEnabled ? 'text-blue-600 border-blue-300 bg-blue-50' : 'text-gray-700 border-gray-300'} bg-white border shadow-sm hover:bg-gray-50 transition-colors flex items-center gap-2`}
+                                    title="Bật/Tắt đọc thuật ngữ"
+                                >
+                                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5l-6 6h-3v2h3l6 6V5z"></path><path d="M19 5a7 7 0 010 14"></path><path d="M19 9a3 3 0 010 6"></path></svg>
+                                    <span className="text-sm">{audioEnabled ? 'Âm thanh: Bật' : 'Âm thanh: Tắt'}</span>
+                                </button>
+                                {audioEnabled && currentCard && !isFlipped && (
+                                    <button
+                                        onClick={() => {
+                                            setHasUserInteracted(true);
+                                            const term = currentCard.term?.toString().trim();
+                                            if (term) speakText(term);
+                                        }}
+                                        className="pointer-events-auto px-4 py-2 rounded-full text-green-600 border-green-300 bg-white shadow-sm hover:bg-green-50 transition-colors flex items-center gap-2"
+                                        title="Đọc lại thuật ngữ hiện tại"
+                                    >
+                                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                                        <span className="text-sm">Đọc lại</span>
+                                    </button>
+                                )}
                             <button
                                 onClick={() => toggleBookmark()}
                                 className="pointer-events-auto px-4 py-2 rounded-full text-gray-700 bg-white shadow-sm hover:bg-gray-50 transition-colors flex items-center gap-2"
@@ -683,8 +1687,16 @@ Hãy trả lời theo format sau:
                                         <div className="w-full max-w-md mb-5 p-4 bg-blue-50 rounded-lg border border-blue-200">
                                             <h3 className="text-sm font-semibold text-blue-800 mb-2">📚 Flashcard hiện tại:</h3>
                                             <div className="text-sm text-blue-700">
-                                                <p><strong>Term:</strong> {currentCard.term}</p>
+                                                    {/* Loại bỏ {{...}} khỏi Term cho Fill in the Blank */}
+                                                    <p><strong>Term:</strong> {
+                                                        isFillBlankCard(currentCard)
+                                                            ? (currentCard.term || '').replace(/\{\{[^}]+\}\}/g, '____')
+                                                            : currentCard.term
+                                                    }</p>
+                                                    {/* Ẩn Definition cho Multiple Choice và Fill in the Blank */}
+                                                    {!isMultipleChoiceCard(currentCard) && !isFillBlankCard(currentCard) && (
                                                 <p><strong>Definition:</strong> {currentCard.definition}</p>
+                                                    )}
                                             </div>
                                         </div>
                                     )}
@@ -786,6 +1798,7 @@ Hãy trả lời theo format sau:
                 </div>
             )}
         </div>
+        </>
     );
 };
 

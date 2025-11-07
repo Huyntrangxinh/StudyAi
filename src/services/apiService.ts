@@ -116,6 +116,28 @@ class ApiService {
             role,
         });
     }
+
+    // Bookmarks (flashcards)
+    async toggleFlashcardBookmark(flashcardId: string | number, userId: string) {
+        const response = await fetch(`${API_BASE}/api/flashcards/${flashcardId}/bookmarks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId }),
+        });
+        if (!response.ok) {
+            throw new Error('Failed to toggle bookmark');
+        }
+        return response.json() as Promise<{ status: 'added' | 'removed' }>;
+    }
+
+    async getBookmarkedFlashcards(userId: string, flashcardSetId?: string) {
+        const params = new URLSearchParams({ userId, ...(flashcardSetId ? { flashcardSetId } : {}) });
+        const response = await fetch(`${API_BASE}/api/flashcards/bookmarks?${params.toString()}`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch bookmarks');
+        }
+        return response.json() as Promise<Array<{ id: number; front: string; back: string; id_flashcard_set: number }>>;
+    }
 }
 
 export const apiService = new ApiService();

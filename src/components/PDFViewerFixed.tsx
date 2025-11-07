@@ -13,11 +13,13 @@ interface PDFViewerFixedProps {
     studySetName: string;
     onBack: () => void;
     isCollapsed?: boolean;
+    initialPage?: number;
+    targetMaterialId?: string;
 }
 
-const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetName, onBack, isCollapsed = false }) => {
+const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetName, onBack, isCollapsed = false, initialPage, targetMaterialId }) => {
     const [numPages, setNumPages] = useState<number | null>(null);
-    const [pageNumber, setPageNumber] = useState(1);
+    const [pageNumber, setPageNumber] = useState(initialPage || 1);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -109,11 +111,27 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
                 const response = await fetch(`http://localhost:3001/api/materials/${studySetId}`);
                 const materials = await response.json();
                 if (materials.length > 0) {
-                    const latestMaterial = materials[0]; // Get the latest material
-                    setCurrentMaterial({
-                        name: latestMaterial.name,
-                        totalPages: numPages || 0
-                    });
+                    // If targetMaterialId is provided, find that material, otherwise use latest
+                    const material = targetMaterialId
+                        ? materials.find((m: any) => String(m.id) === String(targetMaterialId))
+                        : materials[0];
+
+                    if (material) {
+                        setCurrentMaterial({
+                            name: material.name,
+                            totalPages: numPages || 0
+                        });
+
+                        // Load the PDF for the target material
+                        if (targetMaterialId && material.file_path) {
+                            const fileResp = await fetch(`http://localhost:3001/api/materials/file/${material.file_path}`);
+                            if (fileResp.ok) {
+                                const blob = await fileResp.blob();
+                                const url = URL.createObjectURL(blob);
+                                setPdfUrl(url);
+                            }
+                        }
+                    }
                 }
             } catch (error) {
                 console.error('Error loading material info:', error);
@@ -121,7 +139,7 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
         };
 
         loadCurrentMaterial();
-    }, [studySetId]);
+    }, [studySetId, targetMaterialId]);
 
     // Update totalPages when numPages changes
     useEffect(() => {
@@ -129,6 +147,13 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
             setCurrentMaterial(prev => prev ? { ...prev, totalPages: numPages } : null);
         }
     }, [numPages, currentMaterial]);
+
+    // Update page number when initialPage changes
+    useEffect(() => {
+        if (initialPage && initialPage > 0) {
+            setPageNumber(initialPage);
+        }
+    }, [initialPage]);
 
     const handleFontChange = (font: string) => {
         setSelectedFont(font);
@@ -367,10 +392,24 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
                     setMaterialsCount(data ? data.length : 0);
 
                     if (data.length > 0) {
-                        // Get the latest material (most recent)
-                        const material = data[0];
-                        console.log('Latest material:', material);
-                        if (material.file_path) {
+                        // If targetMaterialId is provided, find that material, otherwise use latest
+                        const material = targetMaterialId
+                            ? data.find((m: any) => String(m.id) === String(targetMaterialId))
+                            : data[0];
+
+                        if (!material && targetMaterialId) {
+                            console.log('Target material not found, using latest');
+                            const fallbackMaterial = data[0];
+                            if (fallbackMaterial && fallbackMaterial.file_path) {
+                                setPdfUrl(`http://localhost:3001/api/materials/file/${fallbackMaterial.file_path}`);
+                            } else {
+                                setPdfUrl('http://localhost:3001/api/materials/file/sample-software-maintenance.pdf');
+                            }
+                            return;
+                        }
+
+                        console.log('Selected material:', material);
+                        if (material && material.file_path) {
                             const testUrl = `http://localhost:3001/api/materials/file/${material.file_path}`;
                             console.log('Testing URL:', testUrl);
                             try {
@@ -404,7 +443,7 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
             }
         };
         loadMaterials();
-    }, [studySetId]);
+    }, [studySetId, targetMaterialId]);
 
     const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
         console.log('PDF loaded successfully, pages:', numPages);
@@ -995,15 +1034,7 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
                                                     ) : (
                                                         <p className="text-sm">{msg.message}</p>
                                                     )}
-                                                    {msg.type === 'ai' && (
-                                                        <button
-                                                            onClick={() => copySelectedOrMessage(index)}
-                                                            className="absolute -top-2 -right-2 px-2 py-1 text-xs bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
-                                                            title="Copy (ưu tiên phần đang bôi, nếu không sẽ copy block này)"
-                                                        >
-                                                            Copy
-                                                        </button>
-                                                    )}
+                                                    {/* Removed copy button from AI messages per request */}
                                                 </div>
                                             </div>
                                         ))}

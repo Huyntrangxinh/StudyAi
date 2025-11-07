@@ -1,7 +1,5 @@
 import React from 'react';
-// Use require to avoid TS path resolution hiccups in dev
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const StudyFlashcards = require('./StudyFlashcards').default as React.ComponentType<StudyFlashcardsWrapperProps>;
+import StudyFlashcardsComponent from './StudyFlashcards';
 
 interface StudyFlashcardsWrapperProps {
     flashcards: Array<{
@@ -10,14 +8,23 @@ interface StudyFlashcardsWrapperProps {
         definition: string;
         termImage?: string;
         definitionImage?: string;
+        type?: string; // 'pair', 'fillblank', 'multiplechoice'
+        fillBlankAnswers?: string[]; // Correct answers for fill in the blank
+        multipleChoiceOptions?: string[]; // Options for multiple choice
+        correctAnswerIndex?: number; // Correct answer index for multiple choice
     }>;
     onBack: () => void;
     isCollapsed: boolean;
     flashcardName?: string;
+    studySetId?: string;
 }
 
 const StudyFlashcardsWrapper: React.FC<StudyFlashcardsWrapperProps> = (props) => {
-    return <StudyFlashcards {...props} />;
+    if (!StudyFlashcardsComponent) {
+        console.error('StudyFlashcards component is undefined');
+        return <div>Error loading flashcards component</div>;
+    }
+    return <StudyFlashcardsComponent {...props} />;
 };
 
 export default StudyFlashcardsWrapper;

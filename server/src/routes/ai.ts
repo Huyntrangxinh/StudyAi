@@ -22,6 +22,13 @@ const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
 // ✅ Cache embeddings để tiết kiệm API calls
 const embeddingCache = new Map<string, number[]>();
 
+// ✅ Cache PDF text để tránh đọc lại mỗi request
+const pdfTextCache = new Map<string, { text: string; timestamp: number }>();
+const PDF_CACHE_TTL = 3600000; // 1 giờ
+
+// ✅ Cache chunks để tránh tính lại
+const chunksCache = new Map<string, { text: string; page: number }[]>();
+
 /* -------------------- PDF utils -------------------- */
 
 function splitPages(text: string): string[] {
@@ -426,23 +433,33 @@ router.post('/chat', async (req, res) => {
         if (!chosen.file_path) {
             return res.json({ response: 'File path không tồn tại cho tài liệu này.' });
         }
-        const candidates = [
-            path.join(process.cwd(), 'server/uploads', chosen.file_path),
-            path.join(__dirname, '../uploads', chosen.file_path),
-            path.join(__dirname, '../../uploads', chosen.file_path),
-            path.join(process.cwd(), 'uploads', chosen.file_path),
-        ];
-        let fileFound = false;
-        for (const p of candidates) {
-            if (fs.existsSync(p)) {
-                const txt = await extractTextFromPDF(p);
-                allText += `\n\f${txt}`;
-                fileFound = true;
-                break;
+        // ✅ Kiểm tra cache PDF text trước
+        const cacheKey = chosen.file_path;
+        let cached = pdfTextCache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp) < PDF_CACHE_TTL) {
+            allText = cached.text;
+            console.log('📦 Using cached PDF text');
+        } else {
+            const candidates = [
+                path.join(process.cwd(), 'server/uploads', chosen.file_path),
+                path.join(__dirname, '../uploads', chosen.file_path),
+                path.join(__dirname, '../../uploads', chosen.file_path),
+                path.join(process.cwd(), 'uploads', chosen.file_path),
+            ];
+            let fileFound = false;
+            for (const p of candidates) {
+                if (fs.existsSync(p)) {
+                    const txt = await extractTextFromPDF(p);
+                    allText = `\n\f${txt}`;
+                    // ✅ Lưu vào cache
+                    pdfTextCache.set(cacheKey, { text: allText, timestamp: Date.now() });
+                    fileFound = true;
+                    break;
+                }
             }
-        }
-        if (!fileFound) {
-            return res.json({ response: 'Không tìm thấy file PDF. Vui lòng upload lại.' });
+            if (!fileFound) {
+                return res.json({ response: 'Không tìm thấy file PDF. Vui lòng upload lại.' });
+            }
         }
 
         console.log('Total extracted text length:', allText.length);
@@ -453,10 +470,16 @@ router.post('/chat', async (req, res) => {
         }
 
         // 2) chia trang → chunk → chọn top-k theo câu hỏi (✅ hybrid search)
-        const pages = splitPages(allText);
-        const chunks = chunkWithPages(pages, CHUNK_SIZE, CHUNK_OVERLAP);
-
-        console.log(`📊 Total chunks: ${chunks.length}`);
+        // ✅ Cache chunks để tránh tính lại
+        let chunks = chunksCache.get(cacheKey);
+        if (!chunks) {
+            const pages = splitPages(allText);
+            chunks = chunkWithPages(pages, CHUNK_SIZE, CHUNK_OVERLAP);
+            chunksCache.set(cacheKey, chunks);
+            console.log(`📊 Total chunks: ${chunks.length} (cached)`);
+        } else {
+            console.log(`📊 Using cached chunks: ${chunks.length}`);
+        }
 
         const top = await pickTopK(message, chunks, TOP_K);
 
@@ -564,28 +587,92 @@ Hãy trả lời câu hỏi một cách chi tiết và cụ thể dựa trên ng
                 definitions: {},
                 methods_or_arguments: [],
                 examples: [],
-                citations: top.map(c => ({ page: c.page, excerpt: c.text.substring(0, 200) }))
+                citations: top.map(c => ({
+                    page: c.page,
+                    excerpt: c.text.substring(0, 200),
+                    materialId: chosen?.id ? String(chosen.id) : undefined,
+                    materialName: chosen?.name || undefined
+                }))
             };
         }
 
-        // 4) Pass-2: Tutor Rewriter - Tạo câu trả lời ấm áp
-        const userName = req.body.userName || "bạn";
+        // ✅ Tối ưu: Gộp tất cả vào 1 pass duy nhất thay vì 3 pass
+        const userName = req.body.userName || "Huyền Trang";
         const fileName = chosen?.name || "tài liệu";
 
-        let friendlyResponse;
-        if (isFollowUpQuestion) {
-            // Trả lời tự nhiên cho câu hỏi follow-up (không dùng template)
-            friendlyResponse = await rewriteAsNaturalTutor(userName, fileName, structuredJson, message);
+        // Tạo prompt thông minh gộp tất cả yêu cầu
+        const unifiedSystemPrompt = `Bạn là Spark.E — một trợ giảng AI thân thiện, thông minh và vui vẻ.
+
+YÊU CẦU:
+- Viết bằng tiếng Việt
+- Xưng hô theo tên người dùng: "${userName}"
+- Giọng tự nhiên, gần gũi, thân thiện nhưng chính xác học thuật
+- Giữ nguyên format Markdown cơ bản (###, **bold**, *italic*)
+- Mở đầu: 1-2 câu chào ấm áp với emoji (tối đa 3 emoji) như 🎉📚🙂
+- Kết thúc: hỏi nhẹ "Bạn có muốn mình giải thích kỹ hơn phần nào không?"
+- LOẠI BỎ tất cả citations [pX] khỏi câu trả lời
+- Không thêm kiến thức mới, chỉ diễn đạt lại cho dễ hiểu dựa trên nguồn`;
+
+        // Xây dựng nội dung từ structuredJson hoặc top chunks
+        let sourceContent = '';
+        if (structuredJson && structuredJson.overview) {
+            sourceContent = `Thông tin từ tài liệu "${fileName}":
+${structuredJson.overview}
+
+${structuredJson.key_points ? `Điểm chính:\n${structuredJson.key_points.map((k: string) => `- ${k}`).join('\n')}` : ''}`;
         } else {
-            // Sử dụng template cho tóm tắt hoặc câu hỏi đầu tiên
-            friendlyResponse = await rewriteAsTutor(userName, fileName, structuredJson);
+            sourceContent = `Nguồn trích từ tài liệu "${fileName}":
+${top.map(c => `--- [PAGE ${c.page}]\n${c.text}`).join('\n\n')}`;
         }
 
-        // 5) Pass-3: Humanizer - Làm giọng nói tự nhiên và thân thiện
-        const humanizedResponse = await humanizeMarkdown(userName, friendlyResponse);
+        const unifiedUserPrompt = `Câu hỏi: "${message}"
 
-        // 6) Post-processing: Loại bỏ citations [pX]
-        const finalResponse = humanizedResponse.replace(/\[p\d+\]/g, '').trim();
+${sourceContent}
+
+Hãy trả lời câu hỏi một cách chi tiết, thân thiện và tự nhiên theo yêu cầu ở trên.`;
+
+        // ✅ CHỈ 1 LẦN GỌI AI thay vì 3 lần
+        // ✅ Thêm timeout để đảm bảo phản hồi nhanh
+        const AI_TIMEOUT = 15000; // 15 giây
+        let finalResponse = '';
+
+        try {
+            const unifiedCompletionPromise = openai.chat.completions.create({
+                model: MODEL,
+                temperature: 0.7, // Cân bằng giữa sáng tạo và chính xác
+                max_tokens: 2000,
+                messages: [
+                    { role: 'system', content: unifiedSystemPrompt },
+                    { role: 'user', content: unifiedUserPrompt },
+                ],
+            });
+
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('AI timeout')), AI_TIMEOUT)
+            );
+
+            const unifiedCompletion = await Promise.race([
+                unifiedCompletionPromise,
+                timeoutPromise
+            ]) as any;
+
+            finalResponse = unifiedCompletion.choices[0]?.message?.content?.trim() || '';
+        } catch (error: any) {
+            console.error('AI call timeout or error:', error.message);
+            // ✅ Fallback response nhanh dựa trên top chunks
+            const fallbackText = top.length > 0
+                ? top[0].text.substring(0, 300) + (top[0].text.length > 300 ? '...' : '')
+                : 'thông tin từ tài liệu';
+            finalResponse = `Chào ${userName}! 🎉\n\nDựa trên nội dung tài liệu "${fileName}", ${fallbackText}\n\nBạn muốn mình giải thích kỹ hơn phần nào không? 😊`;
+        }
+
+        // Post-processing: Loại bỏ citations [pX] nếu còn sót
+        finalResponse = finalResponse.replace(/\[p\d+\]/g, '').trim();
+
+        // Đảm bảo có câu trả lời
+        if (!finalResponse) {
+            finalResponse = `Xin chào ${userName}! Mình đã nhận được câu hỏi của bạn nhưng chưa tìm thấy thông tin phù hợp trong tài liệu. Bạn có thể diễn đạt lại câu hỏi không? 😊`;
+        }
 
         return res.json({
             response: finalResponse,

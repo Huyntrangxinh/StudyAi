@@ -14,11 +14,17 @@ const initDb = () => {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             study_set_id INTEGER NOT NULL,
             name TEXT NOT NULL,
+            audio_enabled BOOLEAN DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     `);
 
-        // No migrations needed beyond base columns for this simplified table
+        // Ensure audio_enabled exists (idempotent)
+        db.run(`ALTER TABLE flashcard_sets ADD COLUMN audio_enabled BOOLEAN DEFAULT 0`, (err) => {
+            if (err && !String(err.message).includes('duplicate column name')) {
+                console.error('Error adding audio_enabled column:', err);
+            }
+        });
     });
 };
 initDb();
@@ -35,6 +41,7 @@ router.get('/', (req, res) => {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 study_set_id INTEGER NOT NULL,
                 name TEXT NOT NULL,
+                audio_enabled BOOLEAN DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`,
             (createErr) => {
@@ -45,7 +52,7 @@ router.get('/', (req, res) => {
                 }
                 console.log('[GET /api/flashcard-sets] table ensured OK');
                 db.all(
-                    'SELECT id, study_set_id, name, created_at FROM flashcard_sets ORDER BY created_at DESC',
+                    'SELECT id, study_set_id, name, audio_enabled, created_at FROM flashcard_sets ORDER BY created_at DESC',
                     (err, rows) => {
                         if (err) {
                             console.error('Error fetching flashcard sets:', err);
@@ -64,7 +71,7 @@ router.get('/', (req, res) => {
 
 // POST /api/flashcard-sets - Create a new flashcard set
 router.post('/', (req, res) => {
-    const { name, studySetId } = req.body;
+    const { name, studySetId, audioEnabled } = req.body;
     console.log('[POST /api/flashcard-sets] incoming body:', req.body);
 
     if (!name || !studySetId) {
@@ -75,8 +82,8 @@ router.post('/', (req, res) => {
     console.log('🔍 Creating flashcard set with dbPath:', dbPath, 'values:', { name, studySetId: Number(studySetId) });
 
     db.run(
-        'INSERT INTO flashcard_sets (study_set_id, name) VALUES (?, ?)',
-        [Number(studySetId), name],
+        'INSERT INTO flashcard_sets (study_set_id, name, audio_enabled) VALUES (?, ?, ?)',
+        [Number(studySetId), name, !!audioEnabled],
         function (err) {
             if (err) {
                 console.error('❌ Error creating flashcard set:', err);
@@ -87,7 +94,7 @@ router.post('/', (req, res) => {
             console.log('✅ Flashcard set created with ID:', this.lastID);
             // Verify write by reading back the row
             db.get(
-                'SELECT id, study_set_id, name, created_at FROM flashcard_sets WHERE id = ?',
+                'SELECT id, study_set_id, name, audio_enabled, created_at FROM flashcard_sets WHERE id = ?',
                 [this.lastID],
                 (readErr, row) => {
                     if (readErr) {
@@ -96,7 +103,7 @@ router.post('/', (req, res) => {
                         return db.close();
                     }
                     console.log('[POST /api/flashcard-sets] inserted row:', row);
-                    res.json(row || { id: this.lastID, studySetId: Number(studySetId), name });
+                    res.json(row || { id: this.lastID, studySetId: Number(studySetId), name, audio_enabled: !!audioEnabled });
                     db.close();
                 }
             );

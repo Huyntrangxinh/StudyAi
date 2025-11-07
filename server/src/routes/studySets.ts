@@ -74,13 +74,28 @@ router.get('/', (req, res) => {
     db.all(
         'SELECT * FROM study_sets WHERE user_id = ? ORDER BY created_at DESC',
         [userIdStr],
-        (err, rows) => {
+        (err, rows: any[]) => {
             if (err) {
                 console.error('Error fetching study sets:', err);
                 db.close();
                 return res.status(500).json({ error: 'Internal server error' });
             }
-            res.json(rows);
+            // Format response to ensure consistent field names
+            const formattedRows = rows.map(row => ({
+                id: String(row.id),
+                name: row.name,
+                description: row.description || '',
+                userId: row.user_id,
+                user_id: row.user_id,
+                status: row.status || 'active',
+                color: row.color || '#3b82f6',
+                icon: row.icon || 'book',
+                createdAt: row.created_at || row.createdAt,
+                created_at: row.created_at,
+                updatedAt: row.updated_at || row.updatedAt,
+                updated_at: row.updated_at
+            }));
+            res.json(formattedRows);
             db.close();
         }
     );
@@ -115,23 +130,58 @@ router.post('/', (req, res) => {
         function (err) {
             if (err) {
                 console.error('❌ Error creating study set:', err);
+                console.error('Error details:', err.message);
+                console.error('SQL Query:', 'INSERT INTO study_sets (name, description, user_id, color, icon, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                console.error('Parameters:', [name, description || '', userIdStr, color || '#3b82f6', icon || 'book', now, now]);
                 db.close();
-                return res.status(500).json({ error: 'Internal server error' });
+                return res.status(500).json({ error: err.message || 'Internal server error' });
             }
 
-            console.log('✅ Study set created with ID:', this.lastID);
-            res.json({
-                id: this.lastID,
-                name,
-                description: description || '',
-                userId,
-                status: 'active',
-                color: color || '#3b82f6',
-                icon: icon || 'book',
-                createdAt: now,
-                updatedAt: now
-            });
-            db.close();
+            const studySetId = this.lastID;
+            console.log('✅ Study set created with ID:', studySetId);
+
+            // Fetch the created study set to return complete data
+            db.get(
+                'SELECT * FROM study_sets WHERE id = ?',
+                [studySetId],
+                (err, row: any) => {
+                    if (err) {
+                        console.error('Error fetching created study set:', err);
+                        db.close();
+                        // Still return success with what we have
+                        return res.json({
+                            id: studySetId,
+                            name,
+                            description: description || '',
+                            userId: userIdStr,
+                            user_id: userIdStr,
+                            status: 'active',
+                            color: color || '#3b82f6',
+                            icon: icon || 'book',
+                            createdAt: now,
+                            created_at: now,
+                            updatedAt: now,
+                            updated_at: now
+                        });
+                    }
+
+                    db.close();
+                    res.json({
+                        id: row.id,
+                        name: row.name,
+                        description: row.description || '',
+                        userId: row.user_id,
+                        user_id: row.user_id,
+                        status: row.status || 'active',
+                        color: row.color || '#3b82f6',
+                        icon: row.icon || 'book',
+                        createdAt: row.created_at || row.created_at,
+                        created_at: row.created_at,
+                        updatedAt: row.updated_at || row.updated_at,
+                        updated_at: row.updated_at
+                    });
+                }
+            );
         }
     );
 });

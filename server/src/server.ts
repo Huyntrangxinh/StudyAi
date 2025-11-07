@@ -21,6 +21,12 @@ import foldersRouter from "./routes/folders";
 import aiRouter from "./routes/ai";
 import chatHistoryRouter from "./routes/chatHistory";
 import flashcardsRouter from "./routes/flashcards";
+import testsRouter from "./routes/tests";
+// Import videos router for GET endpoint (slideshow videos)
+import videosRouter from "./routes/videos";
+import audioRouter from "./routes/audio";
+import slideshowRouter from "./routes/slideshow";
+import gamesRouter from "./routes/games";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -54,15 +60,35 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Use routes
 app.use('/api/materials', materialsRouter);
 app.use('/api/study-sets', studySetsRouter);
+app.use('/api/tests', testsRouter);
 app.use('/api/flashcard-sets', flashcardSetsRouter);
 app.use('/api/folders', foldersRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/chat-history', chatHistoryRouter);
 app.use('/api/flashcards', flashcardsRouter);
+// Enable videos router for GET endpoint (to fetch slideshow videos from database)
+app.use('/api/videos', videosRouter);
+app.use('/api/audio', audioRouter);
+app.use('/api/explainers', slideshowRouter);
+app.use('/api/games', gamesRouter);
 
 // Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '../../uploads');
+// Align with routes that write to server/uploads (from server/src/routes -> ../../uploads resolves to server/uploads)
+const uploadsDir = path.join(__dirname, '../uploads');
 fs.mkdir(uploadsDir, { recursive: true }).catch(console.error);
+
+// Serve static uploads (audio/video/images)
+app.use('/uploads', express.static(uploadsDir));
+
+// Debug endpoint to list uploaded files (for troubleshooting 404)
+app.get('/api/uploads/list', async (req, res) => {
+    try {
+        const files = await fs.readdir(uploadsDir);
+        res.json({ uploadsDir, files });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message });
+    }
+});
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({

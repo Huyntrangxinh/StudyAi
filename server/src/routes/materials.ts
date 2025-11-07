@@ -4,6 +4,7 @@ import path from 'path';
 import multer from 'multer';
 import fs from 'fs';
 import crypto from 'crypto';
+import pdf from 'pdf-parse';
 
 const router = express.Router();
 const dbPath = path.join(__dirname, '../../database/app.db');
@@ -317,6 +318,88 @@ router.delete('/:id', (req, res) => {
     });
 });
 
+// GET /api/materials/:studySetId/:materialId/content - Extract full content from material
+// NOTE: This route must come BEFORE /:studySetId to avoid route conflicts
+router.get('/:studySetId/:materialId/content', async (req, res) => {
+    const { studySetId, materialId } = req.params;
+    const db = new sqlite3.Database(dbPath);
+
+    db.get(
+        'SELECT * FROM materials WHERE id = ? AND study_set_id = ?',
+        [materialId, studySetId],
+        async (err, material: any) => {
+            if (err) {
+                console.error('Error fetching material:', err);
+                db.close();
+                return res.status(500).json({ error: 'Internal server error' });
+            }
+
+            if (!material) {
+                db.close();
+                return res.status(404).json({ error: 'Material not found' });
+            }
+
+            if (!material.file_path) {
+                db.close();
+                return res.status(400).json({ error: 'Material has no file path' });
+            }
+
+            db.close();
+
+            // Try multiple possible paths
+            const candidates = [
+                path.join(process.cwd(), 'server/uploads', material.file_path),
+                path.join(process.cwd(), 'uploads', material.file_path),
+                path.join(__dirname, '../uploads', material.file_path),
+                path.join(__dirname, '../../uploads', material.file_path),
+                material.file_path // Absolute path
+            ];
+
+            let fileFound = false;
+            let allText = '';
+
+            for (const filePath of candidates) {
+                if (fs.existsSync(filePath)) {
+                    try {
+                        const dataBuffer = fs.readFileSync(filePath);
+
+                        // Check if it's a PDF
+                        if (material.type === 'pdf' || filePath.toLowerCase().endsWith('.pdf')) {
+                            const data = await pdf(dataBuffer);
+                            allText = data.text || '';
+                        } else {
+                            // For other file types, try to read as text
+                            allText = dataBuffer.toString('utf-8');
+                        }
+
+                        fileFound = true;
+                        console.log(`✅ Extracted content from ${material.name}: ${allText.length} characters`);
+                        break;
+                    } catch (extractErr) {
+                        console.error(`Error extracting from ${filePath}:`, extractErr);
+                        continue;
+                    }
+                }
+            }
+
+            if (!fileFound) {
+                return res.status(404).json({ error: 'File not found' });
+            }
+
+            if (!allText.trim()) {
+                return res.status(400).json({ error: 'File is empty or could not be extracted' });
+            }
+
+            res.json({
+                content: allText,
+                materialId: material.id,
+                materialName: material.name,
+                materialType: material.type
+            });
+        }
+    );
+});
+
 // GET /api/materials/:studySetId - Get materials for a study set
 router.get('/:studySetId', (req, res) => {
     const studySetId = req.params.studySetId;
@@ -357,6 +440,123 @@ router.get('/file/:filename', (req, res) => {
     // Stream the file
     const fileStream = fs.createReadStream(filePath);
     fileStream.pipe(res);
+});
+
+// Helper function to split pages (same as in ai.ts)
+function splitPages(text: string): string[] {
+    const pages = text.split(/\f/g);
+    if (pages.length > 1) {
+        return pages.map(s => s.trim()).filter(Boolean);
+    }
+    // If no form feed, try splitting by multiple newlines
+    return text.split(/\n{3,}/g).map(s => s.trim()).filter(Boolean);
+}
+
+// GET /api/materials/text/:filename - Extract text from PDF (specific page)
+router.get('/text/:filename', async (req, res) => {
+    const { filename } = req.params;
+    const pageNumber = parseInt(req.query.page as string) || 1;
+
+    // Try multiple file paths (same as ai.ts)
+    const candidates = [
+        path.join(process.cwd(), 'server/uploads', filename),
+        path.join(__dirname, '../uploads', filename),
+        path.join(__dirname, '../../uploads', filename),
+        path.join(process.cwd(), 'uploads', filename),
+    ];
+
+    let filePath: string | null = null;
+    for (const p of candidates) {
+        if (fs.existsSync(p)) {
+            filePath = p;
+            break;
+        }
+    }
+
+    if (!filePath) {
+        return res.status(404).json({ error: 'File not found' });
+    }
+
+    try {
+        const dataBuffer = fs.readFileSync(filePath);
+        const data = await pdf(dataBuffer);
+
+        // Add form feed prefix like in ai.ts to ensure at least one separator
+        const textWithPrefix = `\n\f${data.text}`;
+
+        // Use same split logic as ai.ts
+        let pages = splitPages(textWithPrefix);
+
+        // If first page is empty (due to prefix), remove it and adjust indices
+        if (pages.length > 0 && !pages[0].trim()) {
+            pages = pages.slice(1);
+        }
+
+        // If still empty or single page, try direct split on original text
+        if (pages.length <= 1) {
+            pages = splitPages(data.text);
+        }
+
+        // If splitting didn't work well, pages might be empty or only have one page
+        // In that case, we need to estimate page boundaries
+        if (pages.length <= 1) {
+            // Estimate: assume roughly equal length pages
+            const totalChars = data.text.length;
+            const estimatedPagesPerChar = totalChars / 3000; // Rough estimate: ~3000 chars per page
+            const estimatedPages = Math.max(1, Math.ceil(estimatedPagesPerChar));
+
+            // Split text into estimated pages
+            const charsPerPage = Math.ceil(totalChars / estimatedPages);
+            const estimatedPagesArray: string[] = [];
+            for (let i = 0; i < estimatedPages; i++) {
+                const start = i * charsPerPage;
+                const end = Math.min(start + charsPerPage, totalChars);
+                estimatedPagesArray.push(data.text.substring(start, end));
+            }
+
+            // Get the requested page
+            const pageIndex = pageNumber - 1;
+            const pageText = estimatedPagesArray[pageIndex] || estimatedPagesArray[0] || data.text;
+
+            res.json({
+                text: pageText.trim(),
+                page: pageNumber,
+                totalPages: estimatedPages
+            });
+            return;
+        }
+
+        // Validate page number
+        if (pageNumber < 1 || pageNumber > pages.length) {
+            return res.status(400).json({
+                error: `Page number must be between 1 and ${pages.length}`,
+                totalPages: pages.length
+            });
+        }
+
+        // Get the specific page (pageNumber is 1-indexed)
+        const pageIndex = pageNumber - 1;
+        const pageText = pages[pageIndex] || '';
+
+        // Preserve original formatting - just trim
+        const formattedText = pageText.trim();
+
+        console.log(`📄 Extracted text for page ${pageNumber}:`, {
+            totalPages: pages.length,
+            pageIndex,
+            textLength: formattedText.length,
+            preview: formattedText.substring(0, 200).replace(/\n/g, ' ')
+        });
+
+        res.json({
+            text: formattedText,
+            page: pageNumber,
+            totalPages: pages.length
+        });
+    } catch (error) {
+        console.error('Error extracting PDF text:', error);
+        res.status(500).json({ error: 'Failed to extract text from PDF: ' + (error instanceof Error ? error.message : String(error)) });
+    }
 });
 
 export default router;
