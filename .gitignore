@@ -10,9 +10,6 @@ server/dist/
 .env
 server/.env
 
-# Config files with sensitive data
-server/config.js
-
 # Local data/uploads
 uploads/
 server/uploads/
