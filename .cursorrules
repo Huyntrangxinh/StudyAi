@@ -1,0 +1,161 @@
+# Cursor Rules - React & TypeScript Clean Code Standards
+
+## General Principles
+- Follow clean code principles and best practices for React and TypeScript
+- Prioritize readability, maintainability, and scalability
+- Write self-documenting code with meaningful names
+
+## File Structure & Organization
+
+### File Length
+- **Page/Component files should NOT exceed 300 lines**
+- If a file exceeds 300 lines, it MUST be refactored by:
+  - Extracting sub-components into separate files in `/components` folder
+  - Extracting custom hooks into `/hooks` folder
+  - Extracting utility functions into `/utils` folder
+  - Breaking down complex logic into smaller, focused functions
+  - Using composition over large monolithic components
+
+### Component Organization
+- Components should be placed in `/components` folder
+- Custom hooks should be placed in `/hooks` folder
+- Utility functions should be placed in `/utils` folder
+- Keep components focused on a single responsibility
+
+## React Best Practices
+
+### Component Structure
+- Use functional components with TypeScript
+- Prefer function declarations over arrow functions for component definitions
+- Keep components small and focused (Single Responsibility Principle)
+- Extract complex logic into custom hooks
+- Use composition to build complex UIs from simple components
+
+### State Management
+- Use `useState` for local component state
+- Use `useReducer` for complex state logic
+- Extract state logic into custom hooks when reused
+- Avoid prop drilling - use Context API or state management library when needed
+
+### Hooks
+- Custom hooks should start with `use` prefix
+- Extract reusable logic into custom hooks
+- Keep hooks focused on a single concern
+- Place custom hooks in `/hooks` folder
+
+### Props & Types
+- Always define TypeScript interfaces/types for component props
+- Use descriptive prop names
+- Prefer interfaces over types for object shapes
+- Export types/interfaces that might be reused
+- Use optional props (`?`) appropriately
+
+### Performance
+- Use `React.memo` for expensive components that re-render frequently
+- Use `useMemo` for expensive calculations
+- Use `useCallback` for functions passed as props to memoized components
+- Avoid unnecessary re-renders
+
+### Code Style
+- Use meaningful variable and function names
+- Prefer descriptive names over comments
+- Keep functions small and focused
+- Extract magic numbers and strings into constants
+- Use early returns to reduce nesting
+
+## TypeScript Best Practices
+
+### Type Safety
+- Avoid using `any` type - use `unknown` if type is truly unknown
+- Use strict TypeScript configuration
+- Define explicit return types for functions
+- Use type guards for runtime type checking
+- Leverage TypeScript's type inference where appropriate
+
+### Interfaces & Types
+- Use interfaces for object shapes
+- Use types for unions, intersections, and computed types
+- Prefer readonly properties when values shouldn't change
+- Use generic types for reusable components and functions
+
+### Naming Conventions
+- Use PascalCase for components, interfaces, types, and enums
+- Use camelCase for variables, functions, and props
+- Use UPPER_SNAKE_CASE for constants
+- Use descriptive names that indicate purpose
+
+## Code Organization
+
+### Imports
+- Group imports: external libraries, internal modules, types, relative imports
+- Use absolute imports when possible (configured in tsconfig.json)
+- Remove unused imports
+
+### Functions
+- Keep functions small (ideally < 20 lines)
+- Functions should do one thing well
+- Use pure functions when possible
+- Extract complex conditionals into named functions
+
+### Comments
+- Write self-documenting code that doesn't need comments
+- Use comments to explain "why", not "what"
+- Remove commented-out code
+- Use JSDoc for public APIs
+
+## Refactoring Guidelines
+
+When a file exceeds 300 lines:
+1. **Identify logical sections** - Group related functionality
+2. **Extract sub-components** - Move UI sections to separate components
+3. **Extract custom hooks** - Move stateful logic to hooks
+4. **Extract utility functions** - Move pure functions to utils
+5. **Split large components** - Break into smaller, composable pieces
+6. **Use composition** - Combine smaller components to build complex UIs
+
+## Example Refactoring Pattern
+
+**Before (monolithic component):**
+```typescript
+// Component.tsx - 500+ lines
+const Component = () => {
+  // 200 lines of state
+  // 100 lines of handlers
+  // 200 lines of JSX
+}
+```
+
+**After (refactored):**
+```typescript
+// Component.tsx - < 100 lines
+import { useComponentLogic } from '../hooks/useComponentLogic';
+import { ComponentHeader } from './ComponentHeader';
+import { ComponentBody } from './ComponentBody';
+import { ComponentFooter } from './ComponentFooter';
+
+const Component = () => {
+  const logic = useComponentLogic();
+  return (
+    <>
+      <ComponentHeader {...logic.headerProps} />
+      <ComponentBody {...logic.bodyProps} />
+      <ComponentFooter {...logic.footerProps} />
+    </>
+  );
+};
+```
+
+## Code Quality Checklist
+
+Before committing code, ensure:
+- [ ] File length ≤ 300 lines
+- [ ] Components are focused and single-purpose
+- [ ] Types are properly defined
+- [ ] No `any` types (unless absolutely necessary)
+- [ ] Custom hooks extracted to `/hooks`
+- [ ] Utility functions extracted to `/utils`
+- [ ] Sub-components extracted to `/components`
+- [ ] Code is readable without excessive comments
+- [ ] Functions are small and focused
+- [ ] No unused imports or variables
+
