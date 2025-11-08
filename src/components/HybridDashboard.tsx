@@ -62,6 +62,9 @@ import ExplainerVideoResultPage from './ExplainerVideoResultPage';
 // @ts-ignore - Temporary fix for webpack cache issue
 import ArcadePage from './ArcadePage';
 import MatchGame from './games/MatchGame';
+// @ts-ignore - Temporary fix for TypeScript cache issue
+import MyStudySets from './MyStudySets';
+import Materials from './Materials';
 import toast from 'react-hot-toast';
 
 // Set up PDF.js worker
@@ -79,8 +82,10 @@ const HybridDashboard: React.FC = () => {
     const [newSetName, setNewSetName] = useState('');
     const [newSetDescription, setNewSetDescription] = useState('');
     const [selectedStudySet, setSelectedStudySet] = useState<{ id: string, name: string, description: string, createdAt: string } | null>(null);
+    const [navigationStudySet, setNavigationStudySet] = useState<{ id: string, name: string, icon?: string } | null>(null);
     const [showStudySetDetail, setShowStudySetDetail] = useState(false);
     const [showMaterialViewer, setShowMaterialViewer] = useState(false);
+    const [showMaterials, setShowMaterials] = useState(false);
     const [showFlashcards, setShowFlashcards] = useState(false);
     const [showExplainerVideo, setShowExplainerVideo] = useState(false);
     const [showExplainerVideoResult, setShowExplainerVideoResult] = useState(false);
@@ -141,6 +146,7 @@ const HybridDashboard: React.FC = () => {
     const [testMaterialId, setTestMaterialId] = useState<string | null>(null);
     const [testMaterialName, setTestMaterialName] = useState<string | null>(null);
     const [citationMaterialId, setCitationMaterialId] = useState<string | null>(null);
+    const [cameFromMaterials, setCameFromMaterials] = useState(false);
     const [citationPage, setCitationPage] = useState<number | null>(null);
     const [showCitationModal, setShowCitationModal] = useState(false);
     const [citationPdfUrl, setCitationPdfUrl] = useState<string | null>(null);
@@ -199,7 +205,8 @@ const HybridDashboard: React.FC = () => {
 
     // Handle view material
     const handleViewMaterial = () => {
-        setShowMaterialViewer(true);
+        setShowMaterials(true);
+        setShowStudySetDetail(false);
     };
 
     // Handle open material from citation - Open in modal and load world text
@@ -1036,6 +1043,24 @@ const HybridDashboard: React.FC = () => {
         }
     }, [location.pathname, navigate]);
 
+    // Handle route changes for studyset
+    useEffect(() => {
+        const path = location.pathname;
+        if (path === '/dashboard/studyset' || path.startsWith('/dashboard/studyset')) {
+            setActiveSection('sets');
+            setShowFlashcards(false);
+            setShowMaterialViewer(false);
+            setShowStudySetDetail(false);
+            setShowPractice(false);
+            setShowExplainerVideo(false);
+            setShowArcade(false);
+            // Reload study sets when viewing
+            if (user?.id) {
+                loadStudySets();
+            }
+        }
+    }, [location.pathname, user?.id]);
+
     // Send chat message for review test
     const sendReviewChatMessage = async (message?: string) => {
         const messageToSend = message || chatMessage.trim();
@@ -1350,11 +1375,11 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
             icon: any;
             active?: boolean;
             admin?: boolean;
+            studySetId?: string;
         }> = [
                 { id: 'home', label: 'Trang chủ', icon: Home },
                 { id: 'sets', label: 'Bộ học của tôi', icon: Layers },
                 { id: 'calendar', label: 'Lịch', icon: Calendar },
-                { id: 'study', label: 'Bộ học đầu tiên...', icon: BookOpen },
                 { id: 'chat', label: 'Trò chuyện', icon: MessageCircle },
                 { id: 'lecture', label: 'Bài giảng trực tiếp', icon: Video },
                 { id: 'flashcards', label: 'Thẻ ghi nhớ', icon: CreditCard },
@@ -1366,6 +1391,17 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                 { id: 'audio', label: 'Tóm tắt âm thanh', icon: Volume2 },
                 { id: 'notes', label: 'Ghi chú & Tài liệu', icon: Notebook }
             ];
+
+        // Add current study set to navigation (only one, right after "Bộ học của tôi")
+        if (navigationStudySet) {
+            // Insert after "Bộ học của tôi" (index 1)
+            baseItems.splice(2, 0, {
+                id: `study-set-${navigationStudySet.id}`,
+                label: navigationStudySet.name,
+                icon: BookOpen, // Will be replaced with custom icon in render
+                studySetId: navigationStudySet.id
+            });
+        }
 
         // Add admin items if user is admin
         if (user?.role === 'admin') {
@@ -1384,6 +1420,45 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
     };
 
     const navigationItems = getNavigationItems();
+
+    // Add study set to navigation when clicked (only one at a time)
+    const addStudySetToNavigation = (studySet: { id: string, name: string, icon?: string }) => {
+        setNavigationStudySet({
+            id: studySet.id,
+            name: studySet.name,
+            icon: studySet.icon
+        });
+    };
+
+    // Generate random color for icon container based on study set ID (same as MyStudySets)
+    const getRandomIconColor = (id: string) => {
+        const colors = [
+            '#3b82f6', // Blue
+            '#10b981', // Green
+            '#f59e0b', // Amber
+            '#ef4444', // Red
+            '#8b5cf6', // Purple
+            '#ec4899', // Pink
+            '#06b6d4', // Cyan
+            '#f97316', // Orange
+            '#14b8a6', // Teal
+            '#6366f1', // Indigo
+        ];
+        // Use study set ID to get consistent color for same set
+        const index = parseInt(id) % colors.length;
+        return colors[index];
+    };
+
+    // Get icon component for study set (same as MyStudySets)
+    const getIconComponent = (iconName?: string) => {
+        const iconMap: { [key: string]: React.ReactNode } = {
+            'book': <FileText className="w-4 h-4" />,
+            'calculator': <FileText className="w-4 h-4" />,
+            'globe': <FileText className="w-4 h-4" />,
+            'hard-hat': <FileText className="w-4 h-4" />
+        };
+        return iconMap[iconName || 'book'] || <FileText className="w-4 h-4" />;
+    };
 
     const getIconColor = (itemId: string) => {
         const colorMap: { [key: string]: string } = {
@@ -1414,6 +1489,31 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
 
     const handleNavigation = (itemId: string) => {
         console.log('handleNavigation called with itemId:', itemId);
+
+        // Handle study set navigation items
+        if (itemId.startsWith('study-set-')) {
+            const studySetId = itemId.replace('study-set-', '');
+            const studySet = studySets.find(s => String(s.id) === studySetId);
+            if (studySet) {
+                setSelectedStudySet({
+                    id: studySet.id,
+                    name: studySet.name,
+                    description: (studySet as any).description || '',
+                    createdAt: (studySet as any).createdAt || new Date().toISOString()
+                });
+                setShowStudySetDetail(true);
+                setActiveSection('');
+                // Reset all other views
+                setShowFlashcards(false);
+                setShowMaterialViewer(false);
+                setShowMaterials(false);
+                setShowPractice(false);
+                setShowExplainerVideo(false);
+                setShowArcade(false);
+                return;
+            }
+        }
+
         // Các section đã được implement
         const implementedSections = ['home', 'admin', 'add-teacher', 'add-student', 'upload-file', 'ai-learning', 'progress', 'assignments'];
 
@@ -1441,12 +1541,22 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
 
             // Đặc biệt cho "Trang chủ": đảm bảo về dashboard chính
             if (itemId === 'home') {
-                // Reset tất cả các state liên quan đến test
+                // Reset tất cả các view và state
                 setShowReviewTest(false);
                 setShowTestView(false);
                 setShowCreateTest(false);
                 setShowMaterialSelection(false);
                 setShowTestTypeSelection(false);
+                setShowMaterials(false);
+                setShowStudySetDetail(false);
+                setShowMaterialViewer(false);
+                setShowFlashcards(false);
+                setShowPractice(false);
+                setShowExplainerVideo(false);
+                setShowExplainerVideoResult(false);
+                setShowExplainerVideoGenerating(false);
+                setShowArcade(false);
+                setShowGamePlay(false);
                 setTestQuestions([]);
                 setCurrentQuestionIndex(0);
                 setSelectedAnswers(new Map());
@@ -1536,6 +1646,21 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
             setShowExplainerVideo(false);
             setShowArcade(true);
             navigate('/dashboard/arcade');
+        } else if (itemId === 'sets') {
+            // Xử lý click vào "Bộ học của tôi"
+            setActiveSection('sets');
+            setShowFlashcards(false);
+            setShowMaterialViewer(false);
+            setShowStudySetDetail(false);
+            setShowPractice(false);
+            setShowExplainerVideo(false);
+            setShowArcade(false);
+            // Navigate to studyset route
+            navigate('/dashboard/studyset');
+            // Reload study sets when viewing
+            if (user?.id) {
+                loadStudySets();
+            }
         } else {
             console.log('Unknown itemId, showing toast:', itemId);
             toast.success('Sẽ sớm cập nhật!', {
@@ -3059,6 +3184,34 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
             );
         }
 
+        // Show My Study Sets if requested
+        if (activeSection === 'sets') {
+            return (
+                <MyStudySets
+                    userId={user?.id || '0'}
+                    onSelectStudySet={(set: { id: string; name: string; description?: string; createdAt: string; icon?: string }) => {
+                        setSelectedStudySet({
+                            id: set.id,
+                            name: set.name,
+                            description: set.description || '',
+                            createdAt: set.createdAt
+                        });
+                        // Add study set to navigation (only one at a time)
+                        addStudySetToNavigation({ id: set.id, name: set.name, icon: set.icon });
+                        setShowStudySetDetail(true);
+                        setActiveSection(''); // Clear active section to show StudySetDetail
+                    }}
+                    onCreateStudySet={() => {
+                        setShowAddSetModal(true);
+                    }}
+                    onCreateFolder={() => {
+                        // TODO: Implement create folder
+                        toast.success('Tính năng tạo folder sẽ sớm được cập nhật!');
+                    }}
+                />
+            );
+        }
+
         // Show Flashcards if requested
         if (showFlashcards && selectedStudySet) {
             return (
@@ -3071,6 +3224,28 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
             );
         }
 
+        // Show Materials page if requested
+        if (showMaterials && selectedStudySet) {
+            return (
+                <Materials
+                    studySetId={selectedStudySet.id}
+                    studySetName={selectedStudySet.name}
+                    onBack={() => {
+                        setShowMaterials(false);
+                        setShowStudySetDetail(true);
+                    }}
+                    isCollapsed={isCollapsed}
+                    onMaterialClick={(materialId) => {
+                        // Set the target material ID and open PDFViewerFixed
+                        setCitationMaterialId(materialId);
+                        setCameFromMaterials(true);
+                        setShowMaterials(false);
+                        setShowMaterialViewer(true);
+                    }}
+                />
+            );
+        }
+
         // Show StudySetDetail if study set was just created
         if (showMaterialViewer && selectedStudySet) {
             return (
@@ -3079,16 +3254,24 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                     studySetName={selectedStudySet.name}
                     onBack={() => {
                         setShowMaterialViewer(false);
-                        setActiveSection('home');
                         setCitationMaterialId(null);
                         setCitationPage(null);
-                        // Reload data when going back
-                        if (user?.id) {
-                            loadStudySets().then(() => {
-                                if (selectedStudySet?.id) {
-                                    loadHomeStats(selectedStudySet.id);
-                                }
-                            });
+
+                        // If came from Materials, go back to Materials
+                        if (cameFromMaterials) {
+                            setShowMaterials(true);
+                            setCameFromMaterials(false);
+                        } else {
+                            // Otherwise go to home
+                            setActiveSection('home');
+                            // Reload data when going back
+                            if (user?.id) {
+                                loadStudySets().then(() => {
+                                    if (selectedStudySet?.id) {
+                                        loadHomeStats(selectedStudySet.id);
+                                    }
+                                });
+                            }
                         }
                     }}
                     isCollapsed={isCollapsed}
@@ -3117,7 +3300,16 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                     studySet={selectedStudySet}
                     onBack={() => {
                         setShowStudySetDetail(false);
-                        setActiveSection('home');
+                        // Check if we came from 'sets' page, if so, go back to sets
+                        // Otherwise go to home
+                        const cameFromSets = location.pathname === '/dashboard/studyset' || activeSection === '';
+                        if (cameFromSets) {
+                            setActiveSection('sets');
+                            navigate('/dashboard/studyset');
+                        } else {
+                            setActiveSection('home');
+                            navigate('/dashboard');
+                        }
                         // Reload data when going back
                         if (user?.id) {
                             loadStudySets().then((reloadedSets) => {
@@ -3129,7 +3321,9 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                     const setToUse = foundSet || reloadedSets[0];
                                     if (setToUse) {
                                         setSelectedStudySet(setToUse);
-                                        loadHomeStats(setToUse.id);
+                                        if (!cameFromSets) {
+                                            loadHomeStats(setToUse.id);
+                                        }
                                     }
                                 }
                             });
@@ -3212,7 +3406,11 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                             studySets.map((set) => (
                                 <button
                                     key={set.id}
-                                    onClick={() => setSelectedStudySet(set)}
+                                    onClick={() => {
+                                        setSelectedStudySet(set);
+                                        // Add study set to navigation (only one at a time)
+                                        addStudySetToNavigation({ id: set.id, name: set.name, icon: (set as any).icon });
+                                    }}
                                     className={`flex items-center space-x-3 px-6 py-4 rounded-lg transition-colors shadow-sm ${selectedStudySet?.id === set.id
                                         ? 'bg-blue-100 border-2 border-blue-400 text-gray-900'
                                         : 'bg-white border-2 border-gray-200 text-gray-900 hover:border-blue-300 hover:bg-gray-50'
@@ -3421,11 +3619,15 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                             if (item.id === 'home') {
                                 // Home active khi: không có view nào đang mở (dashboard chính)
                                 // và không phải đang ở test/review test/practice
+                                // và không phải đang ở studyset
                                 isActive = !showFlashcards && !showMaterialViewer && !showStudySetDetail &&
                                     !showReviewTest && !showTestView && !showCreateTest &&
                                     !showMaterialSelection && !showTestTypeSelection && !showPractice &&
                                     !showExplainerVideo && !showExplainerVideoResult && !showExplainerVideoGenerating &&
-                                    !showArcade;
+                                    !showArcade && activeSection !== 'sets';
+                            } else if (item.id === 'sets') {
+                                // Sets active khi: activeSection là 'sets'
+                                isActive = activeSection === 'sets';
                             } else if (item.id === 'flashcards') {
                                 // Flashcards active khi: đang xem flashcards
                                 isActive = showFlashcards;
@@ -3440,25 +3642,52 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                             } else if (item.id === 'arcade') {
                                 // Arcade active khi: đang xem arcade page
                                 isActive = showArcade;
+                            } else if (item.id.startsWith('study-set-')) {
+                                // Study set active khi: đang xem StudySetDetail của study set đó
+                                const studySetId = item.id.replace('study-set-', '');
+                                isActive = showStudySetDetail && selectedStudySet?.id === studySetId;
                             } else {
                                 // Các nút khác active khi: đang ở section đó
                                 isActive = activeSection === item.id;
                             }
                             const isAdmin = item.admin;
 
+                            // Special rendering for study set items
+                            const isStudySetItem = item.id.startsWith('study-set-');
+                            const studySetIconColor = isStudySetItem && navigationStudySet
+                                ? getRandomIconColor(navigationStudySet.id)
+                                : null;
+
                             return (
                                 <li key={item.id}>
                                     <button
                                         onClick={(e) => handleNavigationClick(item.id, e)}
                                         className={`w-full flex items-center space-x-2 px-1.5 py-1 rounded-md text-left transition-all duration-200 text-sm transform hover:scale-105 active:scale-95 ${isActive
-                                            ? isDarkMode ? 'bg-blue-900 text-blue-400' : 'bg-blue-50 text-blue-600'
+                                            ? isDarkMode
+                                                ? 'bg-blue-900 text-blue-400'
+                                                : 'bg-blue-50'
                                             : isAdmin
                                                 ? isDarkMode ? 'text-orange-400 hover:bg-orange-900' : 'text-orange-600 hover:bg-orange-50'
                                                 : isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
                                             }`}
                                         title={isCollapsed ? item.label : undefined}
+                                        style={isActive && studySetIconColor ? {
+                                            backgroundColor: `${studySetIconColor}20`,
+                                            color: studySetIconColor
+                                        } : isActive && !studySetIconColor ? {
+                                            color: '#2563eb'
+                                        } : undefined}
                                     >
-                                        <Icon className={`${isCollapsed ? 'w-5 h-5' : 'w-4 h-4'} flex-shrink-0 ${getIconColor(item.id)}`} />
+                                        {isStudySetItem && navigationStudySet ? (
+                                            <div
+                                                className={`${isCollapsed ? 'w-5 h-5' : 'w-4 h-4'} rounded-full flex items-center justify-center flex-shrink-0`}
+                                                style={{ backgroundColor: studySetIconColor || '#3b82f6' }}
+                                            >
+                                                <FileText className="w-3 h-3 text-white" />
+                                            </div>
+                                        ) : (
+                                            <Icon className={`${isCollapsed ? 'w-5 h-5' : 'w-4 h-4'} flex-shrink-0 ${getIconColor(item.id)}`} />
+                                        )}
                                         {!isCollapsed && <span className="font-medium">{item.label}</span>}
                                     </button>
                                 </li>

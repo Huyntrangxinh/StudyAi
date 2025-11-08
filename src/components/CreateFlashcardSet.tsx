@@ -837,9 +837,9 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                         expandedPreviews={expandedPreviews}
                         onDragStart={handleDragStart}
                         onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
+                                    onDragLeave={handleDragLeave}
                         onDrop={handleDrop}
-                        onDragEnd={handleDragEnd}
+                                    onDragEnd={handleDragEnd}
                         onDeleteFlashcard={deleteFlashcard}
                         onStartEdit={startEdit}
                         onCancelEdit={cancelEdit}
@@ -847,14 +847,14 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                             const cardToEdit = flashcards.find(c => c.id === cardId);
                             if (!cardToEdit || !cardToEdit.dbId) {
                                 // Nếu không có dbId, chỉ update state (card chưa được lưu vào DB)
-                                setFlashcards(prev => prev.map(card =>
+                                                                setFlashcards(prev => prev.map(card =>
                                     card.id === cardId
                                         ? { ...card, term: term.trim(), definition: definition.trim() }
-                                        : card
-                                ));
-                                setEditingCardId(null);
-                                setEditTerm('');
-                                setEditDefinition('');
+                                                                        : card
+                                                                ));
+                                                                setEditingCardId(null);
+                                                                setEditTerm('');
+                                                                setEditDefinition('');
                                 return;
                             }
 
@@ -970,30 +970,30 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                         onBack={onBack}
                         onContinue={handleContinue}
                         onStudyNow={async () => {
-                            const cardsToSave: Card[] = [
-                                ...flashcards,
-                                ...(termText.trim() && definitionText.trim()
-                                    ? [{
-                                        id: `tmp-${Date.now()}`,
-                                        term: termText.trim(),
-                                        definition: definitionText.trim(),
-                                        termImage: termImage || '',
-                                        definitionImage: definitionImage || '',
-                                        saved: false
-                                    }]
-                                    : [])
-                            ];
-                            setTermText('');
-                            setDefinitionText('');
-                            setTermImage('');
-                            setDefinitionImage('');
-                            setFlashcards(cardsToSave);
-                            const results = await saveAllFlashcards(cardsToSave);
-                            if (results.length > 0) setShowStudyMode(true);
-                        }}
+                                    const cardsToSave: Card[] = [
+                                        ...flashcards,
+                                        ...(termText.trim() && definitionText.trim()
+                                            ? [{
+                                                id: `tmp-${Date.now()}`,
+                                                term: termText.trim(),
+                                                definition: definitionText.trim(),
+                                                termImage: termImage || '',
+                                                definitionImage: definitionImage || '',
+                                                saved: false
+                                            }]
+                                            : [])
+                                    ];
+                                    setTermText('');
+                                    setDefinitionText('');
+                                    setTermImage('');
+                                    setDefinitionImage('');
+                                    setFlashcards(cardsToSave);
+                                    const results = await saveAllFlashcards(cardsToSave);
+                                    if (results.length > 0) setShowStudyMode(true);
+                                }}
                         selectedOption={selectedOption}
                     />
-                </div>
+                        </div>
             </div>
         </div>
     );

@@ -121,9 +121,10 @@ const StudySetDetail: React.FC<StudySetDetailProps> = ({ studySet, onBack, onVie
                     <div className="flex items-center space-x-3">
                         <button
                             onClick={onBack}
-                            className="flex items-center justify-center w-10 h-10 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                            className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-gray-100 transition-colors"
+                            title="Quay lại"
                         >
-                            <ArrowLeft className="w-6 h-6" />
+                            <ArrowLeft className="w-5 h-5 text-gray-700" />
                         </button>
                         <div className="w-12 h-12 bg-orange-200 rounded-lg flex items-center justify-center">
                             <div className="flex flex-wrap w-6 h-6">
@@ -173,71 +174,6 @@ const StudySetDetail: React.FC<StudySetDetailProps> = ({ studySet, onBack, onVie
                         </div>
                     ))}
                 </div>
-
-                {/* Materials List */}
-                {materials.length > 0 && (
-                    <div className="mb-8">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Danh sách tài liệu ({materials.length})</h3>
-                        <div className="bg-white rounded-lg shadow-sm border">
-                            <div className="divide-y divide-gray-200">
-                                {materials.map((material, index) => (
-                                    <div key={material.id} className="p-4 flex items-center justify-between">
-                                        <div className="flex items-center space-x-3">
-                                            <FileText className="w-5 h-5 text-blue-500" />
-                                            <div>
-                                                <p className="text-sm font-medium text-gray-900">{material.name}</p>
-                                                <p className="text-xs text-gray-500">
-                                                    {(material.size / 1024 / 1024).toFixed(2)} MB •
-                                                    {new Date(material.created_at).toLocaleDateString('vi-VN')}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center space-x-3">
-                                            <button
-                                                onClick={async () => {
-                                                    const newName = window.prompt('Nhập tên mới cho tài liệu', material.name);
-                                                    if (!newName || newName.trim() === '' || newName === material.name) return;
-                                                    try {
-                                                        const resp = await fetch(`http://localhost:3001/api/materials/${material.id}`, {
-                                                            method: 'PUT',
-                                                            headers: { 'Content-Type': 'application/json' },
-                                                            body: JSON.stringify({ name: newName.trim() })
-                                                        });
-                                                        if (!resp.ok) throw new Error('Rename failed');
-                                                        await loadStats();
-                                                    } catch (e) {
-                                                        console.error('Rename material error:', e);
-                                                        alert('Đổi tên thất bại');
-                                                    }
-                                                }}
-                                                className="text-sm px-3 py-1 rounded border border-gray-300 hover:bg-gray-50"
-                                            >
-                                                Đổi tên
-                                            </button>
-                                            <button
-                                                onClick={async () => {
-                                                    if (!window.confirm('Xóa tài liệu này?')) return;
-                                                    try {
-                                                        const resp = await fetch(`http://localhost:3001/api/materials/${material.id}`, { method: 'DELETE' });
-                                                        if (!resp.ok) throw new Error('Delete failed');
-                                                        await loadStats();
-                                                    } catch (e) {
-                                                        console.error('Delete material error:', e);
-                                                        alert('Xóa thất bại');
-                                                    }
-                                                }}
-                                                className="text-sm px-3 py-1 rounded border border-red-300 text-red-600 hover:bg-red-50"
-                                            >
-                                                Xóa
-                                            </button>
-                                            <div className="text-xs text-gray-400">#{index + 1}</div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* Main Content */}

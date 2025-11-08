@@ -40,6 +40,17 @@ interface StudyFlashcardsProps {
 }
 
 const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, isCollapsed, flashcardName, studySetId }) => {
+    // Test log - should appear immediately
+    console.log('🔊 [STUDY] ========== StudyFlashcards COMPONENT RENDERED ==========');
+    console.log('🔊 [STUDY] Props:', {
+        flashcardsLength: flashcards?.length,
+        isCollapsed,
+        flashcardName,
+        studySetId
+    });
+    console.warn('⚠️ [STUDY] TEST WARN LOG - If you see this, component is rendering');
+    console.error('❌ [STUDY] TEST ERROR LOG - If you see this, component is rendering');
+
     const [audioEnabled, setAudioEnabled] = useState<boolean>(() => {
         try { return localStorage.getItem('ttsEnabled') === '1'; } catch { return false; }
     });
@@ -77,6 +88,7 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
         checkMultipleChoiceAnswer
     } = studyState;
 
+
     const navigation = useCardNavigation({
         flashcardsLength: flashcards.length,
         isSliding,
@@ -94,9 +106,10 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
     const resize = useSidebarResize({ isCollapsed, showAiSidebar });
     const { sidebarWidth, setSidebarWidth, isResizing, setIsResizing, cardMaxWidth } = resize;
 
-    const currentCard = flashcards[currentCardIndex];
+        const currentCard = flashcards[currentCardIndex];
 
     const { speakText, unlockTTS, hasUserInteracted } = useTextToSpeech();
+
 
     const aiChat = useAIChat({ currentCard, studySetId });
     const {
@@ -112,25 +125,48 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
         setShowCorrectAnswer(true);
     };
 
-    // Auto speak when moving to a new card (front side)
+    // Auto speak when moving to a new card (chỉ đọc term khi card xuất hiện lần đầu)
     useEffect(() => {
-        if (!audioEnabled) return;
-        if (!currentCard) return;
-        if (isFlipped) return;
+        console.log('🔊 [STUDY] Auto-speak effect triggered (new card)');
+        console.log('🔊 [STUDY] Conditions:', {
+            audioEnabled,
+            hasCurrentCard: !!currentCard,
+            hasUserInteracted,
+            currentCardIndex
+        });
+
+        if (!audioEnabled) {
+            console.log('⏭️ [STUDY] Skipping TTS - audio disabled');
+            return;
+        }
+        if (!currentCard) {
+            console.log('⏭️ [STUDY] Skipping TTS - no current card');
+            return;
+        }
         if (!hasUserInteracted) {
-            console.log('Waiting for user interaction before TTS');
+            console.log('⏳ [STUDY] Waiting for user interaction before TTS');
             return;
         }
 
+        // Chỉ đọc term khi card xuất hiện (không phụ thuộc vào isFlipped)
         const term = currentCard.term?.toString().trim();
         if (term) {
+            console.log('🔊 [STUDY] Scheduling TTS for term (new card):', term.substring(0, 50));
             const timer = setTimeout(() => {
+                console.log('🔊 [STUDY] ========== Calling speakText for TERM ==========');
+                console.log('🔊 [STUDY] Term:', term);
                 speakText(term);
+                console.log('🔊 [STUDY] speakText called for term');
             }, 400);
-            return () => clearTimeout(timer);
+            return () => {
+                console.log('🔊 [STUDY] Cleaning up term TTS timer');
+                clearTimeout(timer);
+            };
+        } else {
+            console.log('⏭️ [STUDY] No term to speak');
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentCardIndex, audioEnabled, isFlipped, hasUserInteracted]);
+    }, [currentCardIndex, audioEnabled, hasUserInteracted]);
 
 
     const shuffleCards = () => {
@@ -165,9 +201,16 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
         setShowHint(false);
     }, [showAiSidebar]);
 
+    console.error('🔊 [STUDY] Checking render conditions...');
+    console.error('🔊 [STUDY] currentCard:', !!currentCard);
+    console.error('🔊 [STUDY] flashcards.length:', flashcards.length);
+
     if (!currentCard || flashcards.length === 0) {
+        console.error('⏭️ [STUDY] Rendering EmptyState - no cards available');
         return <EmptyState flashcardsLength={flashcards.length} onBack={onBack} isCollapsed={isCollapsed} />;
     }
+
+    console.error('✅ [STUDY] Rendering main StudyFlashcards UI');
 
     return (
         <>
@@ -220,22 +263,44 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
                             sidebarWidth={sidebarWidth}
                             onShuffle={shuffleCards}
                             onToggleAudio={() => {
-                                const v = !audioEnabled;
-                                setAudioEnabled(v);
+                                        const v = !audioEnabled;
+                                        setAudioEnabled(v);
                                 try { localStorage.setItem('ttsEnabled', v ? '1' : '0'); } catch { }
-                                if (v) {
-                                    unlockTTS();
-                                }
-                                if (v && currentCard && !isFlipped) {
-                                    setTimeout(() => {
-                                        const term = currentCard.term?.toString().trim();
-                                        if (term) speakText(term);
-                                    }, 300);
-                                }
-                            }}
+                                        if (v) {
+                                            unlockTTS();
+                                        }
+                                        if (v && currentCard && !isFlipped) {
+                                            setTimeout(() => {
+                                                const term = currentCard.term?.toString().trim();
+                                                if (term) speakText(term);
+                                            }, 300);
+                                        }
+                                    }}
                             onReplayAudio={() => {
-                                const term = currentCard?.term?.toString().trim();
-                                if (term) speakText(term);
+                                console.log('🔊 [STUDY] ========== Replay Audio Button Clicked ==========');
+                                console.log('🔊 [STUDY] Card state:', { isFlipped, hasCurrentCard: !!currentCard });
+
+                                if (isFlipped) {
+                                    // Đọc definition khi đã lật
+                                    const definition = currentCard?.definition?.toString().trim();
+                                    console.log('🔊 [STUDY] Replaying DEFINITION:', definition?.substring(0, 50));
+                                    if (definition) {
+                                        speakText(definition);
+                                        console.log('🔊 [STUDY] speakText called for definition (replay)');
+                                    } else {
+                                        console.log('⏭️ [STUDY] No definition to replay');
+                                    }
+                                } else {
+                                    // Đọc term khi chưa lật
+                                    const term = currentCard?.term?.toString().trim();
+                                    console.log('🔊 [STUDY] Replaying TERM:', term?.substring(0, 50));
+                                    if (term) {
+                                        speakText(term);
+                                        console.log('🔊 [STUDY] speakText called for term (replay)');
+                                    } else {
+                                        console.log('⏭️ [STUDY] No term to replay');
+                                    }
+                                }
                             }}
                             onToggleBookmark={toggleBookmark}
                             onFlip={flipCard}
@@ -244,7 +309,7 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
 
                     <ResizableDivider
                         showAiSidebar={showAiSidebar}
-                        onMouseDown={() => setIsResizing(true)}
+                            onMouseDown={() => setIsResizing(true)}
                     />
 
                     <AISidebar
@@ -259,9 +324,9 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
                         onSetChatMessage={setChatMessage}
                         onSendChatMessage={sendChatMessage}
                         onHandleAISubmit={handleAISubmit}
-                        onKeyPress={handleKeyPress}
-                    />
-                </div>
+                                            onKeyPress={handleKeyPress}
+                                        />
+                                    </div>
                 <FloatingChatToggle
                     showAiSidebar={showAiSidebar}
                     showHint={showHint}

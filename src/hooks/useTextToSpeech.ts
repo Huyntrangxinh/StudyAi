@@ -1,205 +1,101 @@
 import { useRef, useEffect, useState } from 'react';
+import { ttsService } from '../services/ttsService';
 
 export const useTextToSpeech = () => {
-    const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+    const currentAudioRef = useRef<HTMLAudioElement | null>(null);
     const isSpeakingRef = useRef<boolean>(false);
     const [hasUserInteracted, setHasUserInteracted] = useState(false);
 
     // Unlock TTS sau user gesture (một lần duy nhất)
+    // Với Google Cloud TTS, không cần unlock như Web Speech API
     const unlockTTS = () => {
-        if (typeof window === 'undefined') {
-            console.log('unlockTTS: window not available');
-            return;
-        }
-        const synth = (window as any).speechSynthesis as SpeechSynthesis | undefined;
-        if (!synth) {
-            console.log('unlockTTS: speechSynthesis not available');
-            return;
-        }
-
-        console.log('🔄 unlockTTS called - attempting to unlock TTS...');
-        try {
-            synth.resume();
-            console.log('✅ synth.resume() called');
-
-            const u = new SpeechSynthesisUtterance(' ');
-            u.volume = 0.01;
-            u.onend = () => console.log('✅ TTS unlocked (warm-up utterance finished)');
-            u.onerror = (e) => {
-                console.warn('unlockTTS warm-up error (ignored):', e.error);
-            };
-            synth.speak(u);
-            console.log('✅ unlockTTS warm-up utterance sent');
-        } catch (e) {
-            console.warn('unlockTTS error', e);
-        }
+        console.log('🔄 unlockTTS called - Google Cloud TTS does not require unlock');
+        setHasUserInteracted(true);
     };
 
-    // Speak helper using Web Speech API
-    const speakText = async (text: string) => {
-        if (typeof window === 'undefined') {
-            console.warn('Window not available for TTS');
-            return;
-        }
+    // Speak helper using Google Cloud Gemini-TTS API
+    const speakText = async (text: string, language: string = 'en-US') => {
+        console.log('🔊 [TTS] ========== speakText START ==========');
+        console.log('🔊 [TTS] Input text:', text);
+        console.log('🔊 [TTS] Language:', language);
 
-        const synth = (window as any).speechSynthesis as SpeechSynthesis | undefined;
-        if (!synth) {
-            console.warn('SpeechSynthesis not supported in this browser');
-            alert('Trình duyệt của bạn không hỗ trợ đọc văn bản. Vui lòng dùng Chrome, Edge, hoặc Safari.');
+        if (typeof window === 'undefined') {
+            console.warn('❌ [TTS] Window not available for TTS');
             return;
         }
 
         try {
-            await new Promise<void>(resolve => {
-                const v = synth.getVoices();
-                if (v.length) return resolve();
-                const h = () => {
-                    if (synth.getVoices().length) {
-                        synth.onvoiceschanged = null;
-                        resolve();
-                    }
-                };
-                synth.onvoiceschanged = h;
-                setTimeout(() => {
-                    synth.onvoiceschanged = null;
-                    resolve();
-                }, 2000);
-            });
-
-            if (synth.speaking && !synth.pending && currentUtteranceRef.current) {
-                synth.cancel();
-                await new Promise(r => setTimeout(r, 120));
+            // Stop current audio if playing
+            if (currentAudioRef.current) {
+                console.log('🛑 [TTS] Stopping current audio...');
+                currentAudioRef.current.pause();
+                currentAudioRef.current.currentTime = 0;
+                currentAudioRef.current = null;
+                isSpeakingRef.current = false;
+                await new Promise(r => setTimeout(r, 100));
             }
 
-            try {
-                synth.resume();
-            } catch { }
+            // Detect language from text (simple heuristic)
+            let detectedLanguage = language;
+            if (!language || language === 'auto') {
+                // Simple detection: if text contains Vietnamese characters, use vi-VN
+                const hasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text);
+                detectedLanguage = hasVietnamese ? 'vi-VN' : 'en-US';
+                console.log('🔊 [TTS] Auto-detected language:', detectedLanguage);
+            }
 
-            const utter = new SpeechSynthesisUtterance(text);
-            utter.rate = 1.0;
-            utter.pitch = 1.0;
-            utter.volume = 1.0;
-            utter.lang = 'en-US';
-
-            const voices = synth.getVoices();
-            const chooseVoice = () => {
-                const pref = ['Google US English', 'Google UK English Male', 'Samantha', 'Alex'];
-                for (const n of pref) {
-                    const v = voices.find(vo => vo.name.includes(n));
-                    if (v) return v;
-                }
-                return voices.find(v => v.lang?.startsWith('en-US'))
-                    || voices.find(v => v.default)
-                    || voices[0]
-                    || null;
-            };
-            const voice = chooseVoice();
-            if (voice) {
-                utter.voice = voice;
-                console.log('Using voice:', voice.name, voice.lang);
+            // Choose voice based on language
+            let voiceName: string | undefined;
+            if (detectedLanguage.startsWith('vi')) {
+                voiceName = 'vi-VN-Wavenet-A'; // Vietnamese voice
             } else {
-                console.warn('No voice picked, may be silent on some browsers');
+                voiceName = 'Kore'; // Gemini-TTS English voice
             }
 
-            currentUtteranceRef.current = utter;
+            console.log('🔊 [TTS] Calling TTS service...');
+            const audio = await ttsService.speak(text, detectedLanguage, voiceName);
 
-            utter.onstart = () => {
-                console.log('🎤 Speech started:', text.substring(0, 50));
-                isSpeakingRef.current = true;
+            currentAudioRef.current = audio;
+            isSpeakingRef.current = true;
+
+            audio.onplay = () => {
+                console.log('🎤 [TTS] ========== Speech STARTED ==========');
+                console.log('🎤 [TTS] Text being spoken:', text.substring(0, 50));
             };
-            utter.onend = () => {
-                console.log('✅ Speech finished successfully');
+
+            audio.onended = () => {
+                console.log('✅ [TTS] ========== Speech FINISHED ==========');
+                console.log('✅ [TTS] Text completed:', text.substring(0, 50));
                 isSpeakingRef.current = false;
-                currentUtteranceRef.current = null;
+                currentAudioRef.current = null;
             };
-            utter.onerror = (e) => {
-                const errorType = (e.error as string);
-                console.error('TTS error event:', {
-                    error: e.error,
-                    type: e.type,
-                    errorType: errorType,
-                    text: text.substring(0, 30)
-                });
-                if (errorType !== 'canceled') {
-                    console.error('TTS error', e);
-                }
+
+            audio.onerror = (e) => {
+                console.error('❌ [TTS] ========== Speech ERROR ==========');
+                console.error('❌ [TTS] Audio error:', e);
                 isSpeakingRef.current = false;
-                currentUtteranceRef.current = null;
+                currentAudioRef.current = null;
             };
 
-            console.log('Synth status before speak:', {
-                speaking: synth.speaking,
-                pending: synth.pending,
-                paused: synth.paused
-            });
+            audio.onpause = () => {
+                console.log('⏸️ [TTS] Audio paused');
+            };
 
-            synth.speak(utter);
-            console.log('✅ synth.speak() called for:', text.substring(0, 50));
-
-            console.log('Synth status after speak:', {
-                speaking: synth.speaking,
-                pending: synth.pending,
-                paused: synth.paused
-            });
-
-            setTimeout(() => {
-                console.log('Checking speech status after 700ms:', {
-                    isSpeakingRef: isSpeakingRef.current,
-                    synthSpeaking: synth.speaking,
-                    synthPending: synth.pending,
-                    synthPaused: synth.paused
-                });
-                if (!isSpeakingRef.current && !synth.speaking) {
-                    console.warn('No speech yet; calling resume()');
-                    try {
-                        synth.resume();
-                        console.log('resume() called, checking again...');
-                        setTimeout(() => {
-                            console.log('Status after resume():', {
-                                speaking: synth.speaking,
-                                pending: synth.pending,
-                                paused: synth.paused
-                            });
-                        }, 200);
-                    } catch (e) {
-                        console.error('resume() failed:', e);
-                    }
-                }
-            }, 700);
+            console.log('✅ [TTS] Audio element created and playing');
 
         } catch (err: any) {
-            console.error('❌ Error in speakText:', err);
-            currentUtteranceRef.current = null;
+            console.error('❌ [TTS] ========== speakText ERROR ==========');
+            console.error('❌ [TTS] Error:', err);
+            console.error('❌ [TTS] Error message:', err?.message);
             isSpeakingRef.current = false;
+            currentAudioRef.current = null;
         }
+        console.log('🔊 [TTS] ========== speakText END ==========');
     };
 
-    // Preload voices ngay khi component mount
+    // Google Cloud TTS không cần preload voices như Web Speech API
     useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const synth = (window as any).speechSynthesis as SpeechSynthesis | undefined;
-        if (!synth) return;
-
-        const loadVoicesNow = () => {
-            try {
-                const voices = synth.getVoices();
-                console.log('Voices loaded on mount:', voices.length);
-                if (voices.length > 0) {
-                    console.log('Sample voices:', voices.slice(0, 3).map(v => `${v.name} (${v.lang})`));
-                }
-            } catch (e) {
-                console.error('Error loading voices:', e);
-            }
-        };
-
-        loadVoicesNow();
-        synth.onvoiceschanged = loadVoicesNow;
-        const timer = setTimeout(loadVoicesNow, 1000);
-
-        return () => {
-            synth.onvoiceschanged = null;
-            clearTimeout(timer);
-        };
+        console.log('✅ [TTS] useTextToSpeech hook initialized with Google Cloud TTS');
     }, []);
 
     // Unlock TTS sau user gesture

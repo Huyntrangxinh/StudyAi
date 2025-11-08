@@ -27,6 +27,7 @@ import videosRouter from "./routes/videos";
 import audioRouter from "./routes/audio";
 import slideshowRouter from "./routes/slideshow";
 import gamesRouter from "./routes/games";
+import ttsRouter from "./routes/tts";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -71,6 +72,7 @@ app.use('/api/videos', videosRouter);
 app.use('/api/audio', audioRouter);
 app.use('/api/explainers', slideshowRouter);
 app.use('/api/games', gamesRouter);
+app.use('/api/tts', ttsRouter);
 
 // Ensure uploads directory exists
 // Align with routes that write to server/uploads (from server/src/routes -> ../../uploads resolves to server/uploads)
