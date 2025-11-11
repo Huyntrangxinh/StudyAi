@@ -186,6 +186,85 @@ router.post('/', (req, res) => {
     );
 });
 
+// PUT /api/study-sets/:id - Update study set (rename, etc.)
+router.put('/:id', (req, res) => {
+    const { id } = req.params;
+    const { name, description, color, icon, userId } = req.body;
+
+    if (!userId) {
+        return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    const fields: string[] = [];
+    const values: Array<string> = [];
+
+    if (typeof name === 'string') {
+        fields.push('name = ?');
+        values.push(name);
+    }
+    if (typeof description === 'string') {
+        fields.push('description = ?');
+        values.push(description);
+    }
+    if (typeof color === 'string') {
+        fields.push('color = ?');
+        values.push(color);
+    }
+    if (typeof icon === 'string') {
+        fields.push('icon = ?');
+        values.push(icon);
+    }
+
+    if (fields.length === 0) {
+        return res.status(400).json({ error: 'No valid fields provided for update' });
+    }
+
+    fields.push('updated_at = ?');
+    values.push(new Date().toISOString());
+    values.push(id);
+    values.push(String(userId));
+
+    const sql = `UPDATE study_sets SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`;
+    const db = new Database(dbPath);
+
+    db.run(sql, values, function (err) {
+        if (err) {
+            console.error('Error updating study set:', err);
+            db.close();
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+
+        if (this.changes === 0) {
+            db.close();
+            return res.status(404).json({ error: 'Study set not found' });
+        }
+
+        db.get(
+            'SELECT * FROM study_sets WHERE id = ?',
+            [id],
+            (getErr, row: any) => {
+                db.close();
+                if (getErr || !row) {
+                    if (getErr) {
+                        console.error('Error fetching updated study set:', getErr);
+                    }
+                    return res.json({ id, name, description, color, icon });
+                }
+
+                res.json({
+                    id: row.id,
+                    name: row.name,
+                    description: row.description || '',
+                    color: row.color,
+                    icon: row.icon,
+                    createdAt: row.created_at,
+                    updatedAt: row.updated_at
+                });
+            }
+        );
+    });
+});
+
 // DELETE /api/study-sets/:id - Delete a study set
 router.delete('/:id', (req, res) => {
     const { id } = req.params;

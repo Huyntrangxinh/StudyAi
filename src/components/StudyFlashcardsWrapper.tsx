@@ -17,6 +17,7 @@ interface StudyFlashcardsWrapperProps {
     isCollapsed: boolean;
     flashcardName?: string;
     studySetId?: string;
+    flashcardSetId?: number;
 }
 
 const StudyFlashcardsWrapper: React.FC<StudyFlashcardsWrapperProps> = (props) => {

@@ -70,7 +70,7 @@ export const CardFlipContainer: React.FC<CardFlipContainerProps> = ({
         >
             {/* Front */}
             <div
-                className="absolute inset-0 bg-white rounded-2xl shadow-xl p-8 flex flex-col items-center text-center cursor-pointer overflow-y-auto scrollbar-hover"
+                className="absolute inset-0 bg-white rounded-2xl border border-gray-200 shadow-xl p-8 flex flex-col items-center text-center cursor-pointer overflow-y-auto scrollbar-hover"
                 style={{ backfaceVisibility: 'hidden', justifyContent: isMultipleChoiceCard(currentCard) ? 'flex-start' : 'center' }}
             >
                 {isFillBlankCard(currentCard) && (
@@ -88,11 +88,15 @@ export const CardFlipContainer: React.FC<CardFlipContainerProps> = ({
                 )}
 
                 <button
-                    onClick={(e) => { e.stopPropagation(); onToggleBookmark(); }}
-                    className={`absolute top-3 right-3 p-2 rounded-full transition-colors ${bookmarkedCards.has(currentCard.id) ? 'text-yellow-500 bg-yellow-50' : 'text-gray-400 hover:text-yellow-500'}`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        console.log('⭐ [CARD FRONT] Star clicked, card id:', currentCard.id, 'type:', typeof currentCard.id);
+                        onToggleBookmark();
+                    }}
+                    className="absolute top-3 right-3 p-2 rounded-full transition-colors text-gray-400 hover:text-yellow-500"
                     aria-label="bookmark"
                 >
-                    <Star className="w-5 h-5" />
+                    <Star className={`w-5 h-5 ${bookmarkedCards.has(String(currentCard.id)) ? 'fill-yellow-500 text-yellow-500' : ''}`} />
                 </button>
 
                 {isFillBlankCard(currentCard) ? (
@@ -125,18 +129,22 @@ export const CardFlipContainer: React.FC<CardFlipContainerProps> = ({
 
             {/* Back */}
             <div
-                className="absolute inset-0 bg-white rounded-2xl shadow-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer overflow-y-auto scrollbar-hover"
+                className="absolute inset-0 bg-white rounded-2xl border border-gray-200 shadow-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer overflow-y-auto scrollbar-hover"
                 style={{
                     backfaceVisibility: 'hidden',
                     transform: 'rotateX(180deg)'
                 }}
             >
                 <button
-                    onClick={(e) => { e.stopPropagation(); onToggleBookmark(); }}
-                    className={`absolute top-3 right-3 p-2 rounded-full transition-colors ${bookmarkedCards.has(currentCard.id) ? 'text-yellow-500 bg-yellow-50' : 'text-gray-400 hover:text-yellow-500'}`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        console.log('⭐ [CARD BACK] Star clicked, card id:', currentCard.id);
+                        onToggleBookmark();
+                    }}
+                    className="absolute top-3 right-3 p-2 rounded-full transition-colors text-gray-400 hover:text-yellow-500"
                     aria-label="bookmark"
                 >
-                    <Star className="w-5 h-5" />
+                    <Star className={`w-5 h-5 ${bookmarkedCards.has(String(currentCard.id)) ? 'fill-yellow-500 text-yellow-500' : ''}`} />
                 </button>
                 {isMultipleChoiceCard(currentCard) ? (
                     <div className="w-full">

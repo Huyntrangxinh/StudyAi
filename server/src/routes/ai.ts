@@ -11,11 +11,12 @@ const router = express.Router();
 const config = require('../../config.js');
 
 const MODEL = config.OPENAI_MODEL || 'gpt-4o-mini';
-const MAX_SOURCE_CHARS = 32000;          // ✅ tăng từ 18000
-const CHUNK_SIZE = 1500;                  // ✅ tăng từ 1200
-const CHUNK_OVERLAP = 200;                // ✅ tăng từ 150
-const TOP_K = 15;                         // ✅ tăng từ 6
+const MAX_SOURCE_CHARS = 12000;          // ✅ Giảm từ 32000 để tránh timeout
+const CHUNK_SIZE = 1000;                 // ✅ Giảm từ 1500 để nhanh hơn
+const CHUNK_OVERLAP = 150;                // ✅ Giảm từ 200
+const TOP_K = 8;                          // ✅ Giảm từ 15 để giảm prompt size
 const USE_EMBEDDINGS = true;              // ✅ bật semantic search
+const AI_TIMEOUT = 45000;                 // ✅ Tăng từ 15000 lên 45000 (45s)
 
 const openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
 
@@ -30,6 +31,47 @@ const PDF_CACHE_TTL = 3600000; // 1 giờ
 const chunksCache = new Map<string, { text: string; page: number }[]>();
 
 /* -------------------- PDF utils -------------------- */
+
+// ✅ Quick extractive summary function for fallback
+function quickExtractiveSummary(text: string, maxSentences = 5): string {
+    // Tách câu đơn giản (đủ dùng tiếng Việt)
+    const sentences = text
+        .replace(/\s+/g, ' ')
+        .split(/(?<=[\.\?\!…])\s+/)
+        .filter(s => s && s.length > 40);
+
+    // Ưu tiên câu có từ khóa "định nghĩa", "gồm", "bao gồm", "phân loại", "cách", "bước"
+    const keywords = ['định nghĩa', 'gồm', 'bao gồm', 'phân loại', 'cách', 'bước', 'ví dụ', 'tác hại', 'hoạt động', 'nguyên nhân', 'hậu quả', 'đặc điểm', 'chức năng'];
+
+    const scored = sentences.map(s => ({
+        s,
+        score: keywords.reduce((acc, k) => acc + (s.toLowerCase().includes(k) ? 1 : 0), 0) + Math.min(3, Math.floor(s.length / 80))
+    }));
+
+    return scored
+        .sort((a, b) => b.score - a.score)
+        .slice(0, maxSentences)
+        .map(x => `- ${x.s}`)
+        .join('\n');
+}
+
+// ✅ Safe JSON parsing with fallback
+function safeParseJsonBlock(s: string): any {
+    try {
+        return JSON.parse(s);
+    } catch {
+        // Try to extract JSON object from string
+        const m = s.match(/\{[\s\S]*\}/);
+        if (m) {
+            try {
+                return JSON.parse(m[0]);
+            } catch {
+                // Return null if still fails
+            }
+        }
+        return null;
+    }
+}
 
 function splitPages(text: string): string[] {
     const pages = text.split(/\f/g);
@@ -407,11 +449,186 @@ async function humanizeMarkdown(userName: string, mdText: string) {
     return completion.choices[0]?.message?.content?.trim() || mdText;
 }
 
+/* -------------------- Web Search -------------------- */
+
+// Google Custom Search API configuration
+const GOOGLE_API_KEY = 'AIzaSyAZUBz_XwWGTEcU2gznml2Fx3ac4AssY8w';
+// Search Engine ID from config (loaded from .env)
+const SEARCH_ENGINE_ID = config.SEARCH_ENGINE_ID || '820473ad04dab4ac3';
+
+interface WebSearchResult {
+    title: string;
+    link: string;
+    snippet: string;
+    displayLink: string;
+}
+
+// Detect when web search is needed
+function needsWebSearch(message: string, topChunks: any[]): boolean {
+    const searchKeywords = [
+        'lịch sử', 'history', 'hình thành', 'phát triển',
+        'ra đời', 'xuất hiện', 'năm nào', 'khi nào',
+        'thông tin mới', 'cập nhật', 'hiện tại', 'mới nhất',
+        'tìm trên web', 'search web', 'tìm kiếm web'
+    ];
+
+    const hasSearchKeyword = searchKeywords.some(keyword =>
+        message.toLowerCase().includes(keyword)
+    );
+
+    // If has keyword OR if we don't have enough relevant chunks
+    return hasSearchKeyword || topChunks.length < 3;
+}
+
+// Perform web search using Google Custom Search API
+async function performWebSearch(query: string): Promise<WebSearchResult[]> {
+    if (!GOOGLE_API_KEY || !SEARCH_ENGINE_ID) {
+        console.warn('⚠️ Web search not configured: Missing API key or Search Engine ID');
+        return [];
+    }
+
+    try {
+        // Force AI-related context to the query to avoid off-topic results
+        const AI_KEYWORDS = [
+            'AI', 'trí tuệ nhân tạo', 'artificial intelligence',
+            'machine learning', 'deep learning', 'gen ai', 'generative ai'
+        ];
+        const hasAiInQuery = AI_KEYWORDS.some(k => query.toLowerCase().includes(k.toLowerCase()));
+        const amplifiedQuery = hasAiInQuery
+            ? query
+            : `${query} (AI OR "trí tuệ nhân tạo" OR "artificial intelligence" OR "machine learning" OR "generative AI")`;
+
+        // Locale + relevance tweaks
+        const params = new URLSearchParams({
+            key: GOOGLE_API_KEY,
+            cx: SEARCH_ENGINE_ID,
+            q: amplifiedQuery,
+            num: '10',              // fetch more, we'll re-rank and cut to top 3 later
+            lr: 'lang_vi',          // prioritize Vietnamese
+            gl: 'vn',               // country bias
+            safe: 'active'
+        });
+        const searchUrl = `https://www.googleapis.com/customsearch/v1?${params.toString()}`;
+
+        const response = await fetch(searchUrl);
+
+        if (!response.ok) {
+            console.error('❌ Web search API error:', response.status, response.statusText);
+            return [];
+        }
+
+        const data = await response.json() as { items?: Array<{ title?: string; link?: string; snippet?: string; displayLink?: string }> };
+
+        if (!data.items || data.items.length === 0) {
+            console.log('📭 No web search results found');
+            return [];
+        }
+
+        // Convert items
+        let results: WebSearchResult[] = data.items.map((item: any) => ({
+            title: item.title || '',
+            link: item.link || '',
+            snippet: item.snippet || '',
+            displayLink: item.displayLink || (item.link ? new URL(item.link).hostname : '')
+        }));
+
+        // Simple re-ranking + filtering
+        const blacklist = ['facebook.com', 'm.facebook.com', 'twitter.com', 'x.com', 'tiktok.com', 'instagram.com'];
+        const whitelistBoost = ['aws.amazon.com', 'microsoft.com', 'news.microsoft.com', 'viettelidc.com.vn', 'viblo.asia', 'vnptai.io', 'medium.com', 'towardsdatascience.com', 'google.com', 'developers.google.com'];
+
+        const lowerQuery = query.toLowerCase();
+        const yearMatch = lowerQuery.match(/\b(20\d{2})\b/);
+        const year = yearMatch ? yearMatch[1] : '';
+        const keywords = lowerQuery
+            .replace(/[\p{P}\p{S}]/gu, ' ')
+            .split(/\s+/)
+            .filter(Boolean);
+
+        const aiMatch = (text: string): boolean => {
+            const t = (text || '').toLowerCase();
+            return AI_KEYWORDS.some(k => t.includes(k.toLowerCase()));
+        };
+
+        const score = (r: WebSearchResult): number => {
+            const host = (r.displayLink || r.link || '').toLowerCase();
+            if (blacklist.some(b => host.includes(b))) return -100;
+
+            const title = (r.title || '').toLowerCase();
+            const snippet = (r.snippet || '').toLowerCase();
+
+            let s = 0;
+            // keyword hits
+            for (const k of keywords) {
+                if (k.length <= 2) continue;
+                if (title.includes(k)) s += 5;
+                if (snippet.includes(k)) s += 2;
+            }
+            // year boost
+            if (year) {
+                if (title.includes(year)) s += 4;
+                if (snippet.includes(year)) s += 2;
+            }
+            // AI topic boost/penalty
+            if (aiMatch(title) || aiMatch(snippet)) {
+                s += 10;
+            } else {
+                s -= 10; // demote non-AI pages
+            }
+            // whitelist boost
+            if (whitelistBoost.some(w => host.includes(w))) s += 3;
+            // shorter, cleaner titles preferred
+            s += Math.max(0, 60 - (r.title?.length || 0)) / 20;
+            return s;
+        };
+
+        results = results
+            .map(r => ({ r, s: score(r) }))
+            .sort((a, b) => b.s - a.s)
+            .map(x => x.r)
+            // filter out clearly off-topic after scoring
+            .filter(r => aiMatch(r.title) || aiMatch(r.snippet))
+            .slice(0, 5); // keep top 5; FE shows top 3
+
+        // Fallback: if still too few AI-relevant results, try a second focused query
+        if (results.length < 3) {
+            const fallback = `xu hướng AI 2025 site:(.vn OR .com)`;
+            const p2 = new URLSearchParams({
+                key: GOOGLE_API_KEY,
+                cx: SEARCH_ENGINE_ID,
+                q: fallback,
+                num: '10', lr: 'lang_vi', gl: 'vn', safe: 'active'
+            });
+            const url2 = `https://www.googleapis.com/customsearch/v1?${p2.toString()}`;
+            try {
+                const r2 = await fetch(url2);
+                if (r2.ok) {
+                    const d2 = await r2.json() as { items?: Array<{ title?: string; link?: string; snippet?: string; displayLink?: string }> };
+                    if (d2.items?.length) {
+                        const more: WebSearchResult[] = d2.items.map((item: any) => ({
+                            title: item.title || '',
+                            link: item.link || '',
+                            snippet: item.snippet || '',
+                            displayLink: item.displayLink || (item.link ? new URL(item.link).hostname : '')
+                        })).filter((it: WebSearchResult) => aiMatch(it.title) || aiMatch(it.snippet));
+                        results = [...results, ...more].slice(0, 5);
+                    }
+                }
+            } catch { }
+        }
+
+        console.log(`🔍 Ranked web search results (top=${results.length})`);
+        return results;
+    } catch (error: any) {
+        console.error('❌ Web search error:', error.message);
+        return [];
+    }
+}
+
 /* -------------------- Route chính -------------------- */
 
 router.post('/chat', async (req, res) => {
     try {
-        const { message, studySetId, materialId } = req.body;
+        const { message, studySetId, materialId, forceWebSearch } = req.body;
         if (!message || !studySetId) {
             return res.status(400).json({ error: 'Message and studySetId are required' });
         }
@@ -485,11 +702,23 @@ router.post('/chat', async (req, res) => {
 
         console.log(`🎯 Selected top ${top.length} chunks`);
 
+        // ✅ Web Search - Check if we need to search the web
+        // ✅ Tắt web search tự động cho yêu cầu "tóm tắt" (đỡ dài prompt, nhanh hơn)
+        const isSummaryRequest = /tóm tắt|tổng quan|nói về gì|giới thiệu|nội dung chính/i.test(message);
+
+        // If forceWebSearch is true, always search. Otherwise, use needsWebSearch logic
+        // ✅ Không search web cho yêu cầu tóm tắt (trừ khi user force)
+        let webSearchResults: WebSearchResult[] = [];
+        if (!isSummaryRequest && (forceWebSearch || needsWebSearch(message, top))) {
+            console.log(`🔍 Performing web search for: "${message}" ${forceWebSearch ? '(forced by user)' : '(auto-detected)'}`);
+            webSearchResults = await performWebSearch(message);
+            console.log(`📊 Found ${webSearchResults.length} web search results`);
+        } else if (isSummaryRequest) {
+            console.log('📝 Summary request detected, skipping web search for faster response');
+        }
+
         // 3) Pass-1: Scholar Analysis - Phân tích cấu trúc JSON hoặc trả lời câu hỏi cụ thể
-        const isSummaryRequest = message.toLowerCase().includes('tóm tắt') ||
-            message.toLowerCase().includes('tổng quan') ||
-            message.toLowerCase().includes('nói về gì') ||
-            message.toLowerCase().includes('giới thiệu');
+        // ✅ isSummaryRequest đã được khai báo ở trên (dòng 707)
 
         // Phân biệt câu hỏi follow-up (không cần template cố định)
         const isFollowUpQuestion = message.toLowerCase().includes('là gì') ||
@@ -535,9 +764,15 @@ router.post('/chat', async (req, res) => {
 
                 let cleanResponse = scholarResponse;
                 cleanResponse = cleanResponse.replace(/[\x00-\x1F\x7F]/g, '');
-                cleanResponse = cleanResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+                cleanResponse = cleanResponse.replace(/```json?\s*/g, '').replace(/```/g, '');
 
-                structuredJson = JSON.parse(cleanResponse);
+                // ✅ Use safe JSON parsing
+                structuredJson = safeParseJsonBlock(cleanResponse);
+
+                if (!structuredJson) {
+                    throw new Error('Failed to parse JSON');
+                }
+
                 console.log('Parsed JSON successfully:', Object.keys(structuredJson));
             } catch (parseError) {
                 console.error('JSON parse error:', parseError);
@@ -609,9 +844,10 @@ YÊU CẦU:
 - Giọng tự nhiên, gần gũi, thân thiện nhưng chính xác học thuật
 - Giữ nguyên format Markdown cơ bản (###, **bold**, *italic*)
 - Mở đầu: 1-2 câu chào ấm áp với emoji (tối đa 3 emoji) như 🎉📚🙂
+${webSearchResults.length > 0 ? '- Nếu có thông tin từ web search, hãy đề cập: "Để cung cấp thông tin chính xác nhất, mình đã tìm kiếm thêm trên web!"' : ''}
 - Kết thúc: hỏi nhẹ "Bạn có muốn mình giải thích kỹ hơn phần nào không?"
 - LOẠI BỎ tất cả citations [pX] khỏi câu trả lời
-- Không thêm kiến thức mới, chỉ diễn đạt lại cho dễ hiểu dựa trên nguồn`;
+- Kết hợp thông tin từ tài liệu và web search (nếu có) để trả lời đầy đủ`;
 
         // Xây dựng nội dung từ structuredJson hoặc top chunks
         let sourceContent = '';
@@ -625,16 +861,24 @@ ${structuredJson.key_points ? `Điểm chính:\n${structuredJson.key_points.map(
 ${top.map(c => `--- [PAGE ${c.page}]\n${c.text}`).join('\n\n')}`;
         }
 
+        // Thêm web search results vào prompt nếu có
+        let webSearchContent = '';
+        if (webSearchResults.length > 0) {
+            webSearchContent = `\n\nThông tin bổ sung từ web search:\n${webSearchResults.map((r, i) =>
+                `${i + 1}. ${r.title}\n   ${r.snippet}\n   Nguồn: ${r.link}`
+            ).join('\n\n')}`;
+        }
+
         const unifiedUserPrompt = `Câu hỏi: "${message}"
 
-${sourceContent}
+${sourceContent}${webSearchContent}
 
-Hãy trả lời câu hỏi một cách chi tiết, thân thiện và tự nhiên theo yêu cầu ở trên.`;
+Hãy trả lời câu hỏi một cách chi tiết, thân thiện và tự nhiên theo yêu cầu ở trên. Kết hợp thông tin từ tài liệu và web search (nếu có) để đưa ra câu trả lời đầy đủ nhất.`;
 
         // ✅ CHỈ 1 LẦN GỌI AI thay vì 3 lần
         // ✅ Thêm timeout để đảm bảo phản hồi nhanh
-        const AI_TIMEOUT = 15000; // 15 giây
         let finalResponse = '';
+        const startTime = Date.now();
 
         try {
             const unifiedCompletionPromise = openai.chat.completions.create({
@@ -656,14 +900,22 @@ Hãy trả lời câu hỏi một cách chi tiết, thân thiện và tự nhiê
                 timeoutPromise
             ]) as any;
 
+            const duration = Date.now() - startTime;
+            console.log(`✅ AI call completed in ${duration}ms`);
             finalResponse = unifiedCompletion.choices[0]?.message?.content?.trim() || '';
         } catch (error: any) {
-            console.error('AI call timeout or error:', error.message);
-            // ✅ Fallback response nhanh dựa trên top chunks
-            const fallbackText = top.length > 0
-                ? top[0].text.substring(0, 300) + (top[0].text.length > 300 ? '...' : '')
-                : 'thông tin từ tài liệu';
-            finalResponse = `Chào ${userName}! 🎉\n\nDựa trên nội dung tài liệu "${fileName}", ${fallbackText}\n\nBạn muốn mình giải thích kỹ hơn phần nào không? 😊`;
+            const duration = Date.now() - startTime;
+            console.error(`❌ AI call failed after ${duration}ms:`, error.message);
+
+            // ✅ Fallback bằng extractive summary thay vì raw text
+            let fallbackText = 'Mình chưa kịp sinh tóm tắt đầy đủ, dưới đây là tóm tắt nhanh dựa trên nội dung gần nhất:\n\n';
+            if (top.length > 0) {
+                const raw = top.map(c => c.text).join('\n').slice(0, 4000);
+                fallbackText += quickExtractiveSummary(raw, 6);
+            } else {
+                fallbackText += '- Chưa có nội dung phù hợp để tóm tắt.';
+            }
+            finalResponse = `### Tóm tắt nhanh 📚\n${fallbackText}`;
         }
 
         // Post-processing: Loại bỏ citations [pX] nếu còn sót
@@ -678,11 +930,14 @@ Hãy trả lời câu hỏi một cách chi tiết, thân thiện và tự nhiê
             response: finalResponse,
             structured: structuredJson,
             citations: structuredJson.citations || [],
+            webSearchResults: webSearchResults, // ✅ Thêm web search results
+            webSearchPerformed: webSearchResults.length > 0, // ✅ Flag để frontend biết
             sessionId: null, // Frontend sẽ tự tạo session
             debug: {
                 totalChunks: chunks.length,
                 selectedChunks: top.length,
-                useEmbeddings: USE_EMBEDDINGS
+                useEmbeddings: USE_EMBEDDINGS,
+                webSearchPerformed: webSearchResults.length > 0
             }
         });
     } catch (err: any) {

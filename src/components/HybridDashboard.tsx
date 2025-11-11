@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { Document, Page, pdfjs } from 'react-pdf';
 import {
@@ -21,6 +21,7 @@ import {
     Bookmark,
     Flame,
     ChevronDown,
+    ChevronLeft,
     Plus,
     Users,
     UserPlus,
@@ -65,6 +66,8 @@ import MatchGame from './games/MatchGame';
 // @ts-ignore - Temporary fix for TypeScript cache issue
 import MyStudySets from './MyStudySets';
 import Materials from './Materials';
+import UploadMaterials from './UploadMaterials';
+import SubRoadmapViewer from './SubRoadmapViewer';
 import toast from 'react-hot-toast';
 
 // Set up PDF.js worker
@@ -78,6 +81,8 @@ const HybridDashboard: React.FC = () => {
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [studySets, setStudySets] = useState<Array<{ id: string, name: string, description: string, createdAt: string }>>([]);
+    const [studySetScrollIndex, setStudySetScrollIndex] = useState(0);
+    const studySetScrollRef = useRef<HTMLDivElement>(null);
     const [showAddSetModal, setShowAddSetModal] = useState(false);
     const [newSetName, setNewSetName] = useState('');
     const [newSetDescription, setNewSetDescription] = useState('');
@@ -86,7 +91,12 @@ const HybridDashboard: React.FC = () => {
     const [showStudySetDetail, setShowStudySetDetail] = useState(false);
     const [showMaterialViewer, setShowMaterialViewer] = useState(false);
     const [showMaterials, setShowMaterials] = useState(false);
+    const [showUploadMaterials, setShowUploadMaterials] = useState(false);
     const [showFlashcards, setShowFlashcards] = useState(false);
+    const [selectedFlashcardSetId, setSelectedFlashcardSetId] = useState<number | null>(null);
+    const [currentSubModuleId, setCurrentSubModuleId] = useState<number | null>(null);
+    const [showSubRoadmap, setShowSubRoadmap] = useState(false);
+    const [selectedModule, setSelectedModule] = useState<{ id: number, title: string } | null>(null);
     const [showExplainerVideo, setShowExplainerVideo] = useState(false);
     const [showExplainerVideoResult, setShowExplainerVideoResult] = useState(false);
     const [showExplainerVideoGenerating, setShowExplainerVideoGenerating] = useState(false);
@@ -102,7 +112,14 @@ const HybridDashboard: React.FC = () => {
     const [selectedMaterialIds, setSelectedMaterialIds] = useState<Set<string>>(new Set());
     const [searchTerm, setSearchTerm] = useState<string>('');
     const [isLoadingMaterials, setIsLoadingMaterials] = useState<boolean>(false);
+    const [showFlashcardSelection, setShowFlashcardSelection] = useState(false);
+    const [flashcardSetsInSet, setFlashcardSetsInSet] = useState<Array<{ id: number; name: string; created_at?: string; study_set_id: number }>>([]);
+    const [selectedFlashcardSetIds, setSelectedFlashcardSetIds] = useState<Set<string>>(new Set());
+    const [searchTermFlashcards, setSearchTermFlashcards] = useState<string>('');
+    const [isLoadingFlashcards, setIsLoadingFlashcards] = useState<boolean>(false);
     const [homeStats, setHomeStats] = useState<{ materialsCount: number; testsCount: number; flashcardsCount: number; explainersCount: number }>({ materialsCount: 0, testsCount: 0, flashcardsCount: 0, explainersCount: 0 });
+    const [streakInfo, setStreakInfo] = useState<{ current: number; best: number }>({ current: 0, best: 0 });
+    const [isLoadingStreak, setIsLoadingStreak] = useState<boolean>(false);
     const [recentMaterials, setRecentMaterials] = useState<Array<{ id: string; name: string; created_at: string }>>([]);
     const [savedTests, setSavedTests] = useState<Array<{ id: number; name: string; description?: string; created_at: string; study_set_id: number }>>([]);
     const [isLoadingTests, setIsLoadingTests] = useState(false);
@@ -140,6 +157,9 @@ const HybridDashboard: React.FC = () => {
     const [showAiSidebar, setShowAiSidebar] = useState(false);
     const [sidebarWidth, setSidebarWidth] = useState(600);
     const [chatMessage, setChatMessage] = useState('');
+    // Store chat history per question (questionIndex -> chat messages)
+    const [chatHistoryMap, setChatHistoryMap] = useState<Map<number, Array<{ type: 'user' | 'ai', message: string; citations?: Array<{ page: number; excerpt?: string; materialId?: string; materialName?: string }>; correctAnswer?: string }>>>(new Map());
+    // Current chat history for display (derived from chatHistoryMap based on selectedQuestionForChat)
     const [chatHistory, setChatHistory] = useState<Array<{ type: 'user' | 'ai', message: string; citations?: Array<{ page: number; excerpt?: string; materialId?: string; materialName?: string }>; correctAnswer?: string }>>([]);
     const [isLoadingChat, setIsLoadingChat] = useState(false);
     const [selectedQuestionForChat, setSelectedQuestionForChat] = useState<number | null>(null);
@@ -153,6 +173,8 @@ const HybridDashboard: React.FC = () => {
     const [worldText, setWorldText] = useState<string>('');
     const [worldPage, setWorldPage] = useState<number | null>(null);
     const [worldQuestionIndex, setWorldQuestionIndex] = useState<number | null>(null);
+    const [referenceAnswers, setReferenceAnswers] = useState<Map<number, string>>(new Map());
+    const [loadingReferenceAnswer, setLoadingReferenceAnswer] = useState<Set<number>>(new Set());
 
     // Handle start learning
     const handleStartLearning = () => {
@@ -205,6 +227,7 @@ const HybridDashboard: React.FC = () => {
 
     // Handle view material
     const handleViewMaterial = () => {
+        setShowUploadMaterials(false);
         setShowMaterials(true);
         setShowStudySetDetail(false);
     };
@@ -308,9 +331,36 @@ const HybridDashboard: React.FC = () => {
         setShowFlashcards(true);
     };
 
-    const handleBackFromFlashcards = () => {
+    const handleBackFromFlashcards = async () => {
+        // Update progress if we have a sub-module ID
+        if (currentSubModuleId) {
+            try {
+                await fetch(`http://localhost:3001/api/study-paths/sub-module/${currentSubModuleId}/progress`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ progress: 50 }) // 50% = 1/2 methods completed (flashcard)
+                });
+                console.log('✅ Progress updated to 50% for sub-module:', currentSubModuleId);
+
+                // If we were viewing sub-roadmap, show it again to display updated progress
+                if (selectedModule && selectedStudySet) {
+                    setShowFlashcards(false);
+                    setShowSubRoadmap(true);
+                    setShowStudySetDetail(false);
+                    setSelectedFlashcardSetId(null);
+                    // Keep currentSubModuleId for now, will be cleared when leaving sub-roadmap
+                    return; // Early return to show sub-roadmap
+                }
+            } catch (error) {
+                console.error('Error updating progress:', error);
+            }
+        }
+
         setShowFlashcards(false);
+        setSelectedFlashcardSetId(null);
+        setCurrentSubModuleId(null);
         setActiveSection('home'); // Set về home khi quay lại
+
         // Reload data when going back from flashcards
         if (user?.id) {
             loadStudySets().then(() => {
@@ -320,6 +370,239 @@ const HybridDashboard: React.FC = () => {
                     loadHomeStats(studySets[0].id);
                 }
             });
+        }
+    };
+
+    // Handle generate test from flashcards
+    const handleGenerateTestFromFlashcards = async () => {
+        try {
+            setIsGeneratingTest(true);
+            setShowTestTypeSelection(false);
+
+            // Lấy flashcard set đầu tiên đã chọn
+            const firstId = Array.from(selectedFlashcardSetIds)[0];
+            const flashcardSet = flashcardSetsInSet.find((fs: any) => String(fs.id) === String(firstId));
+            if (!flashcardSet) {
+                alert('Không tìm thấy flashcard set đã chọn.');
+                setIsGeneratingTest(false);
+                return;
+            }
+
+            // Lưu thông tin flashcard set để sử dụng cho citations
+            setTestMaterialId(flashcardSet.id.toString());
+            setTestMaterialName(flashcardSet.name || 'Flashcard');
+
+            // Load flashcards từ flashcard set
+            const flashcardsRes = await fetch(`http://localhost:3001/api/flashcards?flashcardSetId=${flashcardSet.id}`);
+            if (!flashcardsRes.ok) {
+                alert('Không tải được flashcards.');
+                setIsGeneratingTest(false);
+                return;
+            }
+            const flashcards = await flashcardsRes.json();
+
+            if (!flashcards || flashcards.length === 0) {
+                alert('Flashcard set này không có flashcard nào.');
+                setIsGeneratingTest(false);
+                return;
+            }
+
+            // Tạo text từ flashcards
+            let flashcardText = `Nội dung flashcard set: ${flashcardSet.name}\n\n`;
+            flashcards.forEach((card: any, index: number) => {
+                flashcardText += `\n=== Flashcard ${index + 1} ===\n`;
+
+                // Xử lý các loại flashcard khác nhau
+                if (card.type === 'term_def') {
+                    flashcardText += `Thuật ngữ: ${card.term || card.front || ''}\n`;
+                    flashcardText += `Định nghĩa: ${card.definition || card.back || ''}\n`;
+                } else if (card.type === 'fill_blank') {
+                    flashcardText += `Câu hỏi: ${card.question || card.front || ''}\n`;
+                    flashcardText += `Đáp án: ${card.answer || card.back || ''}\n`;
+                } else if (card.type === 'multiple_choice') {
+                    flashcardText += `Câu hỏi: ${card.question || card.front || ''}\n`;
+                    if (card.options && Array.isArray(card.options)) {
+                        card.options.forEach((opt: string, optIdx: number) => {
+                            const labels = ['A', 'B', 'C', 'D', 'E', 'F'];
+                            flashcardText += `${labels[optIdx]}. ${opt}\n`;
+                        });
+                    }
+                    flashcardText += `Đáp án đúng: ${card.correct_answer || card.back || ''}\n`;
+                } else {
+                    // Fallback: dùng front và back
+                    flashcardText += `Mặt trước: ${card.front || ''}\n`;
+                    flashcardText += `Mặt sau: ${card.back || ''}\n`;
+                }
+                flashcardText += '\n';
+            });
+
+            // Tạo file text từ flashcard content
+            const textBlob = new Blob([flashcardText], { type: 'text/plain' });
+            const textFile = new File([textBlob], `${flashcardSet.name || 'flashcards'}.txt`, { type: 'text/plain' });
+
+            // Gửi request đến Flask để tạo câu hỏi
+            const form = new FormData();
+            form.append('document', textFile);
+            form.append('requests', JSON.stringify({
+                multiple_choice: testTypeCounts.multipleChoice || 0,
+                short_answer: testTypeCounts.shortAnswer || 0,
+                free_response: testTypeCounts.freeResponse || 0,
+                true_false: testTypeCounts.trueFalse || 0,
+                fill_blank: testTypeCounts.fillBlank || 0,
+            }));
+
+            const flaskUrl = (process.env.REACT_APP_FLASK_URL || 'http://localhost:5050') + '/api/generate';
+            const genResp = await fetch(flaskUrl, { method: 'POST', body: form });
+
+            if (!genResp.ok) {
+                const errText = await genResp.text().catch(() => '');
+                alert('AI tạo câu hỏi thất bại: ' + (errText || ('HTTP ' + genResp.status)));
+                setIsGeneratingTest(false);
+                return;
+            }
+
+            const genData = await genResp.json();
+
+            // Xử lý response và chuyển đổi thành test questions (giống handleGenerateTest)
+            const questions: Array<{
+                id: string;
+                type: string;
+                question: string;
+                options?: string[];
+                correctAnswer?: number | string;
+            }> = [];
+
+            // Xử lý Multiple Choice
+            const mc = Array.isArray(genData.multiple_choice) ? genData.multiple_choice : [];
+            mc.forEach((item: any, index: number) => {
+                const options = Array.isArray(item.options) ? item.options : [];
+                const correctAnswer = String(item.correct_answer || '');
+                let correctIndex = options.findIndex((opt: string) =>
+                    String(opt).trim().toLowerCase() === correctAnswer.trim().toLowerCase()
+                );
+                if (correctIndex === -1) {
+                    const labels = ['A', 'B', 'C', 'D', 'E', 'F'];
+                    const labelIndex = labels.findIndex(l => l === correctAnswer.trim().toUpperCase());
+                    if (labelIndex >= 0 && labelIndex < options.length) {
+                        correctIndex = labelIndex;
+                    } else {
+                        const numIndex = parseInt(correctAnswer);
+                        if (!isNaN(numIndex) && numIndex >= 0 && numIndex < options.length) {
+                            correctIndex = numIndex;
+                        }
+                    }
+                }
+                if (correctIndex === -1 && options.length > 0) {
+                    correctIndex = 0;
+                }
+
+                questions.push({
+                    id: `mc_${index}`,
+                    type: 'multipleChoice',
+                    question: String(item.question || ''),
+                    options: options,
+                    correctAnswer: correctIndex
+                });
+            });
+
+            // Xử lý Short Answer
+            const sa = Array.isArray(genData.short_answer) ? genData.short_answer : [];
+            sa.forEach((item: any, index: number) => {
+                questions.push({
+                    id: `sa_${index}`,
+                    type: 'shortAnswer',
+                    question: String(item.question || ''),
+                    correctAnswer: String(item.answer || item.correct_answer || '')
+                });
+            });
+
+            // Xử lý Free Response (FRQ)
+            const fr = Array.isArray(genData.free_response) ? genData.free_response : [];
+            fr.forEach((item: any, index: number) => {
+                questions.push({
+                    id: `fr_${index}`,
+                    type: 'freeResponse',
+                    question: String(item.question || ''),
+                    correctAnswer: String(item.answer || item.correct_answer || '')
+                });
+            });
+
+            // Xử lý Fill in the Blank
+            const fb = Array.isArray(genData.fill_blank) ? genData.fill_blank : [];
+            fb.forEach((item: any, index: number) => {
+                questions.push({
+                    id: `fb_${index}`,
+                    type: 'fillBlank',
+                    question: String(item.question || ''),
+                    correctAnswer: String(item.answer || item.correct_answer || '')
+                });
+            });
+
+            // Lưu test vào database
+            let savedTestId: number | null = null;
+            try {
+                const studySetId = selectedStudySet?.id || (studySets.length > 0 ? studySets[0].id : null);
+                if (!studySetId || !user?.id) {
+                    throw new Error('Missing studySetId or userId');
+                }
+
+                const testName = `Bài kiểm tra từ flashcard: ${flashcardSet.name} - ${new Date().toLocaleDateString('vi-VN')}`;
+                const flashcardSetIds = Array.from(selectedFlashcardSetIds).map(id => parseInt(String(id))).filter(id => !isNaN(id));
+
+                const saveResponse = await fetch('http://localhost:3001/api/tests', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        studySetId: studySetId,
+                        userId: user.id,
+                        name: testName,
+                        description: `Bài kiểm tra được tạo từ ${flashcardSetIds.length} flashcard set`,
+                        questions: questions.map((q, idx) => ({
+                            type: q.type,
+                            question: q.question,
+                            options: q.options || null,
+                            correctAnswer: q.correctAnswer,
+                            position: idx
+                        })),
+                        materialIds: [], // Không có material IDs khi tạo từ flashcard
+                        flashcardSetIds: flashcardSetIds, // Thêm flashcard set IDs
+                        timeLimit: null
+                    }),
+                });
+
+                if (!saveResponse.ok) {
+                    const errorData = await saveResponse.json().catch(() => ({ error: 'Unknown error' }));
+                    console.error('Failed to save test:', errorData);
+                } else {
+                    const savedTest = await saveResponse.json();
+                    console.log('Test saved successfully:', savedTest.id);
+                    savedTestId = savedTest.id;
+                    setCurrentTestId(savedTest.id);
+                    await loadSavedTests();
+                    if (selectedStudySet?.id) {
+                        await loadHomeStats(selectedStudySet.id);
+                    }
+                }
+            } catch (saveError) {
+                console.error('Error saving test to database:', saveError);
+            }
+
+            setTestQuestions(questions);
+            setCurrentQuestionIndex(0);
+            setSelectedAnswers(new Map());
+            setTestStartTime(new Date());
+            setElapsedTime(0);
+            setIsGeneratingTest(false);
+            setShowTestView(true);
+            // Add testId to URL - use savedTestId directly to avoid async state issue
+            const url = savedTestId ? `/dashboard/test?id=${savedTestId}` : '/dashboard/test';
+            navigate(url);
+        } catch (error) {
+            console.error('Error generating test from flashcards:', error);
+            alert('Có lỗi xảy ra khi tạo bài kiểm tra từ flashcard');
+            setIsGeneratingTest(false);
         }
     };
 
@@ -452,6 +735,7 @@ const HybridDashboard: React.FC = () => {
             });
 
             // Lưu test vào database
+            let savedTestId: number | null = null;
             try {
                 const studySetId = selectedStudySet?.id || (studySets.length > 0 ? studySets[0].id : null);
                 if (!studySetId || !user?.id) {
@@ -490,6 +774,8 @@ const HybridDashboard: React.FC = () => {
                 } else {
                     const savedTest = await saveResponse.json();
                     console.log('Test saved successfully:', savedTest.id);
+                    savedTestId = savedTest.id;
+                    setCurrentTestId(savedTest.id);
                     // Reload saved tests list
                     await loadSavedTests();
                     // Also reload home stats to update test count
@@ -509,7 +795,9 @@ const HybridDashboard: React.FC = () => {
             setElapsedTime(0);
             setIsGeneratingTest(false);
             setShowTestView(true);
-            navigate('/dashboard/test');
+            // Add testId to URL - use savedTestId directly to avoid async state issue
+            const url = savedTestId ? `/dashboard/test?id=${savedTestId}` : '/dashboard/test';
+            navigate(url);
         } catch (error) {
             console.error('Error generating test:', error);
             alert('Có lỗi xảy ra khi tạo bài kiểm tra');
@@ -549,6 +837,27 @@ const HybridDashboard: React.FC = () => {
             setMaterialsInSet([]);
         } finally {
             setIsLoadingMaterials(false);
+        }
+    };
+
+    // Load flashcard sets for study set
+    const loadFlashcardSetsForStudySet = async (studySetId: string) => {
+        try {
+            setIsLoadingFlashcards(true);
+            const res = await fetch(`http://localhost:3001/api/flashcard-sets`);
+            if (res.ok) {
+                const allFlashcardSets = await res.json();
+                // Filter flashcard sets by study_set_id
+                const filtered = allFlashcardSets.filter((set: any) => String(set.study_set_id) === String(studySetId));
+                setFlashcardSetsInSet(filtered || []);
+            } else {
+                setFlashcardSetsInSet([]);
+            }
+        } catch (e) {
+            console.error('Failed to load flashcard sets for study set', e);
+            setFlashcardSetsInSet([]);
+        } finally {
+            setIsLoadingFlashcards(false);
         }
     };
 
@@ -644,6 +953,16 @@ const HybridDashboard: React.FC = () => {
             }
         }
     }, [showMaterialSelection, selectedStudySet, studySets]);
+
+    // Load flashcard sets when flashcard selection view is shown
+    useEffect(() => {
+        if (showFlashcardSelection) {
+            const currentStudySetId = selectedStudySet?.id || (studySets.length > 0 ? studySets[0].id : null);
+            if (currentStudySetId) {
+                loadFlashcardSetsForStudySet(currentStudySetId);
+            }
+        }
+    }, [showFlashcardSelection, selectedStudySet, studySets]);
 
     // Add new study set
     const addStudySet = async () => {
@@ -760,6 +1079,37 @@ const HybridDashboard: React.FC = () => {
         }
     }, [user?.id]);
 
+    useEffect(() => {
+        const trackUserStreak = async () => {
+            if (!user?.id) {
+                setStreakInfo({ current: 0, best: 0 });
+                return;
+            }
+            try {
+                setIsLoadingStreak(true);
+                const response = await fetch('http://localhost:3001/api/streaks/track', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: user.id })
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                setStreakInfo({
+                    current: Number(data.currentStreak) || 0,
+                    best: Number(data.bestStreak) || 0
+                });
+            } catch (error) {
+                console.error('Failed to update streak:', error);
+            } finally {
+                setIsLoadingStreak(false);
+            }
+        };
+
+        trackUserStreak();
+    }, [user?.id]);
+
     // Cảnh báo khi rời trang nếu đang làm bài và còn câu chưa trả lời
     React.useEffect(() => {
         const beforeUnload = (e: BeforeUnloadEvent) => {
@@ -851,10 +1201,51 @@ const HybridDashboard: React.FC = () => {
     };
 
     // Remove redundant labels (A. B. C. D.) from option text
-    const cleanOptionText = (text: string): string => {
-        // Remove patterns like "A. ", "B. ", "C. ", "D. " at the start of text
-        return text.replace(/^[A-F]\.\s*/i, '').trim();
+    const cleanOptionText = (option: any) => {
+        if (option === null || option === undefined) return '';
+        return String(option).replace(/\s+/g, ' ').trim();
     };
+
+    const sanitizeReferenceAnswerText = useCallback((raw: string | undefined | null) => {
+        if (!raw) return '';
+        let answer = String(raw);
+
+        // Remove BOM or odd invisible characters
+        answer = answer.replace(/\uFEFF/g, '');
+
+        // Remove greeting lines or references to specific names
+        answer = answer.replace(/^[^\n]*Chào[^\n]*\n?/i, '');
+        answer = answer.replace(/^(Chào\s+(bạn|Huyền\s+Trang)!?\s*[🎉🌟😊🤔✨💡🔥👍👏😁😉😄🙂🙌🚀🌈❤️💪🤩😎😍🥳💥⚡️🥰🤗💖💬📚✅📝🤖🐶\s]*)/i, '');
+        answer = answer.replace(/^(Xin\s+chào!?\s*[🎉🌟😊🤔✨💡🔥👍👏😁😉😄🙂🙌🚀🌈❤️💪🤩😎😍🥳💥⚡️🥰🤗💖💬📚✅📝🤖🐶\s]*)/i, '');
+        answer = answer.replace(/Huyền\s+Trang/gi, 'bạn');
+
+        // Remove sentences that mention pulling from documents in a generic way
+        answer = answer.replace(/Dựa\s+trên\s+nội\s+dung\s+tài\s+liệu[^.]*\.?/gi, '');
+
+        // Strip markdown formatting
+        answer = answer.replace(/^\s*###?\s+/gm, '');
+        answer = answer.replace(/\*\*([^*]+)\*\*/g, '$1');
+        answer = answer.replace(/\*([^*]+)\*/g, '$1');
+        answer = answer.replace(/__([^_]+)__/g, '$1');
+        answer = answer.replace(/_([^_]+)_/g, '$1');
+        answer = answer.replace(/`([^`]+)`/g, '$1');
+        answer = answer.replace(/\[([^\]]+)]\([^\)]+\)/g, '$1');
+
+        // Remove leading list markers/bullets like -, •, 1., etc.
+        answer = answer.replace(/^[\s]*[-*•]+\s*/gm, '');
+        answer = answer.replace(/^\s*\d+\.?\s+/gm, '');
+
+        // Remove trailing helper questions or emojis
+        answer = answer.replace(/Bạn\s+(có\s+)?muốn\s+mình\s+giải\s+thích\s+kỹ\s+hơn[^\n]*$/gi, '');
+        answer = answer.replace(/[🎉🌟😊🤔✨💡🔥👍👏😁😉😄🙂🙌🚀🌈❤️💪🤩😎😍🥳💥⚡️🥰🤗💖💬📚✅📝🤖🐶]+/g, '');
+
+        // Collapse multiple blank lines and spaces
+        answer = answer.replace(/\n{3,}/g, '\n\n');
+        answer = answer.replace(/[ \t]{2,}/g, ' ');
+        answer = answer.trim();
+
+        return answer;
+    }, []);
 
     // Handle navigation to next question with animation
     const handleNextQuestion = () => {
@@ -932,33 +1323,90 @@ const HybridDashboard: React.FC = () => {
     const handleSubmitTest = async () => {
         const score = calculateTestScore();
         setTestScore(score);
+
+        // Get testId - try currentTestId first, then fallback to URL
+        let testIdToUse = currentTestId;
+        if (!testIdToUse) {
+            const urlParams = new URLSearchParams(location.search);
+            const testIdFromUrl = urlParams.get('id');
+            if (testIdFromUrl) {
+                const testIdNum = parseInt(testIdFromUrl);
+                if (!isNaN(testIdNum)) {
+                    testIdToUse = testIdNum;
+                    setCurrentTestId(testIdNum); // Update state for future use
+                }
+            }
+        }
+
         // Persist latest result
-        if (currentTestId && user?.id) {
+        if (testIdToUse && user?.id) {
             try {
                 const answersObj: Record<number, number | string> = {};
                 selectedAnswers.forEach((val, key) => { answersObj[key] = val; });
                 const timeTaken = testStartTime ? Math.floor((Date.now() - testStartTime.getTime()) / 1000) : null;
-                await fetch(`http://localhost:3001/api/tests/${currentTestId}/results`, {
+
+                const requestBody = {
+                    userId: user.id,
+                    score: (score.correct / score.total) * 100,
+                    totalQuestions: score.total,
+                    correctAnswers: score.correct,
+                    timeTaken,
+                    answers: answersObj
+                };
+
+                // LOG: Trước khi gọi API
+                console.log('🔵 [CLIENT] Trước khi gọi API save test result:', {
+                    testId: testIdToUse,
+                    userId: user.id,
+                    url: `http://localhost:3001/api/tests/${testIdToUse}/results`,
+                    requestBody: requestBody,
+                    timestamp: new Date().toISOString()
+                });
+
+                const saveResultResponse = await fetch(`http://localhost:3001/api/tests/${testIdToUse}/results`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        userId: user.id,
-                        score: (score.correct / score.total) * 100,
-                        totalQuestions: score.total,
-                        correctAnswers: score.correct,
-                        timeTaken,
-                        answers: answersObj
-                    })
-                }).catch(() => { });
-                const latest = await fetchLatestResult(currentTestId);
-                setLatestResultCache(prev => ({ ...prev, [currentTestId]: latest }));
+                    body: JSON.stringify(requestBody)
+                });
+
+                // LOG: Sau khi nhận response từ API
+                console.log('🔵 [CLIENT] Sau khi nhận response từ API:', {
+                    status: saveResultResponse.status,
+                    statusText: saveResultResponse.statusText,
+                    ok: saveResultResponse.ok,
+                    headers: Object.fromEntries(saveResultResponse.headers.entries()),
+                    timestamp: new Date().toISOString()
+                });
+
+                if (!saveResultResponse.ok) {
+                    const errorText = await saveResultResponse.text().catch(() => '');
+                    console.error('❌ [CLIENT] Failed to save test result:', {
+                        status: saveResultResponse.status,
+                        statusText: saveResultResponse.statusText,
+                        errorText: errorText
+                    });
+                } else {
+                    const responseData = await saveResultResponse.json().catch(() => null);
+                    console.log('✅ [CLIENT] Test result saved successfully:', {
+                        responseData: responseData,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+
+                const latest = await fetchLatestResult(testIdToUse);
+                setLatestResultCache(prev => ({ ...prev, [testIdToUse as number]: latest }));
             } catch (e) {
                 console.error('Failed to save test result', e);
             }
+        } else {
+            console.warn('Cannot save test result: missing testId or userId', { testIdToUse, userId: user?.id });
         }
+
         setShowTestView(false);
         setShowReviewTest(true);
-        navigate('/dashboard/review-test');
+        // Add testId to URL if we have it
+        const url = testIdToUse ? `/dashboard/review-test?id=${testIdToUse}` : '/dashboard/review-test';
+        navigate(url);
     };
 
     // Sync URL with current view and reload data when navigating back
@@ -981,7 +1429,7 @@ const HybridDashboard: React.FC = () => {
             return;
         }
 
-        // Reset all states first
+        // Reset all states first (but don't reset showSubRoadmap if we're navigating to Subroadmap)
         setShowPractice(false);
         setShowCreateTest(false);
         setShowMaterialSelection(false);
@@ -990,6 +1438,10 @@ const HybridDashboard: React.FC = () => {
         setShowReviewTest(false);
         setShowExplainerVideo(false);
         setShowExplainerVideoGenerating(false);
+        // Only reset showSubRoadmap if we're NOT going to Subroadmap
+        if (path !== '/dashboard/Subroadmap' && !path.startsWith('/dashboard/Subroadmap')) {
+            setShowSubRoadmap(false);
+        }
 
         // Set states based on URL
         const ready = (location.state as any)?.ready === true;
@@ -1002,13 +1454,86 @@ const HybridDashboard: React.FC = () => {
         } else if (path === '/dashboard/material-selection' || path.startsWith('/dashboard/material-selection')) {
             console.log('Route match: material-selection -> setShowMaterialSelection(true)', { path });
             setShowMaterialSelection(true);
+        } else if (path === '/dashboard/flashcard-selection' || path.startsWith('/dashboard/flashcard-selection')) {
+            console.log('Route match: flashcard-selection -> setShowFlashcardSelection(true)', { path });
+            setShowFlashcardSelection(true);
         } else if (path === '/dashboard/test-type-selection' || path.startsWith('/dashboard/test-type-selection')) {
             console.log('Route match: test-type-selection -> setShowTestTypeSelection(true)', { path });
             setShowTestTypeSelection(true);
         } else if (path === '/dashboard/test' || path.startsWith('/dashboard/test')) {
+            // Read testId from URL query params
+            const urlParams = new URLSearchParams(location.search);
+            const testIdFromUrl = urlParams.get('id');
+
+            // Always set currentTestId from URL if available (even if we already have questions)
+            if (testIdFromUrl) {
+                const testIdNum = parseInt(testIdFromUrl);
+                if (!isNaN(testIdNum) && testIdNum !== currentTestId) {
+                    setCurrentTestId(testIdNum);
+                }
+            }
+
+            // If we have testId in URL but no questions, try to load test
+            if (testIdFromUrl && testQuestions.length === 0 && !ready) {
+                const testIdNum = parseInt(testIdFromUrl);
+                if (!isNaN(testIdNum)) {
+                    // Load test from API
+                    fetch(`http://localhost:3001/api/tests/${testIdNum}`)
+                        .then(response => {
+                            if (response.ok) {
+                                return response.json();
+                            }
+                            throw new Error('Failed to load test');
+                        })
+                        .then(testData => {
+                            setCurrentTestId(testIdNum);
+                            const normalized = (Array.isArray(testData.questions) ? testData.questions : [])
+                                .filter((q: any) => q.question_type !== 'trueFalse' && q.type !== 'trueFalse')
+                                .map((q: any) => ({
+                                    ...q,
+                                    correctAnswer: (q.question_type === 'multipleChoice' && typeof q.correctAnswer === 'string' && !isNaN(Number(q.correctAnswer))) ? Number(q.correctAnswer) : q.correctAnswer
+                                }));
+                            setTestQuestions(normalized);
+                            setCurrentQuestionIndex(0);
+                            setSelectedAnswers(new Map());
+                            setTestStartTime(new Date());
+                            setElapsedTime(0);
+                            setViewAllQuestions(false);
+                            setShowReviewTest(false);
+                            setShowTestView(true);
+                        })
+                        .catch(error => {
+                            console.error('Error loading test from URL:', error);
+                            toast.error('Không thể tải bài kiểm tra');
+                            setTimeout(() => navigate('/dashboard/practice'), 0);
+                        });
+                    return; // Don't set showTestView yet, wait for data to load
+                }
+            }
+
+            // Check if testQuestions are passed via location.state (from LearningMethodModal)
+            const testQuestionsFromState = (location.state as any)?.testQuestions;
+            const testIdFromState = (location.state as any)?.currentTestId;
+
+            if (testQuestionsFromState && Array.isArray(testQuestionsFromState) && testQuestionsFromState.length > 0) {
+                // Set test questions from state
+                setTestQuestions(testQuestionsFromState);
+                if (testIdFromState) {
+                    setCurrentTestId(testIdFromState);
+                }
+                setCurrentQuestionIndex(0);
+                setSelectedAnswers(new Map());
+                setTestStartTime(new Date());
+                setElapsedTime(0);
+                setViewAllQuestions(false);
+                setShowReviewTest(false);
+                setShowTestView(true);
+                return;
+            }
+
             // Chỉ hiển thị test view nếu có test questions
             if (ready || testQuestions.length > 0) {
-                console.log('Route match: test -> showTestView', { path, questions: testQuestions.length, ready });
+                console.log('Route match: test -> showTestView', { path, questions: testQuestions.length, ready, testId: testIdFromUrl, currentTestId });
                 setShowTestView(true);
             } else {
                 // Nếu không có questions, quay về practice (sử dụng setTimeout để tránh vòng lặp)
@@ -1040,13 +1565,85 @@ const HybridDashboard: React.FC = () => {
             setShowExplainerVideo(true);
             setShowExplainerVideoResult(false);
             setShowExplainerVideoGenerating(false);
+        } else if (path === '/dashboard/Subroadmap' || path.startsWith('/dashboard/Subroadmap')) {
+            console.log('Route match: Subroadmap -> setShowSubRoadmap(true)', { path });
+            // Highlight current study set in sidebar instead of generic "Bộ học của tôi"
+            setActiveSection('');
+            // Try to get moduleId and studySetId from URL params or location state
+            const urlParams = new URLSearchParams(location.search);
+            // Handle both 'moduleId' and 'moduleld' (typo) for backward compatibility
+            const moduleIdFromUrl = urlParams.get('moduleId') || urlParams.get('moduleld');
+            const studySetIdFromUrl = urlParams.get('studySetId');
+
+            if (moduleIdFromUrl && studySetIdFromUrl) {
+                const moduleIdNum = parseInt(moduleIdFromUrl);
+                if (!isNaN(moduleIdNum)) {
+                    // Try to get module from location.state first
+                    const moduleFromState = (location.state as any)?.module;
+                    if (moduleFromState) {
+                        setSelectedModule(moduleFromState);
+                        // Ensure study set is selected
+                        if (!selectedStudySet || selectedStudySet.id !== studySetIdFromUrl) {
+                            const studySet = studySets.find(s => String(s.id) === studySetIdFromUrl);
+                            if (studySet) {
+                                setSelectedStudySet(studySet);
+                            }
+                        }
+                        setShowSubRoadmap(true);
+                        setShowStudySetDetail(false);
+                    } else {
+                        // Load module from API if not in state
+                        fetch(`http://localhost:3001/api/study-paths/module/${moduleIdNum}`)
+                            .then(response => {
+                                if (response.ok) {
+                                    return response.json();
+                                }
+                                throw new Error('Failed to load module');
+                            })
+                            .then(moduleData => {
+                                setSelectedModule({
+                                    id: moduleData.id,
+                                    title: moduleData.title || moduleData.name || 'Module'
+                                });
+                                // Ensure study set is selected
+                                if (!selectedStudySet || selectedStudySet.id !== studySetIdFromUrl) {
+                                    const studySet = studySets.find(s => String(s.id) === studySetIdFromUrl);
+                                    if (studySet) {
+                                        setSelectedStudySet(studySet);
+                                    }
+                                }
+                                setShowSubRoadmap(true);
+                                setShowStudySetDetail(false);
+                                setActiveSection('sets'); // Ensure activeSection is set when loading from API
+                            })
+                            .catch(error => {
+                                console.error('Error loading module from URL:', error);
+                                // Fallback: show subroadmap with just moduleId if we have it
+                                if (moduleIdNum) {
+                                    setSelectedModule({
+                                        id: moduleIdNum,
+                                        title: 'Module'
+                                    });
+                                    setShowSubRoadmap(true);
+                                    setShowStudySetDetail(false);
+                                }
+                            });
+                    }
+                }
+            } else if (selectedModule && selectedStudySet) {
+                // If we have module and study set in state, show subroadmap
+                setShowSubRoadmap(true);
+                setShowStudySetDetail(false);
+            }
         }
     }, [location.pathname, navigate]);
 
     // Handle route changes for studyset
     useEffect(() => {
         const path = location.pathname;
-        if (path === '/dashboard/studyset' || path.startsWith('/dashboard/studyset')) {
+        // Only handle /dashboard/studyset route, not Subroadmap
+        if ((path === '/dashboard/studyset' || path.startsWith('/dashboard/studyset')) &&
+            !path.includes('Subroadmap')) {
             setActiveSection('sets');
             setShowFlashcards(false);
             setShowMaterialViewer(false);
@@ -1061,6 +1658,120 @@ const HybridDashboard: React.FC = () => {
         }
     }, [location.pathname, user?.id]);
 
+    // Generate reference answer for essay questions using AI
+    const generateReferenceAnswer = async (questionIndex: number) => {
+        // Check if already loading or already generated
+        if (loadingReferenceAnswer.has(questionIndex) || referenceAnswers.has(questionIndex)) {
+            return;
+        }
+
+        const question = testQuestions[questionIndex];
+        if (!question) return;
+
+        // Normalize type to check if it's essay
+        const normalizedType = String(question.type || '').toLowerCase().replace(/\s+/g, '');
+        const isShortAnswerType = normalizedType === 'shortanswer';
+        const isFillBlankType = normalizedType === 'fillblank';
+        const isTrueFalseType = normalizedType === 'truefalse';
+        const isEssayDeclared = normalizedType === 'essay' || normalizedType === 'freeresponse';
+
+        const sanitize = (v: any) => {
+            if (v == null) return '';
+            if (typeof v !== 'string') return '';
+            return v.replace(/[\u00A0\u200B]/g, '').trim();
+        };
+
+        const hasOptions = Array.isArray(question.options) && question.options.some((opt: any) => sanitize(opt).length > 0);
+        const isEssayType = isEssayDeclared || (!hasOptions && !isFillBlankType && !isTrueFalseType && !isShortAnswerType);
+
+        // Only generate for essay/shortAnswer questions without correctAnswer
+        if (!isEssayType && !isShortAnswerType) return;
+        if (typeof question.correctAnswer === 'string' && question.correctAnswer.trim() !== '') return;
+
+        // Mark as loading
+        setLoadingReferenceAnswer(prev => new Set(prev).add(questionIndex));
+
+        try {
+            const prompt = `Bạn là AI tutor chuyên tạo đáp án tham khảo cho câu hỏi tự luận.
+
+Câu hỏi: "${question.question}"
+
+YÊU CẦU NGHIÊM NGẶT:
+1. CHỈ trả về đáp án tham khảo, KHÔNG có bất kỳ chào hỏi nào (không "Chào bạn", "Xin chào", emoji, v.v.)
+2. KHÔNG sử dụng markdown formatting (không ###, **bold**, *italic*, #, -, v.v.)
+3. Đáp án phải là văn bản thuần túy, rõ ràng, có cấu trúc
+4. Sử dụng tiếng Việt
+5. Đáp án nên có độ dài phù hợp (khoảng 100-300 từ cho câu hỏi tự luận, 50-150 từ cho câu hỏi ngắn)
+6. Bắt đầu trực tiếp với nội dung đáp án, không có tiêu đề hay giới thiệu
+
+Hãy tạo đáp án tham khảo (CHỈ đáp án, không có gì khác):`;
+
+            const response = await fetch('http://localhost:3001/api/ai/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: prompt,
+                    studySetId: selectedStudySet?.id || ''
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const sanitized = sanitizeReferenceAnswerText(data.response);
+
+                if (sanitized) {
+                    setReferenceAnswers(prev => {
+                        const newMap = new Map(prev);
+                        newMap.set(questionIndex, sanitized);
+                        return newMap;
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('Error generating reference answer:', error);
+        } finally {
+            setLoadingReferenceAnswer(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(questionIndex);
+                return newSet;
+            });
+        }
+    };
+
+    // Auto-generate reference answers for essay/shortAnswer questions when entering review test
+    useEffect(() => {
+        if (showReviewTest && testQuestions.length > 0) {
+            testQuestions.forEach((question, index) => {
+                // Normalize type
+                const normalizedType = String(question.type || '').toLowerCase().replace(/\s+/g, '');
+                const isShortAnswerType = normalizedType === 'shortanswer';
+                const isFillBlankType = normalizedType === 'fillblank';
+                const isTrueFalseType = normalizedType === 'truefalse';
+                const isEssayDeclared = normalizedType === 'essay' || normalizedType === 'freeresponse';
+
+                const sanitize = (v: any) => {
+                    if (v == null) return '';
+                    if (typeof v !== 'string') return '';
+                    return v.replace(/[\u00A0\u200B]/g, '').trim();
+                };
+
+                const hasOptions = Array.isArray(question.options) && question.options.some((opt: any) => sanitize(opt).length > 0);
+                const isEssayType = isEssayDeclared || (!hasOptions && !isFillBlankType && !isTrueFalseType && !isShortAnswerType);
+
+                // Only generate for essay/shortAnswer without correctAnswer
+                if ((isEssayType || isShortAnswerType) &&
+                    (!question.correctAnswer || (typeof question.correctAnswer === 'string' && question.correctAnswer.trim() === '')) &&
+                    !referenceAnswers.has(index) &&
+                    !loadingReferenceAnswer.has(index)) {
+                    generateReferenceAnswer(index);
+                }
+            });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showReviewTest, testQuestions.length]);
+
     // Send chat message for review test
     const sendReviewChatMessage = async (message?: string) => {
         const messageToSend = message || chatMessage.trim();
@@ -1070,11 +1781,22 @@ const HybridDashboard: React.FC = () => {
         if (!message) {
             setChatMessage('');
         }
-        setChatHistory(prev => [...prev, { type: 'user', message: userMessage }]);
+
+        const selectedQuestionIndex = selectedQuestionForChat ?? 0;
+
+        // Add user message to both current chat history and map
+        const userMsg = { type: 'user' as const, message: userMessage };
+        setChatHistory(prev => [...prev, userMsg]);
+        setChatHistoryMap(prev => {
+            const newMap = new Map(prev);
+            const existingHistory = newMap.get(selectedQuestionIndex) || [];
+            newMap.set(selectedQuestionIndex, [...existingHistory, userMsg]);
+            return newMap;
+        });
+
         setIsLoadingChat(true);
 
         try {
-            const selectedQuestionIndex = selectedQuestionForChat ?? 0;
             const question = testQuestions[selectedQuestionIndex];
             const selectedAns = selectedAnswers.get(selectedQuestionIndex);
             let correctAns: number | undefined;
@@ -1088,7 +1810,7 @@ const HybridDashboard: React.FC = () => {
 
             const isCorrect = selectedAns !== undefined && correctAns !== undefined && selectedAns === correctAns;
 
-            const testPrompt = `Bạn là AI tutor chuyên giúp học và làm bài kiểm tra tên Huyền Trang. 
+            const testPrompt = `Bạn là AI tutor chuyên giúp học và làm bài kiểm tra. 
             
 Thông tin câu hỏi hiện tại:
 - Câu hỏi: ${question.question}
@@ -1096,18 +1818,21 @@ Thông tin câu hỏi hiện tại:
 ${question.options?.map((opt, idx) => `  ${idx + 1}. ${cleanOptionText(opt)}${idx === correctAns ? ' (ĐÁP ÁN ĐÚNG)' : ''}${idx === selectedAns ? ' (ĐÁP ÁN NGƯỜI DÙNG CHỌN)' : ''}`).join('\n')}
 - Kết quả: ${isCorrect ? 'ĐÚNG' : 'SAI'}
 
-Câu hỏi của Huyền Trang: ${userMessage}
+Câu hỏi của bạn: ${userMessage}
 
-Hãy trả lời theo format sau:
-1. Bắt đầu với "Chào Huyền Trang! 🎉"
-2. Nếu câu trả lời đúng, khen ngợi: "Bạn đã trả lời đúng! Tuyệt vời! 🌟"
-3. Nếu câu trả lời sai, giải thích tại sao và hướng dẫn đáp án đúng
-4. Giải thích chi tiết về câu hỏi và đáp án
-5. Đưa ra ví dụ thực tế nếu có thể
-6. Kết thúc bằng "Huyền Trang có muốn mình giải thích kỹ hơn phần nào không? 🎉😊"
-7. Sử dụng nhiều emoji, tone giáo dục thân thiện, và gọi tên "Huyền Trang" trong câu trả lời.
+YÊU CẦU NGHIÊM NGẶT:
+1. KHÔNG bắt đầu với "Chào bạn", "Chào Huyền Trang", "Xin chào" hay bất kỳ greeting nào
+2. KHÔNG kết thúc bằng "Bạn có muốn mình giải thích kỹ hơn phần nào không?" hay câu hỏi tương tự
+3. KHÔNG đề cập tên file tài liệu một cách không cần thiết (ví dụ: "Dựa trên nội dung tài liệu 'filename.pdf'")
+4. Bắt đầu trực tiếp với câu trả lời hoặc giải thích
+5. Nếu câu trả lời đúng, có thể khen ngợi ngắn gọn: "Bạn đã trả lời đúng! Tuyệt vời!"
+6. Nếu câu trả lời sai, giải thích tại sao và hướng dẫn đáp án đúng
+7. Giải thích chi tiết về câu hỏi và đáp án
+8. Đưa ra ví dụ thực tế nếu có thể
+9. Sử dụng tone giáo dục thân thiện, và gọi "bạn" trong câu trả lời
+10. Khi trích dẫn từ tài liệu, chỉ cần nói "Theo trang X..." hoặc "Thông tin này được đề cập ở trang X..." mà không cần nêu tên file
 
-QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ trang nào của tài liệu. Ví dụ: "Theo trang 5 của tài liệu..." hoặc "Thông tin này được đề cập ở trang 3...". Hãy luôn đề cập số trang khi có thể.`;
+Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
 
             const response = await fetch('http://localhost:3001/api/ai/chat', {
                 method: 'POST',
@@ -1258,18 +1983,64 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                     ? cleanOptionText(question.options[correctAns])
                     : undefined;
 
-                setChatHistory(prev => [...prev, {
-                    type: 'ai',
-                    message: data.response,
+                // Clean up AI response (remove greetings, document references, trailing questions)
+                let cleanedResponse = data.response?.trim() || '';
+
+                // Remove greeting lines
+                cleanedResponse = cleanedResponse.replace(/^(Chào\s+(bạn|Huyền\s+Trang)!?\s*[🎉🌟😊🤔✨💡🔥👍👏😁😉😄🙂🙌🚀🌈❤️💪🤩😎😍🥳💥⚡️🥰🤗💖💬📚✅📝🤖🐶\s]*)/i, '');
+                cleanedResponse = cleanedResponse.replace(/^(Xin\s+chào!?\s*[🎉🌟😊🤔✨💡🔥👍👏😁😉😄🙂🙌🚀🌈❤️💪🤩😎😍🥳💥⚡️🥰🤗💖💬📚✅📝🤖🐶\s]*)/i, '');
+                cleanedResponse = cleanedResponse.replace(/^[^\n]*Chào[^\n]*\n?/i, '');
+
+                // Remove document reference at the start (e.g., "Dựa trên nội dung tài liệu 'filename.pdf'")
+                cleanedResponse = cleanedResponse.replace(/^Dựa\s+trên\s+nội\s+dung\s+tài\s+liệu\s+["'][^"']+["'][^,]*[,.]?\s*/i, '');
+
+                // Remove trailing questions
+                cleanedResponse = cleanedResponse.replace(/\s*Bạn\s+(có\s+)?muốn\s+mình\s+giải\s+thích\s+kỹ\s+hơn\s+phần\s+nào\s+không\?[🤔😊🎉🌟✨💡🔥👍👏😁😉😄🙂🙌🚀🌈❤️💪🤩😎😍🥳💥⚡️🥰🤗💖💬📚✅📝🤖🐶]*\s*$/i, '');
+
+                // Clean up multiple spaces and newlines
+                cleanedResponse = cleanedResponse.replace(/\n{3,}/g, '\n\n');
+                cleanedResponse = cleanedResponse.replace(/[ \t]{2,}/g, ' ');
+                cleanedResponse = cleanedResponse.trim();
+
+                // If cleaning removed everything, use original response
+                if (!cleanedResponse) {
+                    cleanedResponse = data.response?.trim() || '';
+                }
+
+                // Add AI response to both current chat history and map
+                const aiMsg = {
+                    type: 'ai' as const,
+                    message: cleanedResponse,
                     citations: citations.length > 0 ? citations : undefined,
                     correctAnswer: correctAnswerText
-                }]);
+                };
+                setChatHistory(prev => [...prev, aiMsg]);
+                setChatHistoryMap(prev => {
+                    const newMap = new Map(prev);
+                    const existingHistory = newMap.get(selectedQuestionIndex) || [];
+                    newMap.set(selectedQuestionIndex, [...existingHistory, aiMsg]);
+                    return newMap;
+                });
             } else {
-                setChatHistory(prev => [...prev, { type: 'ai', message: 'Xin lỗi, có lỗi xảy ra khi gửi tin nhắn.' }]);
+                const errorMsg = { type: 'ai' as const, message: 'Xin lỗi, có lỗi xảy ra khi gửi tin nhắn.' };
+                setChatHistory(prev => [...prev, errorMsg]);
+                setChatHistoryMap(prev => {
+                    const newMap = new Map(prev);
+                    const existingHistory = newMap.get(selectedQuestionIndex) || [];
+                    newMap.set(selectedQuestionIndex, [...existingHistory, errorMsg]);
+                    return newMap;
+                });
             }
         } catch (error) {
             console.error('Error sending chat message:', error);
-            setChatHistory(prev => [...prev, { type: 'ai', message: 'Xin lỗi, có lỗi xảy ra khi gửi tin nhắn. Vui lòng thử lại sau.' }]);
+            const errorMsg = { type: 'ai' as const, message: 'Xin lỗi, có lỗi xảy ra khi gửi tin nhắn. Vui lòng thử lại sau.' };
+            setChatHistory(prev => [...prev, errorMsg]);
+            setChatHistoryMap(prev => {
+                const newMap = new Map(prev);
+                const existingHistory = newMap.get(selectedQuestionIndex) || [];
+                newMap.set(selectedQuestionIndex, [...existingHistory, errorMsg]);
+                return newMap;
+            });
         } finally {
             setIsLoadingChat(false);
         }
@@ -1507,6 +2278,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                 setShowFlashcards(false);
                 setShowMaterialViewer(false);
                 setShowMaterials(false);
+                setShowUploadMaterials(false);
                 setShowPractice(false);
                 setShowExplainerVideo(false);
                 setShowArcade(false);
@@ -1548,6 +2320,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                 setShowMaterialSelection(false);
                 setShowTestTypeSelection(false);
                 setShowMaterials(false);
+                setShowUploadMaterials(false);
                 setShowStudySetDetail(false);
                 setShowMaterialViewer(false);
                 setShowFlashcards(false);
@@ -1557,6 +2330,8 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                 setShowExplainerVideoGenerating(false);
                 setShowArcade(false);
                 setShowGamePlay(false);
+                setShowSubRoadmap(false);
+                navigate('/dashboard');
                 setTestQuestions([]);
                 setCurrentQuestionIndex(0);
                 setSelectedAnswers(new Map());
@@ -1565,6 +2340,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                 setElapsedTime(0);
                 setTestScore({ correct: 0, total: 0 });
                 setChatHistory([]);
+                setChatHistoryMap(new Map()); // Clear all chat histories when resetting test
                 setShowAiSidebar(false);
                 setSelectedQuestionForChat(null);
 
@@ -1592,14 +2368,14 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                 loadHomeStats(reloadedSets[0].id);
                             }
                         } else {
-                            // No study sets available
+                            // No study sets found
                             setSelectedStudySet(null);
-                            loadHomeStats(null);
+                            setHomeStats({ materialsCount: 0, testsCount: 0, flashcardsCount: 0, explainersCount: 0 });
                         }
                     });
                 }
 
-                navigate('/dashboard');
+                return;
             }
         } else if (itemId === 'flashcards') {
             // Xử lý click vào "Thẻ ghi nhớ"
@@ -1843,6 +2619,141 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
         );
     };
 
+    const renderFlashcardSelectionView = () => {
+        const currentStudySetId = selectedStudySet?.id || (studySets.length > 0 ? studySets[0].id : null);
+        const currentStudySetName = selectedStudySet?.name || (studySets.length > 0 ? studySets[0].name : 'Bộ học');
+
+        return (
+            <div className="flex-1 p-8 bg-white min-h-screen">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-8">
+                    <div>
+                        <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Chọn flashcard</h1>
+                        <p className="text-gray-500 mt-2">Chọn flashcard bạn muốn tạo bài kiểm tra.</p>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                        <button
+                            onClick={() => {
+                                setShowFlashcardSelection(false);
+                                setShowCreateTest(true);
+                                setSelectedFlashcardSetIds(new Set());
+                                setSearchTermFlashcards('');
+                                navigate('/dashboard/create-test');
+                            }}
+                            className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        >
+                            Quay lại
+                        </button>
+                        <button
+                            onClick={() => {
+                                if (selectedFlashcardSetIds.size > 0) {
+                                    // Chuyển sang màn hình chọn loại bài kiểm tra
+                                    setShowTestTypeSelection(true);
+                                    setShowFlashcardSelection(false);
+                                    navigate('/dashboard/test-type-selection');
+                                }
+                            }}
+                            disabled={selectedFlashcardSetIds.size === 0}
+                            className="px-5 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Tiếp tục
+                        </button>
+                    </div>
+                </div>
+
+                {/* Search */}
+                <div className="mb-6 flex justify-end">
+                    <input
+                        type="text"
+                        value={searchTermFlashcards}
+                        onChange={(e) => setSearchTermFlashcards(e.target.value)}
+                        placeholder="Tìm kiếm flashcard"
+                        className="w-full md:w-96 px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                </div>
+
+                {/* Flashcard Sets Grid */}
+                <div className="mt-6">
+                    {isLoadingFlashcards ? (
+                        <div className="py-16 text-center text-gray-500">Đang tải flashcard...</div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                            {/* Upload New Flashcard tile */}
+                            <div className="border-2 border-dashed border-gray-200 rounded-xl bg-white p-4 hover:border-gray-300 cursor-pointer flex items-center">
+                                <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center mr-3">
+                                    <Plus className="w-6 h-6 text-gray-400" />
+                                </div>
+                                <div className="font-medium text-gray-800">Tải lên flashcard mới</div>
+                            </div>
+
+                            {/* Flashcard Sets */}
+                            {flashcardSetsInSet
+                                .filter(fs => !searchTermFlashcards.trim() || fs.name.toLowerCase().includes(searchTermFlashcards.toLowerCase()))
+                                .map((fs) => {
+                                    const selected = selectedFlashcardSetIds.has(String(fs.id));
+                                    return (
+                                        <button
+                                            key={fs.id}
+                                            onClick={() => {
+                                                const next = new Set(selectedFlashcardSetIds);
+                                                const idStr = String(fs.id);
+                                                if (next.has(idStr)) {
+                                                    next.delete(idStr);
+                                                } else {
+                                                    next.add(idStr);
+                                                }
+                                                setSelectedFlashcardSetIds(next);
+                                            }}
+                                            className={`text-left border rounded-xl bg-white p-4 shadow-sm hover:shadow transition flex items-center justify-between ${selected ? 'ring-2 ring-blue-500 border-blue-200' : 'border-gray-200'
+                                                }`}
+                                        >
+                                            <div className="flex items-center space-x-3">
+                                                <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                                                    <BookOpen className="w-5 h-5 text-green-600" />
+                                                </div>
+                                                <div>
+                                                    <div className="font-medium text-gray-900 truncate max-w-[260px]" title={fs.name}>
+                                                        {fs.name}
+                                                    </div>
+                                                    {fs.created_at && (
+                                                        <div className="text-xs text-gray-500">
+                                                            {new Date(fs.created_at).toLocaleDateString('vi-VN')}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div
+                                                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selected ? 'border-blue-600 bg-blue-600' : 'border-gray-300 bg-white'
+                                                    }`}
+                                            >
+                                                {selected && (
+                                                    <div className="w-2 h-2 rounded-full bg-white"></div>
+                                                )}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+
+                            {flashcardSetsInSet.length === 0 && !isLoadingFlashcards && (
+                                <div className="col-span-full text-center text-gray-500 py-16">
+                                    Không có flashcard trong bộ học này.
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Advanced section placeholder */}
+                <div className="mt-8">
+                    <button className="flex items-center space-x-2 text-blue-600 hover:text-blue-700 font-medium">
+                        <ChevronRight className="w-5 h-5" />
+                        <span>Nâng cao</span>
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
     const renderTestTypeSelectionView = () => {
         const clampCount = (num: number) => Math.max(0, Math.min(50, num));
         const totalSelected = testTypeCounts.multipleChoice + testTypeCounts.shortAnswer + testTypeCounts.freeResponse + testTypeCounts.trueFalse + testTypeCounts.fillBlank;
@@ -1871,7 +2782,12 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                             disabled={totalSelected === 0 || isGeneratingTest}
                             onClick={async () => {
                                 if (totalSelected > 0 && !isGeneratingTest) {
-                                    await handleGenerateTest();
+                                    // Kiểm tra xem đang ở chế độ flashcard hay materials
+                                    if (selectedFlashcardSetIds.size > 0) {
+                                        await handleGenerateTestFromFlashcards();
+                                    } else {
+                                        await handleGenerateTest();
+                                    }
                                 }
                             }}
                         >
@@ -2044,23 +2960,49 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
         // Render single question component
         const renderQuestion = (question: typeof currentQuestion, questionIndex: number, showHeader = true) => {
             const selectedAns = selectedAnswers.get(questionIndex);
+
+            // Normalize type for robust comparison
+            const normalizedType = String(question.type || '').toLowerCase().replace(/\s+/g, '');
+            const isShortAnswerType = normalizedType === 'shortanswer';
+            const isFillBlankType = normalizedType === 'fillblank';
+            const isTrueFalseType = normalizedType === 'truefalse';
+            const isEssayDeclared = normalizedType === 'essay' || normalizedType === 'freeresponse';
+
+            // Sanitize option text – drop non-string and invisible chars like NBSP/ZWSP
+            const sanitize = (v: any) => {
+                if (v == null) return '';
+                if (typeof v !== 'string') return '';
+                return v.replace(/[\u00A0\u200B]/g, '').trim();
+            };
+
+            // Determine if there are any real options
+            const hasOptions = Array.isArray(question.options) && question.options.some((opt: any) => sanitize(opt).length > 0);
+
+            // Final essay decision
+            const isEssayType = isEssayDeclared || (!hasOptions && !isFillBlankType && !isTrueFalseType && !isShortAnswerType);
+
             return (
                 <div key={question.id} className="mb-12 pb-8">
                     {showHeader && (
                         <>
                             {/* Question Type Header */}
                             <div className="mb-6">
-                                {question.type === 'fillBlank' ? (
+                                {isFillBlankType ? (
                                     <>
                                         <h2 className="text-2xl font-bold text-gray-900 mb-2">Điền vào chỗ trống:</h2>
                                         <p className="text-gray-600">Điền từ đúng vào chỗ trống.</p>
                                     </>
-                                ) : question.type === 'shortAnswer' ? (
+                                ) : isShortAnswerType ? (
                                     <>
                                         <h2 className="text-2xl font-bold text-gray-900 mb-2">Câu trả lời ngắn:</h2>
                                         <p className="text-gray-600">Viết 1-2 câu trả lời cho câu hỏi dưới đây.</p>
                                     </>
-                                ) : question.type === 'trueFalse' ? (
+                                ) : isEssayType ? (
+                                    <>
+                                        <h2 className="text-2xl font-bold text-gray-900 mb-2">Câu hỏi tự luận:</h2>
+                                        <p className="text-gray-600">Nhập câu trả lời tự luận đầy đủ cho câu hỏi bên dưới.</p>
+                                    </>
+                                ) : isTrueFalseType ? (
                                     <>
                                         <h2 className="text-2xl font-bold text-gray-900 mb-2">Đúng/Sai:</h2>
                                         <p className="text-gray-600">Chọn Đúng hoặc Sai cho nhận định bên dưới.</p>
@@ -2078,7 +3020,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                     {/* Question Number and Text */}
                     <div className="mb-6">
                         <div className="text-sm text-gray-500 mb-2">Câu {questionIndex + 1}</div>
-                        {question.type === 'fillBlank' ? (
+                        {isFillBlankType ? (
                             <div className="text-xl text-gray-800 leading-relaxed">
                                 {(() => {
                                     const parts = String(question.question || '').split('____');
@@ -2099,7 +3041,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                                     else newAnswers.delete(questionIndex);
                                                     setSelectedAnswers(newAnswers);
                                                 }}
-                                                className="mx-2 px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                                className="mx-2 px-3 py-2 border-2 border-gray-300 rounded-md focus:border-blue-500 focus:ring-0 focus:outline-none"
                                                 style={{ minWidth: 160 }}
                                             />
                                             {parts.slice(1).join('')}
@@ -2107,7 +3049,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                     );
                                 })()}
                             </div>
-                        ) : question.type === 'shortAnswer' ? (
+                        ) : isShortAnswerType ? (
                             <div className="text-xl text-gray-800 leading-relaxed">
                                 <p className="mb-4">{question.question}</p>
                                 <textarea
@@ -2120,7 +3062,23 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                         else newAnswers.delete(questionIndex);
                                         setSelectedAnswers(newAnswers);
                                     }}
-                                    className="w-full min-h-[120px] px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                                    className="w-full min-h-[120px] px-3 py-2 border-2 border-gray-300 rounded-md focus:border-blue-500 focus:ring-0 focus:outline-none"
+                                />
+                            </div>
+                        ) : isEssayType ? (
+                            <div className="text-xl text-gray-800 leading-relaxed">
+                                <p className="mb-4">{question.question}</p>
+                                <textarea
+                                    placeholder="Nhập câu trả lời tự luận của bạn"
+                                    value={typeof selectedAns === 'string' ? selectedAns : ''}
+                                    onChange={(e) => {
+                                        const text = e.target.value;
+                                        const newAnswers = new Map(selectedAnswers);
+                                        if (text && text.trim() !== '') newAnswers.set(questionIndex, text);
+                                        else newAnswers.delete(questionIndex);
+                                        setSelectedAnswers(newAnswers);
+                                    }}
+                                    className="w-full min-h-[220px] px-3 py-2 border-2 border-gray-300 rounded-md focus:border-blue-500 focus:ring-0 focus:outline-none"
                                 />
                             </div>
                         ) : (
@@ -2129,9 +3087,11 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                     </div>
 
                     {/* Answer Options */}
-                    {question.type !== 'fillBlank' && (
+                    {!isFillBlankType && !isEssayType && hasOptions && (
                         <div className="space-y-4">
                             {question.options?.map((option, index) => {
+                                const text = sanitize(option);
+                                if (!text) return null;
                                 const isSelected = selectedAns === index;
                                 return (
                                     <button
@@ -2153,7 +3113,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                                 }`}>
                                                 {labels[index] || String(index + 1)}
                                             </div>
-                                            <span className="flex-1 text-gray-800">{cleanOptionText(option)}</span>
+                                            <span className="flex-1 text-gray-800">{cleanOptionText(text)}</span>
                                         </div>
                                     </button>
                                 );
@@ -2344,6 +3304,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                 setTestQuestions([]);
                                 setSelectedAnswers(new Map());
                                 setChatHistory([]);
+                                setChatHistoryMap(new Map()); // Clear all chat histories when exiting
                                 setSelectedQuestionForChat(null);
                                 navigate('/dashboard/practice');
                             }}
@@ -2385,9 +3346,12 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                     setCurrentQuestionIndex(0);
                                     setSelectedAnswers(new Map());
                                     setChatHistory([]);
+                                    setChatHistoryMap(new Map()); // Clear all chat histories when retaking test
                                     setTestStartTime(new Date());
                                     setElapsedTime(0);
-                                    navigate('/dashboard/test');
+                                    // Add testId to URL if we have it
+                                    const url = currentTestId ? `/dashboard/test?id=${currentTestId}` : '/dashboard/test';
+                                    navigate(url);
                                 }}
                                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
                             >
@@ -2417,6 +3381,9 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                                 <button
                                                     onClick={() => {
                                                         setSelectedQuestionForChat(index);
+                                                        // Load chat history for this question (or empty array if none)
+                                                        const historyForQuestion = chatHistoryMap.get(index) || [];
+                                                        setChatHistory(historyForQuestion);
                                                         if (!showAiSidebar) setShowAiSidebar(true);
                                                     }}
                                                     className="ml-4 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium whitespace-nowrap"
@@ -2456,18 +3423,60 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                             </div>
                                         ) : (
                                             <div className="space-y-3">
-                                                {question.type === 'shortAnswer' ? (
-                                                    <div className={`p-4 rounded-lg border-2 ${isCorrect ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-200 bg-white text-gray-800'}`}>
-                                                        <div className="mb-2 font-medium">Câu trả lời của bạn:</div>
-                                                        <div className="whitespace-pre-wrap">{String(selectedAns ?? '(trống)')}</div>
-                                                        {typeof question.correctAnswer === 'string' && question.correctAnswer.trim() !== '' && !isCorrect && (
-                                                            <div className="mt-3 text-sm text-gray-700">
-                                                                <div className="font-medium mb-1">Đáp án tham khảo:</div>
-                                                                <div className="inline-block px-3 py-1 rounded bg-gray-100 text-gray-800 border border-gray-300">{question.correctAnswer}</div>
+                                                {(() => {
+                                                    // Normalize type for robust comparison (same logic as renderQuestion)
+                                                    const normalizedType = String(question.type || '').toLowerCase().replace(/\s+/g, '');
+                                                    const isShortAnswerType = normalizedType === 'shortanswer';
+                                                    const isFillBlankType = normalizedType === 'fillblank';
+                                                    const isTrueFalseType = normalizedType === 'truefalse';
+                                                    const isEssayDeclared = normalizedType === 'essay' || normalizedType === 'freeresponse';
+
+                                                    // Sanitize option text
+                                                    const sanitize = (v: any) => {
+                                                        if (v == null) return '';
+                                                        if (typeof v !== 'string') return '';
+                                                        return v.replace(/[\u00A0\u200B]/g, '').trim();
+                                                    };
+
+                                                    // Determine if there are any real options
+                                                    const hasOptions = Array.isArray(question.options) && question.options.some((opt: any) => sanitize(opt).length > 0);
+
+                                                    // Final essay decision
+                                                    const isEssayType = isEssayDeclared || (!hasOptions && !isFillBlankType && !isTrueFalseType && !isShortAnswerType);
+
+                                                    // Show answer display for shortAnswer or essay
+                                                    if (isShortAnswerType || isEssayType) {
+                                                        // Check if we need to generate reference answer
+                                                        const hasCorrectAnswer = typeof question.correctAnswer === 'string' && question.correctAnswer.trim() !== '';
+                                                        const hasReferenceAnswer = referenceAnswers.has(index);
+                                                        const isLoadingRef = loadingReferenceAnswer.has(index);
+                                                        const shouldShowReference = hasCorrectAnswer || hasReferenceAnswer;
+
+                                                        return (
+                                                            <div className={`p-4 rounded-lg border-2 ${isCorrect ? 'border-green-500 bg-green-50 text-green-800' : 'border-gray-200 bg-white text-gray-800'}`}>
+                                                                <div className="mb-2 font-medium">Câu trả lời của bạn:</div>
+                                                                <div className="whitespace-pre-wrap">{String(selectedAns ?? '(trống)')}</div>
+                                                                {(shouldShowReference || isLoadingRef) && (
+                                                                    <div className="mt-3 text-sm text-gray-700">
+                                                                        <div className="font-medium mb-1">Đáp án tham khảo:</div>
+                                                                        {shouldShowReference ? (
+                                                                            <div className="px-3 py-2 rounded bg-gray-100 text-gray-800 border border-gray-300 whitespace-pre-wrap">
+                                                                                {hasCorrectAnswer
+                                                                                    ? sanitizeReferenceAnswerText(String(question.correctAnswer))
+                                                                                    : sanitizeReferenceAnswerText(referenceAnswers.get(index))}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="px-3 py-2 rounded bg-gray-50 text-gray-500 border border-gray-200 italic">
+                                                                                Đang tạo đáp án tham khảo...
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
                                                             </div>
-                                                        )}
-                                                    </div>
-                                                ) : null}
+                                                        );
+                                                    }
+                                                    return null;
+                                                })()}
                                                 {question.options?.map((option, optIndex) => {
                                                     const isSelected = selectedAns === optIndex;
                                                     const isCorrectOption = optIndex === correctAns;
@@ -2547,67 +3556,85 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                         {/* Divider */}
                         <div
                             className="fixed top-0 right-0 w-1 cursor-col-resize bg-gray-100 hover:bg-blue-200 transition-colors z-30"
-                            style={{ height: '100vh', top: `${isCollapsed ? '64px' : '64px'}` }}
+                            style={{ height: '100vh', top: '0' }}
                         ></div>
 
                         <div
                             className="fixed right-0 flex flex-col min-w-0 overflow-hidden rounded-l-xl shadow-xl bg-white/80 backdrop-blur z-30"
                             style={{
                                 width: `${sidebarWidth}px`,
-                                minWidth: 600,
+                                minWidth: 350,
                                 maxWidth: 'none',
-                                height: 'calc(100vh - 64px)',
-                                top: '64px'
+                                height: '100vh',
+                                top: '0'
                             }}
                         >
                             {/* Chat Header */}
                             <div className="bg-white/70 px-4 py-3 flex items-center justify-between">
                                 <div className="flex items-center space-x-2">
-                                    <button onClick={() => setShowAiSidebar(false)} className="p-2 hover:bg-gray-100 rounded-lg active:scale-95 transition">
-                                        <X className="w-4 h-4" />
-                                    </button>
-                                    <span className="text-sm text-gray-600">AI Tutor</span>
+                                    <span className="text-sm text-gray-600 font-medium">AI Tutor</span>
                                 </div>
+                                <button
+                                    onClick={() => setShowAiSidebar(false)}
+                                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 transition-colors"
+                                    title="Đóng cửa sổ"
+                                >
+                                    <X className="w-4 h-4 text-gray-600" />
+                                </button>
                             </div>
 
                             {/* Chat Content */}
                             <div className="flex-1 min-h-0 flex flex-col overflow-y-auto bg-white/50">
+                                {/* Current Question Info - Always show when a question is selected */}
+                                {selectedQuestionForChat !== null && testQuestions[selectedQuestionForChat] && (
+                                    <div className="px-4 pt-4 pb-2">
+                                        <div className="w-full p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                            <h3 className="text-sm font-semibold text-blue-800 mb-2">📚 Câu hỏi hiện tại: Câu {selectedQuestionForChat + 1}</h3>
+                                            <div className="text-sm text-blue-700">
+                                                <p>{testQuestions[selectedQuestionForChat].question}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Chat Messages */}
                                 {chatHistory.length > 0 ? (
                                     <div className="flex-1 overflow-y-auto p-4 space-y-4">
                                         {chatHistory.map((msg, index) => (
-                                            <div key={index} className={`flex flex-col ${msg.type === 'user' ? 'items-end' : 'items-start'}`}>
-                                                <div className={`max-w-[80%] rounded-lg px-4 py-2 ${msg.type === 'user'
-                                                    ? 'bg-blue-500 text-white'
-                                                    : 'bg-white text-gray-800'
-                                                    }`}>
-                                                    <div
-                                                        className={`text-sm prose prose-sm max-w-none ${msg.type === 'user' ? 'prose-invert [&_*]:!text-white' : ''}`}
-                                                        dangerouslySetInnerHTML={{ __html: renderMessage(msg.message, msg.type === 'user', msg.correctAnswer) }}
-                                                    />
-                                                </div>
-                                                {/* Citations */}
-                                                {msg.type === 'ai' && msg.citations && msg.citations.length > 0 && (
-                                                    <div className="mt-2 flex flex-wrap gap-2">
-                                                        {msg.citations.map((citation, citIndex) => (
-                                                            <button
-                                                                key={citIndex}
-                                                                onClick={(e) => {
-                                                                    e.preventDefault();
-                                                                    e.stopPropagation();
-                                                                    handleOpenCitation(citation.materialId, citation.page);
-                                                                }}
-                                                                className="text-xs px-3 py-1.5 bg-blue-50 hover:bg-blue-100 active:bg-blue-200 border border-blue-200 rounded-lg text-blue-700 font-medium transition-all cursor-pointer flex items-center space-x-1 shadow-sm hover:shadow-md"
-                                                                title={citation.materialName ? `Click để xem ${citation.materialName} - Trang ${citation.page}` : `Click để xem trang ${citation.page}`}
-                                                            >
-                                                                <FileText className="w-3 h-3 flex-shrink-0" />
-                                                                <span className="whitespace-nowrap">
-                                                                    {citation.materialName ? `${citation.materialName} - ` : ''}Trang {citation.page}
-                                                                </span>
-                                                            </button>
-                                                        ))}
+                                            <div key={index} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                                <div className={`${msg.type === 'ai' ? 'flex flex-col' : ''} max-w-[80%]`}>
+                                                    <div className={`rounded-lg px-4 py-2 ${msg.type === 'user'
+                                                        ? 'bg-blue-500 text-white'
+                                                        : 'bg-white text-gray-800'
+                                                        }`}>
+                                                        <div
+                                                            className={`text-sm prose prose-sm max-w-none ${msg.type === 'user' ? 'prose-invert [&_*]:!text-white' : ''}`}
+                                                            dangerouslySetInnerHTML={{ __html: renderMessage(msg.message, msg.type === 'user', msg.correctAnswer) }}
+                                                        />
                                                     </div>
-                                                )}
+                                                    {/* Citations */}
+                                                    {msg.type === 'ai' && msg.citations && msg.citations.length > 0 && (
+                                                        <div className="mt-2 flex flex-wrap gap-2">
+                                                            {msg.citations.map((citation, citIndex) => (
+                                                                <button
+                                                                    key={citIndex}
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        handleOpenCitation(citation.materialId, citation.page);
+                                                                    }}
+                                                                    className="text-xs px-3 py-1.5 bg-blue-50 hover:bg-blue-100 active:bg-blue-200 border border-blue-200 rounded-lg text-blue-700 font-medium transition-all cursor-pointer flex items-center space-x-1 shadow-sm hover:shadow-md"
+                                                                    title={citation.materialName ? `Click để xem ${citation.materialName} - Trang ${citation.page}` : `Click để xem trang ${citation.page}`}
+                                                                >
+                                                                    <FileText className="w-3 h-3 flex-shrink-0" />
+                                                                    <span className="whitespace-nowrap">
+                                                                        {citation.materialName ? `${citation.materialName} - ` : ''}Trang {citation.page}
+                                                                    </span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         ))}
                                         {isLoadingChat && (
@@ -2731,7 +3758,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                         {isLoadingChat ? (
                                             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                                         ) : (
-                                            <Send className="w-4 h-4" />
+                                            <span className="text-sm">↑</span>
                                         )}
                                     </button>
                                 </div>
@@ -2787,8 +3814,10 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                     setShowCreateTest(false);
                                     navigate('/dashboard/material-selection');
                                 } else if (testCreationMode === 'flashcards') {
-                                    // Handle flashcards mode here
-                                    console.log('Continue with flashcards mode');
+                                    // Show flashcard selection view
+                                    setShowFlashcardSelection(true);
+                                    setShowCreateTest(false);
+                                    navigate('/dashboard/flashcard-selection');
                                 }
                             }}
                             disabled={!testCreationMode}
@@ -2806,8 +3835,8 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                 <div className="max-w-4xl">
                     <h2 className="text-xl font-semibold text-gray-900 mb-6">Bạn muốn tạo bài kiểm tra như thế nào?</h2>
 
-                    {/* Only From Materials Card */}
-                    <div className="grid grid-cols-1 gap-6 mb-8">
+                    {/* Test Creation Options */}
+                    <div className="grid grid-cols-2 gap-6 mb-8">
                         {/* From Materials Card */}
                         <div
                             onClick={() => setTestCreationMode('materials')}
@@ -2833,7 +3862,32 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                             <h3 className="text-xl font-bold text-gray-900 mb-2">Từ tài liệu</h3>
                             <p className="text-gray-600">Tạo bài kiểm tra từ tài liệu trong Bộ học của bạn.</p>
                         </div>
-                        {/* Removed Flashcards option by request */}
+
+                        {/* From Flashcards Card */}
+                        <div
+                            onClick={() => setTestCreationMode('flashcards')}
+                            className={`border-2 rounded-xl p-6 cursor-pointer transition-all ${testCreationMode === 'flashcards'
+                                ? 'border-blue-500 bg-blue-50 shadow-lg'
+                                : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-md'
+                                }`}
+                        >
+                            <div className="flex items-start justify-between mb-4">
+                                <div className="relative">
+                                    <div className="w-16 h-16 bg-green-100 rounded-lg flex items-center justify-center">
+                                        <BookOpen className="w-8 h-8 text-green-600" />
+                                    </div>
+                                    {/* Overlapping cards effect */}
+                                    <div className="absolute -top-1 -right-1 w-6 h-6 bg-yellow-400 rounded-lg flex items-center justify-center transform rotate-12">
+                                        <BookOpen className="w-4 h-4 text-yellow-800" />
+                                    </div>
+                                    <div className="absolute -bottom-1 -left-1 w-5 h-5 bg-orange-400 rounded-lg flex items-center justify-center transform -rotate-12">
+                                        <BookOpen className="w-3 h-3 text-orange-800" />
+                                    </div>
+                                </div>
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 mb-2">Từ flashcard</h3>
+                            <p className="text-gray-600">Tạo bài kiểm tra từ flashcard trong Bộ học của bạn.</p>
+                        </div>
                     </div>
 
 
@@ -3116,6 +4170,11 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
             return renderMaterialSelectionView();
         }
 
+        // Show Flashcard Selection view if requested
+        if (showFlashcardSelection) {
+            return renderFlashcardSelectionView();
+        }
+
         // Show Create Test view if requested
         if (showCreateTest) {
             return renderCreateTestView();
@@ -3184,8 +4243,119 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
             );
         }
 
-        // Show My Study Sets if requested
-        if (activeSection === 'sets') {
+        // Show Sub-Roadmap if selected (check BEFORE My Study Sets to avoid conflict)
+        if (showSubRoadmap && selectedModule && selectedStudySet) {
+            return (
+                <SubRoadmapViewer
+                    key={`subroadmap-${selectedModule.id}-${Date.now()}`} // Force reload when returning from flashcards
+                    moduleId={selectedModule.id}
+                    moduleTitle={selectedModule.title}
+                    studySetId={selectedStudySet.id}
+                    onBack={() => {
+                        // Clear sub-module ID when leaving sub-roadmap
+                        setCurrentSubModuleId(null);
+                        setShowSubRoadmap(false);
+                        setSelectedModule(null);
+                        // Show study set detail (màn 2) instead of navigating to studyset list
+                        setShowStudySetDetail(true);
+                        // Don't navigate - just show study set detail view
+                        // The study set detail will be shown because selectedStudySet is still set
+                    }}
+                    onFlashcardGenerated={(flashcardSetId, subModuleId) => {
+                        setSelectedFlashcardSetId(flashcardSetId);
+                        setCurrentSubModuleId(subModuleId || null);
+                        setShowSubRoadmap(false);
+                        setShowFlashcards(true);
+                    }}
+                />
+            );
+        }
+
+        // Show Flashcards if flashcards was clicked (check BEFORE Study Set Detail)
+        if (showFlashcards && selectedStudySet) {
+            // If we have a specific flashcard set ID (from auto-generation), load and show those flashcards
+            if (selectedFlashcardSetId) {
+                return (
+                    <Flashcards
+                        studySetId={selectedStudySet.id}
+                        studySetName={selectedStudySet.name}
+                        onBack={() => {
+                            setShowFlashcards(false);
+                            setSelectedFlashcardSetId(null);
+                            // Go back to Study Set Detail
+                            setShowStudySetDetail(true);
+                        }}
+                        isCollapsed={isCollapsed}
+                        initialFlashcardSetId={selectedFlashcardSetId}
+                    />
+                );
+            }
+            return (
+                <Flashcards
+                    studySetId={selectedStudySet.id}
+                    studySetName={selectedStudySet.name}
+                    onBack={() => {
+                        // If we came from sub-roadmap, go back to sub-roadmap
+                        if (currentSubModuleId && selectedModule && selectedStudySet) {
+                            handleBackFromFlashcards();
+                        } else {
+                            // Otherwise, go back to Study Set Detail
+                            setShowFlashcards(false);
+                            setShowStudySetDetail(true);
+                        }
+                    }}
+                    isCollapsed={isCollapsed}
+                />
+            );
+        }
+
+        // Show Study Set Detail if selected (check AFTER Flashcards)
+        if (showStudySetDetail && selectedStudySet) {
+            return (
+                <StudySetDetail
+                    key={selectedStudySet.id} // Force re-render when study set changes
+                    studySet={selectedStudySet}
+                    onModuleClick={(module: { id: number, title: string }) => {
+                        setSelectedModule(module);
+                        setShowStudySetDetail(false);
+                        setShowSubRoadmap(true);
+                        // Navigate to Subroadmap URL
+                        navigate(`/dashboard/Subroadmap?moduleId=${module.id}&studySetId=${selectedStudySet.id}`, {
+                            state: { module }
+                        });
+                    }}
+                    onBack={() => {
+                        setShowStudySetDetail(false);
+                        // Check if we came from 'sets' page, if so, go back to sets
+                        // Otherwise go to home
+                        const cameFromSets = location.pathname === '/dashboard/studyset' || activeSection === '';
+                        if (cameFromSets) {
+                            setActiveSection('sets');
+                            navigate('/dashboard/studyset');
+                        } else {
+                            setActiveSection('home');
+                            navigate('/dashboard');
+                        }
+                        // Reload data when going back
+                        if (user?.id) {
+                            loadStudySets().then((reloadedSets) => {
+                                if (reloadedSets && reloadedSets.length > 0) {
+                                    if (selectedStudySet?.id) {
+                                        loadHomeStats(selectedStudySet.id);
+                                    }
+                                }
+                            });
+                        }
+                    }}
+                    onViewMaterial={handleViewMaterial}
+                    onViewFlashcards={handleViewFlashcards}
+                    isCollapsed={isCollapsed}
+                />
+            );
+        }
+
+        // Show My Study Sets if requested (check AFTER Sub-Roadmap and Study Set Detail)
+        if (activeSection === 'sets' && !showSubRoadmap && !showStudySetDetail) {
             return (
                 <MyStudySets
                     userId={user?.id || '0'}
@@ -3224,6 +4394,25 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
             );
         }
 
+        // Show Upload Materials page if requested
+        if (showUploadMaterials && selectedStudySet) {
+            return (
+                <UploadMaterials
+                    studySetId={selectedStudySet.id}
+                    studySetName={selectedStudySet.name}
+                    onBack={() => {
+                        setShowUploadMaterials(false);
+                        setShowMaterials(true);
+                    }}
+                    onViewMaterial={() => {
+                        setShowUploadMaterials(false);
+                        setShowMaterials(true);
+                    }}
+                    isCollapsed={isCollapsed}
+                />
+            );
+        }
+
         // Show Materials page if requested
         if (showMaterials && selectedStudySet) {
             return (
@@ -3232,6 +4421,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                     studySetName={selectedStudySet.name}
                     onBack={() => {
                         setShowMaterials(false);
+                        setShowUploadMaterials(false);
                         setShowStudySetDetail(true);
                     }}
                     isCollapsed={isCollapsed}
@@ -3240,7 +4430,12 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                         setCitationMaterialId(materialId);
                         setCameFromMaterials(true);
                         setShowMaterials(false);
+                        setShowUploadMaterials(false);
                         setShowMaterialViewer(true);
+                    }}
+                    onAddMaterial={() => {
+                        setShowMaterials(false);
+                        setShowUploadMaterials(true);
                     }}
                 />
             );
@@ -3281,60 +4476,6 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
             );
         }
 
-        // Show Flashcards if flashcards was clicked
-        if (showFlashcards && selectedStudySet) {
-            return (
-                <Flashcards
-                    studySetId={selectedStudySet.id}
-                    studySetName={selectedStudySet.name}
-                    onBack={handleBackFromFlashcards}
-                    isCollapsed={isCollapsed}
-                />
-            );
-        }
-
-        if (showStudySetDetail && selectedStudySet) {
-            return (
-                <StudySetDetail
-                    key={selectedStudySet.id} // Force re-render when study set changes
-                    studySet={selectedStudySet}
-                    onBack={() => {
-                        setShowStudySetDetail(false);
-                        // Check if we came from 'sets' page, if so, go back to sets
-                        // Otherwise go to home
-                        const cameFromSets = location.pathname === '/dashboard/studyset' || activeSection === '';
-                        if (cameFromSets) {
-                            setActiveSection('sets');
-                            navigate('/dashboard/studyset');
-                        } else {
-                            setActiveSection('home');
-                            navigate('/dashboard');
-                        }
-                        // Reload data when going back
-                        if (user?.id) {
-                            loadStudySets().then((reloadedSets) => {
-                                if (reloadedSets && reloadedSets.length > 0) {
-                                    const currentId = selectedStudySet?.id;
-                                    const foundSet = currentId
-                                        ? reloadedSets.find((s: any) => String(s.id) === String(currentId))
-                                        : null;
-                                    const setToUse = foundSet || reloadedSets[0];
-                                    if (setToUse) {
-                                        setSelectedStudySet(setToUse);
-                                        if (!cameFromSets) {
-                                            loadHomeStats(setToUse.id);
-                                        }
-                                    }
-                                }
-                            });
-                        }
-                    }}
-                    onViewMaterial={handleViewMaterial}
-                    onViewFlashcards={handleViewFlashcards}
-                    isCollapsed={isCollapsed}
-                />
-            );
-        }
 
         // Otherwise, show StudyFetch content
         return (
@@ -3401,21 +4542,51 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                     </div>
 
                     {/* Study Set Buttons */}
-                    <div className="flex items-center space-x-4 mb-6">
-                        {studySets.length > 0 ? (
-                            studySets.map((set) => (
-                                <button
-                                    key={set.id}
-                                    onClick={() => {
-                                        setSelectedStudySet(set);
-                                        // Add study set to navigation (only one at a time)
-                                        addStudySetToNavigation({ id: set.id, name: set.name, icon: (set as any).icon });
-                                    }}
-                                    className={`flex items-center space-x-3 px-6 py-4 rounded-lg transition-colors shadow-sm ${selectedStudySet?.id === set.id
-                                        ? 'bg-blue-100 border-2 border-blue-400 text-gray-900'
-                                        : 'bg-white border-2 border-gray-200 text-gray-900 hover:border-blue-300 hover:bg-gray-50'
-                                        }`}
-                                >
+                    <div className="relative mb-6 flex items-center">
+                        {/* Left Arrow Button */}
+                        {studySets.length > 5 && studySetScrollIndex > 0 && (
+                            <button
+                                onClick={() => {
+                                    setStudySetScrollIndex(Math.max(0, studySetScrollIndex - 1));
+                                }}
+                                className="flex-shrink-0 w-10 h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-50 transition-colors z-10"
+                            >
+                                <ChevronLeft className="w-5 h-5 text-gray-600" />
+                            </button>
+                        )}
+
+                        {/* Scrollable Container - Full Width */}
+                        <div
+                            ref={studySetScrollRef}
+                            className="flex items-center justify-between flex-1 gap-4"
+                        >
+                            {studySets.length > 0 ? (
+                                studySets.slice(studySetScrollIndex, studySetScrollIndex + 5).map((set) => (
+                                    <button
+                                        key={set.id}
+                                        onClick={() => {
+                                            setSelectedStudySet(set);
+                                            // Add study set to navigation (only one at a time)
+                                            addStudySetToNavigation({ id: set.id, name: set.name, icon: (set as any).icon });
+                                        }}
+                                        className={`flex-1 flex items-center space-x-3 px-6 py-4 rounded-lg transition-colors shadow-sm ${selectedStudySet?.id === set.id
+                                            ? 'bg-blue-100 border-2 border-blue-400 text-gray-900'
+                                            : 'bg-white border-2 border-gray-200 text-gray-900 hover:border-blue-300 hover:bg-gray-50'
+                                            }`}
+                                    >
+                                        <div className="w-8 h-8 bg-orange-200 rounded-lg flex items-center justify-center">
+                                            <div className="flex flex-wrap w-4 h-4">
+                                                <div className="w-1 h-1 bg-blue-600 rounded-full m-0.5"></div>
+                                                <div className="w-1 h-1 bg-yellow-500 rounded-full m-0.5"></div>
+                                                <div className="w-1 h-1 bg-green-500 rounded-full m-0.5"></div>
+                                                <div className="w-1 h-1 bg-blue-500 rounded-full m-0.5"></div>
+                                            </div>
+                                        </div>
+                                        <span className="font-semibold text-gray-900 whitespace-nowrap">{set.name}</span>
+                                    </button>
+                                ))
+                            ) : (
+                                <button className="flex-1 flex items-center space-x-3 bg-blue-50 border-2 border-blue-300 text-gray-900 px-6 py-4 rounded-lg hover:border-blue-400 transition-colors shadow-sm">
                                     <div className="w-8 h-8 bg-orange-200 rounded-lg flex items-center justify-center">
                                         <div className="flex flex-wrap w-4 h-4">
                                             <div className="w-1 h-1 bg-blue-600 rounded-full m-0.5"></div>
@@ -3424,31 +4595,32 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                             <div className="w-1 h-1 bg-blue-500 rounded-full m-0.5"></div>
                                         </div>
                                     </div>
-                                    <span className="font-semibold text-gray-900">{set.name}</span>
+                                    <span className="font-semibold text-gray-900">Bộ học đầu tiên của tôi</span>
                                 </button>
-                            ))
-                        ) : (
-                            <button className="flex items-center space-x-3 bg-blue-50 border-2 border-blue-300 text-gray-900 px-6 py-4 rounded-lg hover:border-blue-400 transition-colors shadow-sm">
-                                <div className="w-8 h-8 bg-orange-200 rounded-lg flex items-center justify-center">
-                                    <div className="flex flex-wrap w-4 h-4">
-                                        <div className="w-1 h-1 bg-blue-600 rounded-full m-0.5"></div>
-                                        <div className="w-1 h-1 bg-yellow-500 rounded-full m-0.5"></div>
-                                        <div className="w-1 h-1 bg-green-500 rounded-full m-0.5"></div>
-                                        <div className="w-1 h-1 bg-blue-500 rounded-full m-0.5"></div>
-                                    </div>
+                            )}
+                            <button
+                                onClick={() => setShowAddSetModal(true)}
+                                className="flex-1 flex items-center justify-center space-x-3 bg-gray-50 border-2 border-dashed border-gray-300 text-gray-600 px-6 py-4 rounded-lg hover:border-gray-400 transition-colors shadow-sm"
+                            >
+                                <div className="w-8 h-8 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                                    <span className="text-gray-600 text-lg font-bold">+</span>
                                 </div>
-                                <span className="font-semibold text-gray-900">Bộ học đầu tiên của tôi</span>
+                                <span className="font-semibold text-gray-600 whitespace-nowrap text-sm">Thêm bộ học</span>
+                            </button>
+                        </div>
+
+                        {/* Right Arrow Button */}
+                        {studySets.length > 5 && studySetScrollIndex + 5 < studySets.length && (
+                            <button
+                                onClick={() => {
+                                    const maxIndex = Math.max(0, studySets.length - 5);
+                                    setStudySetScrollIndex(Math.min(maxIndex, studySetScrollIndex + 1));
+                                }}
+                                className="flex-shrink-0 w-10 h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-50 transition-colors z-10"
+                            >
+                                <ChevronRight className="w-5 h-5 text-gray-600" />
                             </button>
                         )}
-                        <button
-                            onClick={() => setShowAddSetModal(true)}
-                            className="flex items-center space-x-3 bg-gray-50 border-2 border-dashed border-gray-300 text-gray-600 px-6 py-4 rounded-lg hover:border-gray-400 transition-colors shadow-sm"
-                        >
-                            <div className="w-8 h-8 bg-gray-200 rounded-lg flex items-center justify-center">
-                                <span className="text-gray-600 text-lg font-bold">+</span>
-                            </div>
-                            <span className="font-medium text-gray-600">Thêm bộ học</span>
-                        </button>
                     </div>
 
                 </div>
@@ -3479,12 +4651,25 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                     <div className="w-80 space-y-6">
                         {/* Streak Card */}
                         <div className="bg-white rounded-xl p-6 shadow-sm">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center space-x-2">
-                                    <Flame className="w-5 h-5 text-orange-500" />
-                                    <span className="text-2xl font-bold text-gray-900">Chuỗi 0 ngày!</span>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-3">
+                                    <img
+                                        src="/fire.gif"
+                                        alt="Streak"
+                                        className="w-10 h-10 rounded-full object-cover shadow-sm"
+                                    />
+                                    <div>
+                                        <div className="text-xl font-bold text-gray-900">
+                                            {isLoadingStreak ? 'Đang cập nhật...' : `${streakInfo.current} ngày streak!`}
+                                        </div>
+                                        <p className="text-xs text-gray-500">
+                                            Kỷ lục: {streakInfo.best} ngày
+                                        </p>
+                                    </div>
                                 </div>
-                                <button className="text-blue-600 hover:text-blue-700 text-sm">Xem bảng xếp hạng</button>
+                                <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">
+                                    Xem bảng xếp hạng
+                                </button>
                             </div>
                         </div>
 
@@ -3562,7 +4747,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
     };
 
     return (
-        <div className={`min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+        <div className={`min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`}>
             {/* Left Sidebar - Fixed */}
             <div className={`fixed left-0 top-0 h-screen z-30 ${isCollapsed ? 'w-16' : 'w-48'} ${isDarkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg flex flex-col transition-all duration-300`}>
                 {/* Logo */}
@@ -3580,21 +4765,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                                 <span className={`font-bold text-xl ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>STUDY FETCH</span>
                             )}
                         </div>
-                        {/* Dark Mode & Collapse Buttons */}
-                        <div className="flex items-center space-x-1">
-                            {/* Dark Mode Button */}
-                            <button
-                                onClick={() => setIsDarkMode(!isDarkMode)}
-                                className="w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors"
-                                title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-                            >
-                                {isDarkMode ? (
-                                    <Sun className="w-3 h-3 text-yellow-600" />
-                                ) : (
-                                    <Moon className="w-3 h-3 text-gray-600" />
-                                )}
-                            </button>
-                        </div>
+                        {/* Removed Dark Mode Button */}
                     </div>
                 </div>
 
@@ -3619,10 +4790,10 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                             if (item.id === 'home') {
                                 // Home active khi: không có view nào đang mở (dashboard chính)
                                 // và không phải đang ở test/review test/practice
-                                // và không phải đang ở studyset
-                                isActive = !showFlashcards && !showMaterialViewer && !showStudySetDetail &&
+                                // và không phải đang ở studyset hay subroadmap
+                                isActive = !showFlashcards && !showMaterialViewer && !showStudySetDetail && !showSubRoadmap &&
                                     !showReviewTest && !showTestView && !showCreateTest &&
-                                    !showMaterialSelection && !showTestTypeSelection && !showPractice &&
+                                    !showMaterialSelection && !showFlashcardSelection && !showTestTypeSelection && !showPractice &&
                                     !showExplainerVideo && !showExplainerVideoResult && !showExplainerVideoGenerating &&
                                     !showArcade && activeSection !== 'sets';
                             } else if (item.id === 'sets') {
@@ -3634,7 +4805,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                             } else if (item.id === 'tests') {
                                 // Tests active khi: đang ở màn test/review test/practice/create test
                                 isActive = showReviewTest || showTestView || showCreateTest ||
-                                    showMaterialSelection || showTestTypeSelection || showPractice ||
+                                    showMaterialSelection || showFlashcardSelection || showTestTypeSelection || showPractice ||
                                     activeSection === 'tests';
                             } else if (item.id === 'explainers') {
                                 // Explainers active khi: đang xem explainer video page hoặc result page
@@ -3645,7 +4816,7 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                             } else if (item.id.startsWith('study-set-')) {
                                 // Study set active khi: đang xem StudySetDetail của study set đó
                                 const studySetId = item.id.replace('study-set-', '');
-                                isActive = showStudySetDetail && selectedStudySet?.id === studySetId;
+                                isActive = (showStudySetDetail || showSubRoadmap) && selectedStudySet?.id === studySetId;
                             } else {
                                 // Các nút khác active khi: đang ở section đó
                                 isActive = activeSection === item.id;
@@ -3729,8 +4900,11 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
                 </div>
             </div>
 
-            {/* Main Content - With left margin to account for fixed sidebar */}
-            <div className={`${isCollapsed ? 'ml-16' : 'ml-48'} transition-all duration-300 ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+            {/* Main Content - Adjust padding to account for fixed sidebar */}
+            <div
+                className={`transition-all duration-300 ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`}
+                style={{ paddingLeft: isCollapsed ? '4rem' : '12rem' }}
+            >
                 {renderMainContent()}
             </div>
 
@@ -3913,5 +5087,5 @@ QUAN TRỌNG: Khi bạn trả lời, hãy chỉ rõ thông tin bạn lấy từ 
 };
 
 export default HybridDashboard;
-
+export { };
 

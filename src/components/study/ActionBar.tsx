@@ -5,13 +5,16 @@ interface ActionBarProps {
     isShuffled: boolean;
     audioEnabled: boolean;
     isBookmarked: boolean;
+    showBookmarkedOnly?: boolean;
     isFlipped: boolean;
     showAiSidebar: boolean;
     sidebarWidth: number;
+    isCollapsed: boolean;
     onShuffle: () => void;
     onToggleAudio: () => void;
     onReplayAudio: () => void;
     onToggleBookmark: () => void;
+    onToggleBookmarkFilter?: () => void;
     onFlip: () => void;
 }
 
@@ -19,24 +22,39 @@ export const ActionBar: React.FC<ActionBarProps> = ({
     isShuffled,
     audioEnabled,
     isBookmarked,
+    showBookmarkedOnly = false,
     isFlipped,
     showAiSidebar,
     sidebarWidth,
+    isCollapsed,
     onShuffle,
     onToggleAudio,
     onReplayAudio,
     onToggleBookmark,
+    onToggleBookmarkFilter,
     onFlip
 }) => {
+    // Calculate left position based on navigation sidebar width
+    const leftNavWidth = isCollapsed ? 64 : 192;
+    // Add extra padding to shift action bar to the right
+    const leftPadding = 16; // 16px padding from navigation sidebar
+
+    // Calculate right margin based on sidebar state
+    // When sidebar is closed, reserve space for chatbot toggle: 160px (button) + 16px (right-4) = 176px
+    const rightMargin = showAiSidebar ? `${sidebarWidth + 24}px` : '176px';
+
     return (
         <div
-            className="fixed bottom-4 left-0 z-10 pointer-events-none"
-            style={{ right: showAiSidebar ? sidebarWidth + 24 : 0 }}
+            className="fixed bottom-4 z-10 pointer-events-none"
+            style={{
+                left: `${leftNavWidth + leftPadding}px`,
+                right: rightMargin
+            }}
         >
-            <div className="flex items-center gap-3 justify-center pointer-events-auto">
+            <div className={`flex items-center gap-3 pointer-events-auto px-4 w-full ${showAiSidebar ? 'justify-start' : 'justify-center'}`}>
                 <button
                     onClick={onShuffle}
-                    className={`pointer-events-auto px-4 py-2 rounded-full border ${isShuffled ? 'border-emerald-400 text-emerald-600' : 'border-emerald-300 text-emerald-600'} bg-white shadow-sm hover:bg-emerald-50 transition-colors flex items-center gap-2`}
+                    className={`pointer-events-auto px-4 py-2 rounded-full border ${isShuffled ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-emerald-300 text-emerald-600 bg-white'} shadow-sm hover:bg-emerald-50 transition-colors flex items-center gap-2`}
                 >
                     <Shuffle className="w-4 h-4" />
                     <span className="text-sm">Shuffle Flashcards</span>
@@ -67,15 +85,15 @@ export const ActionBar: React.FC<ActionBarProps> = ({
                     </button>
                 )}
                 <button
-                    onClick={onToggleBookmark}
-                    className="pointer-events-auto px-4 py-2 rounded-full text-gray-700 bg-white shadow-sm hover:bg-gray-50 transition-colors flex items-center gap-2"
+                    onClick={onToggleBookmarkFilter}
+                    className={`pointer-events-auto px-4 py-2 rounded-full border ${showBookmarkedOnly ? 'border-yellow-400 bg-yellow-50' : 'border-yellow-300'} text-gray-700 bg-white shadow-sm hover:bg-yellow-50 transition-colors flex items-center gap-2`}
                 >
-                    <Star className="w-4 h-4" />
+                    <Star className={`w-4 h-4 ${showBookmarkedOnly ? 'fill-yellow-500 text-yellow-500' : ''}`} />
                     <span className="text-sm">Bookmarked</span>
                 </button>
                 <button
                     onClick={onFlip}
-                    className="pointer-events-auto px-4 py-2 rounded-full text-gray-700 bg-white shadow-sm hover:bg-gray-50 transition-colors flex items-center gap-2"
+                    className="pointer-events-auto px-4 py-2 rounded-full border border-orange-300 text-gray-700 bg-white shadow-sm hover:bg-orange-50 transition-colors flex items-center gap-2"
                 >
                     <RotateCcw className="w-4 h-4" />
                     <span className="text-sm">Click to Flip</span>

@@ -4,12 +4,15 @@ import { isFillBlankCard, isMultipleChoiceCard } from '../utils/flashcardStudyHe
 interface UseFlashcardStudyProps {
     flashcards: any[];
     currentCardIndex: number;
+    userId?: string;
+    flashcardSetId?: number;
 }
 
-export const useFlashcardStudy = ({ flashcards, currentCardIndex }: UseFlashcardStudyProps) => {
+export const useFlashcardStudy = ({ flashcards, currentCardIndex, userId, flashcardSetId }: UseFlashcardStudyProps) => {
     const [isFlipped, setIsFlipped] = useState(false);
     const [isShuffled, setIsShuffled] = useState(false);
     const [bookmarkedCards, setBookmarkedCards] = useState<Set<string>>(new Set());
+    const [isLoadingBookmarks, setIsLoadingBookmarks] = useState(false);
     const [slideDirection, setSlideDirection] = useState<'left' | 'right' | null>(null);
     const [isSliding, setIsSliding] = useState(false);
 
@@ -27,6 +30,42 @@ export const useFlashcardStudy = ({ flashcards, currentCardIndex }: UseFlashcard
     const [multipleChoiceIsCorrect, setMultipleChoiceIsCorrect] = useState<boolean | null>(null);
 
     const currentCard = flashcards[currentCardIndex];
+
+    // Load bookmarks from database when component mounts or flashcards change
+    useEffect(() => {
+        if (!userId || !flashcardSetId) return;
+
+        const loadBookmarks = async () => {
+            try {
+                setIsLoadingBookmarks(true);
+                // Load bookmark status for all flashcards
+                const bookmarkPromises = flashcards.map(async (card) => {
+                    try {
+                        const response = await fetch(
+                            `http://localhost:3001/api/flashcards/${card.id}/bookmark-status?userId=${userId}`
+                        );
+                        if (response.ok) {
+                            const data = await response.json();
+                            return data.bookmarked ? String(card.id) : null;
+                        }
+                        return null;
+                    } catch (error) {
+                        console.error(`Error checking bookmark for card ${card.id}:`, error);
+                        return null;
+                    }
+                });
+
+                const bookmarkedIds = (await Promise.all(bookmarkPromises)).filter((id): id is string => id !== null);
+                setBookmarkedCards(new Set(bookmarkedIds));
+            } catch (error) {
+                console.error('Error loading bookmarks:', error);
+            } finally {
+                setIsLoadingBookmarks(false);
+            }
+        };
+
+        loadBookmarks();
+    }, [userId, flashcardSetId, flashcards.length]); // Only reload when these change
 
     // Reset fillBlank state when card changes
     useEffect(() => {
@@ -49,15 +88,62 @@ export const useFlashcardStudy = ({ flashcards, currentCardIndex }: UseFlashcard
         setIsFlipped(!isFlipped);
     };
 
-    const toggleBookmark = () => {
-        if (!currentCard) return;
+    const toggleBookmark = async () => {
+        if (!currentCard) {
+            console.log('❌ [BOOKMARK] No current card');
+            return;
+        }
+
+        if (!userId) {
+            console.log('❌ [BOOKMARK] No user ID');
+            return;
+        }
+
+        // Ensure id is string for consistent comparison
+        const cardId = String(currentCard.id);
+        console.log('🔖 [BOOKMARK] Toggling bookmark for card:', cardId);
+        console.log('🔖 [BOOKMARK] Current bookmarkedCards:', Array.from(bookmarkedCards));
+
+        // Optimistically update UI
         const newBookmarked = new Set(bookmarkedCards);
-        if (newBookmarked.has(currentCard.id)) {
-            newBookmarked.delete(currentCard.id);
+        const wasBookmarked = newBookmarked.has(cardId);
+        if (wasBookmarked) {
+            newBookmarked.delete(cardId);
+            console.log('🔖 [BOOKMARK] Removed bookmark (optimistic)');
         } else {
-            newBookmarked.add(currentCard.id);
+            newBookmarked.add(cardId);
+            console.log('🔖 [BOOKMARK] Added bookmark (optimistic)');
         }
         setBookmarkedCards(newBookmarked);
+
+        // Call API to persist bookmark
+        try {
+            const response = await fetch(`http://localhost:3001/api/flashcards/${cardId}/bookmark`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId,
+                    flashcardSetId: flashcardSetId || null
+                })
+            });
+
+            if (!response.ok) {
+                // Revert optimistic update on error
+                console.error('❌ [BOOKMARK] Failed to toggle bookmark, reverting');
+                if (wasBookmarked) {
+                    newBookmarked.add(cardId);
+                } else {
+                    newBookmarked.delete(cardId);
+                }
+                setBookmarkedCards(newBookmarked);
+                throw new Error('Failed to toggle bookmark');
+            }
+
+            const data = await response.json();
+            console.log('✅ [BOOKMARK] Bookmark toggled successfully:', data);
+        } catch (error) {
+            console.error('❌ [BOOKMARK] Error toggling bookmark:', error);
+        }
     };
 
     const showFillBlankHint = () => {
@@ -140,6 +226,7 @@ export const useFlashcardStudy = ({ flashcards, currentCardIndex }: UseFlashcard
         isShuffled,
         setIsShuffled,
         bookmarkedCards,
+        isLoadingBookmarks,
         slideDirection,
         setSlideDirection,
         isSliding,

@@ -48,9 +48,10 @@ interface FlashcardsProps {
     studySetName: string;
     onBack: () => void;
     isCollapsed?: boolean;
+    initialFlashcardSetId?: number;
 }
 
-const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBack, isCollapsed = false }) => {
+const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBack, isCollapsed = false, initialFlashcardSetId }) => {
     const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
     const [materials, setMaterials] = useState<Material[]>([]);
     const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
@@ -125,6 +126,13 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
         loadFlashcards();
         loadMaterials();
     }, [selectedStudySetId]);
+
+    // Auto-open flashcard set if initialFlashcardSetId is provided
+    useEffect(() => {
+        if (initialFlashcardSetId) {
+            openFlashcardSet(initialFlashcardSetId);
+        }
+    }, [initialFlashcardSetId]);
 
     // Load all flashcard sets, filter theo study_set_id hiện tại
     useEffect(() => {
@@ -365,6 +373,7 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
                 isCollapsed={isCollapsed}
                 flashcardName={viewingName}
                 studySetId={selectedStudySetId}
+                flashcardSetId={viewingFlashcardSetId}
             />
         );
     }

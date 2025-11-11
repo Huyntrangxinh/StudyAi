@@ -135,11 +135,13 @@ export const FillBlankCard: React.FC<FillBlankCardProps> = ({
                 {fillBlankChecked && fillBlankIsCorrect === false ? 'Show Correct Answers' : 'Check Answers'}
             </button>
             {card.termImage && (
-                <img
-                    src={card.termImage}
-                    alt="Term"
-                    className="w-full max-w-md mx-auto rounded-lg object-contain mt-4"
-                />
+                <div className="flex-shrink-0 mb-4 mt-4">
+                    <img
+                        src={card.termImage}
+                        alt="Term"
+                        className="max-w-xs max-h-64 w-auto h-auto mx-auto rounded-lg object-contain"
+                    />
+                </div>
             )}
         </div>
     );

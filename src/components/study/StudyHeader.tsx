@@ -9,7 +9,7 @@ interface StudyHeaderProps {
 
 export const StudyHeader: React.FC<StudyHeaderProps> = ({ isCollapsed, flashcardName, onBack }) => {
     return (
-        <div className={`bg-white fixed top-0 right-0 z-10 transition-all duration-300 ${isCollapsed ? 'left-16' : 'left-40'}`}>
+        <div className={`bg-white fixed top-0 right-0 z-10 transition-all duration-300 ${isCollapsed ? 'left-16' : 'left-48'}`}>
             <div className="w-full px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center justify-between h-16">
                     <div className="flex items-center space-x-4">

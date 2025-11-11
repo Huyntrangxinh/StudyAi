@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, Share, Upload, User, Link, Plus, Search, FileCog, GraduationCap, BookOpen, Volume2, List, PenTool, ListChecks, ChevronDown, ChevronUp, GripVertical, Trash2, Pencil } from 'lucide-react';
 import StudyFlashcardsWrapper from './StudyFlashcardsWrapper';
 import { useAuth } from '../hooks/useAuth';
@@ -167,6 +167,23 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
             console.log('Using studyFlashcardsForSession:', studyFlashcardsForSession);
         }
     }, [showStudyMode, studySetId, studyFlashcardsForSession.length, isReverseEnabled, isAudioEnabled, flashcardOps]);
+
+    // Reload flashcards when exiting study mode to ensure images are loaded
+    const prevShowStudyMode = useRef(showStudyMode);
+    useEffect(() => {
+        if (prevShowStudyMode.current && !showStudyMode) {
+            // Just exited study mode, reload flashcards from DB
+            console.log('🔄 Exited study mode, reloading flashcards from DB');
+            if (editingFlashcardSetId) {
+                flashcardOps.loadFlashcardsByFlashcardSetId(editingFlashcardSetId);
+            } else if (createdStudySetId) {
+                flashcardOps.loadFlashcardsByFlashcardSetId(createdStudySetId);
+            } else {
+                flashcardOps.loadFlashcardsFromDB(isReverseEnabled, isAudioEnabled);
+            }
+        }
+        prevShowStudyMode.current = showStudyMode;
+    }, [showStudyMode, editingFlashcardSetId, createdStudySetId, isReverseEnabled, isAudioEnabled, flashcardOps]);
 
     const options = [
         {
@@ -429,6 +446,8 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                                 correctIndex: correctAnswerIndex
                             }),
                             type: 'multiplechoice',
+                            termImage: termImage || null,
+                            definitionImage: definitionImage || null,
                             multipleChoiceOptions: multipleChoiceOptions,
                             correctAnswerIndex: correctAnswerIndex
                         })
@@ -472,6 +491,8 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                             flashcardSetId: Number(createdStudySetId ?? studySetId),
                             studySetId: Number(studySetId),
                             type: 'multiplechoice',
+                            termImage: termImage || null,
+                            definitionImage: definitionImage || null,
                             multipleChoiceOptions: multipleChoiceOptions,
                             correctAnswerIndex: correctAnswerIndex
                         })
@@ -675,6 +696,8 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
         // Default: Term and Definition
         setEditTerm(card.term);
         setEditDefinition(card.definition);
+        setTermImage(card.termImage || '');
+        setDefinitionImage(card.definitionImage || '');
     };
 
     const saveEdit = async () => {
@@ -685,7 +708,13 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
             // Nếu không có dbId, chỉ update state (card chưa được lưu vào DB)
             setFlashcards(prev => prev.map(card =>
                 card.id === editingCardId
-                    ? { ...card, term: editTerm.trim(), definition: editDefinition.trim() }
+                    ? {
+                        ...card,
+                        term: editTerm.trim(),
+                        definition: editDefinition.trim(),
+                        termImage: termImage || card.termImage || '',
+                        definitionImage: definitionImage || card.definitionImage || ''
+                    }
                     : card
             ));
             setEditingCardId(null);
@@ -695,6 +724,7 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
         }
 
         // Có dbId, gọi API để update vào DB
+        // Use termImage and definitionImage from state (updated by selectImage) instead of cardToEdit
         setIsSaving(true);
         try {
             const res = await fetch(`http://localhost:3001/api/flashcards/${cardToEdit.dbId}`, {
@@ -702,7 +732,12 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     front: editTerm.trim(),
-                    back: editDefinition.trim()
+                    back: editDefinition.trim(),
+                    type: cardToEdit.type || 'pair',
+                    termImage: termImage || null,
+                    definitionImage: definitionImage || null,
+                    multipleChoiceOptions: cardToEdit.multipleChoiceOptions || null,
+                    correctAnswerIndex: cardToEdit.correctAnswerIndex !== undefined ? cardToEdit.correctAnswerIndex : null
                 })
             });
 
@@ -711,15 +746,24 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                 throw new Error(errorText || 'Failed to update flashcard');
             }
 
-            // Update state sau khi API thành công
+            // Update state sau khi API thành công, including images
             setFlashcards(prev => prev.map(card =>
                 card.id === editingCardId
-                    ? { ...card, term: editTerm.trim(), definition: editDefinition.trim() }
+                    ? {
+                        ...card,
+                        term: editTerm.trim(),
+                        definition: editDefinition.trim(),
+                        termImage: termImage || '',
+                        definitionImage: definitionImage || ''
+                    }
                     : card
             ));
             setEditingCardId(null);
             setEditTerm('');
             setEditDefinition('');
+            // Reset images after saving
+            setTermImage('');
+            setDefinitionImage('');
         } catch (error) {
             console.error('Error updating flashcard:', error);
             alert('Lỗi khi cập nhật thẻ ghi nhớ');
@@ -728,10 +772,30 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
         }
     };
 
+    // Sync termImage and definitionImage from hook to flashcard being edited
+    useEffect(() => {
+        if (editingCardId) {
+            setFlashcards(prev => prev.map(card => {
+                if (card.id === editingCardId) {
+                    // Always sync images from hook state to flashcard
+                    return {
+                        ...card,
+                        termImage: termImage || card.termImage || '',
+                        definitionImage: definitionImage || card.definitionImage || ''
+                    };
+                }
+                return card;
+            }));
+        }
+    }, [editingCardId, termImage, definitionImage]);
+
     const cancelEdit = () => {
         setEditingCardId(null);
         setEditTerm('');
         setEditDefinition('');
+        // Reset images when canceling edit
+        setTermImage('');
+        setDefinitionImage('');
     };
 
     // Image management - using hook
@@ -837,9 +901,9 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                         expandedPreviews={expandedPreviews}
                         onDragStart={handleDragStart}
                         onDragOver={handleDragOver}
-                                    onDragLeave={handleDragLeave}
+                        onDragLeave={handleDragLeave}
                         onDrop={handleDrop}
-                                    onDragEnd={handleDragEnd}
+                        onDragEnd={handleDragEnd}
                         onDeleteFlashcard={deleteFlashcard}
                         onStartEdit={startEdit}
                         onCancelEdit={cancelEdit}
@@ -847,18 +911,25 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                             const cardToEdit = flashcards.find(c => c.id === cardId);
                             if (!cardToEdit || !cardToEdit.dbId) {
                                 // Nếu không có dbId, chỉ update state (card chưa được lưu vào DB)
-                                                                setFlashcards(prev => prev.map(card =>
+                                setFlashcards(prev => prev.map(card =>
                                     card.id === cardId
-                                        ? { ...card, term: term.trim(), definition: definition.trim() }
-                                                                        : card
-                                                                ));
-                                                                setEditingCardId(null);
-                                                                setEditTerm('');
-                                                                setEditDefinition('');
+                                        ? {
+                                            ...card,
+                                            term: term.trim(),
+                                            definition: definition.trim(),
+                                            termImage: termImage || card.termImage || '',
+                                            definitionImage: definitionImage || card.definitionImage || ''
+                                        }
+                                        : card
+                                ));
+                                setEditingCardId(null);
+                                setEditTerm('');
+                                setEditDefinition('');
                                 return;
                             }
 
                             // Có dbId, gọi API để update vào DB
+                            // Use termImage and definitionImage from state (updated by selectImage) instead of cardToEdit
                             setIsSaving(true);
                             try {
                                 const res = await fetch(`http://localhost:3001/api/flashcards/${cardToEdit.dbId}`, {
@@ -866,7 +937,12 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
                                         front: term.trim(),
-                                        back: definition.trim()
+                                        back: definition.trim(),
+                                        type: cardToEdit.type || 'pair',
+                                        termImage: termImage || null,
+                                        definitionImage: definitionImage || null,
+                                        multipleChoiceOptions: cardToEdit.multipleChoiceOptions || null,
+                                        correctAnswerIndex: cardToEdit.correctAnswerIndex !== undefined ? cardToEdit.correctAnswerIndex : null
                                     })
                                 });
 
@@ -875,10 +951,16 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                                     throw new Error(errorText || 'Failed to update flashcard');
                                 }
 
-                                // Update state sau khi API thành công
+                                // Update state sau khi API thành công, including images
                                 setFlashcards(prev => prev.map(card =>
                                     card.id === cardId
-                                        ? { ...card, term: term.trim(), definition: definition.trim() }
+                                        ? {
+                                            ...card,
+                                            term: term.trim(),
+                                            definition: definition.trim(),
+                                            termImage: termImage || '',
+                                            definitionImage: definitionImage || ''
+                                        }
                                         : card
                                 ));
                                 setEditingCardId(null);
@@ -970,30 +1052,30 @@ const CreateFlashcardSet: React.FC<CreateFlashcardSetProps> = ({ onBack, studySe
                         onBack={onBack}
                         onContinue={handleContinue}
                         onStudyNow={async () => {
-                                    const cardsToSave: Card[] = [
-                                        ...flashcards,
-                                        ...(termText.trim() && definitionText.trim()
-                                            ? [{
-                                                id: `tmp-${Date.now()}`,
-                                                term: termText.trim(),
-                                                definition: definitionText.trim(),
-                                                termImage: termImage || '',
-                                                definitionImage: definitionImage || '',
-                                                saved: false
-                                            }]
-                                            : [])
-                                    ];
-                                    setTermText('');
-                                    setDefinitionText('');
-                                    setTermImage('');
-                                    setDefinitionImage('');
-                                    setFlashcards(cardsToSave);
-                                    const results = await saveAllFlashcards(cardsToSave);
-                                    if (results.length > 0) setShowStudyMode(true);
-                                }}
+                            const cardsToSave: Card[] = [
+                                ...flashcards,
+                                ...(termText.trim() && definitionText.trim()
+                                    ? [{
+                                        id: `tmp-${Date.now()}`,
+                                        term: termText.trim(),
+                                        definition: definitionText.trim(),
+                                        termImage: termImage || '',
+                                        definitionImage: definitionImage || '',
+                                        saved: false
+                                    }]
+                                    : [])
+                            ];
+                            setTermText('');
+                            setDefinitionText('');
+                            setTermImage('');
+                            setDefinitionImage('');
+                            setFlashcards(cardsToSave);
+                            const results = await saveAllFlashcards(cardsToSave);
+                            if (results.length > 0) setShowStudyMode(true);
+                        }}
                         selectedOption={selectedOption}
                     />
-                        </div>
+                </div>
             </div>
         </div>
     );

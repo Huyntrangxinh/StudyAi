@@ -96,7 +96,7 @@ export function useViewTestHandler(params: UseViewTestHandlerParams) {
                     setShowTestView(false);
                     setShowReviewTest(true);
                     console.log('Navigating to review-test', { testId: test.id });
-                    navigate('/dashboard/review-test');
+                    navigate(`/dashboard/review-test?id=${test.id}`);
                 } else {
                     console.error('Failed to load test detail (latest exists):', r.status, r.statusText);
                     return;
@@ -132,7 +132,7 @@ export function useViewTestHandler(params: UseViewTestHandlerParams) {
                         setShowTestView(false);
                         setShowReviewTest(true);
                         console.log('Navigating to review-test (after retry latest)', { testId: test.id });
-                        navigate('/dashboard/review-test');
+                        navigate(`/dashboard/review-test?id=${test.id}`);
                         return;
                     } else {
                         console.error('Failed to load test detail after retry latest:', r.status, r.statusText);
@@ -163,7 +163,7 @@ export function useViewTestHandler(params: UseViewTestHandlerParams) {
                     setShowReviewTest(false);
                     setShowTestView(true);
                     console.log('Navigating to test (start new)', { testId: test.id });
-                    navigate('/dashboard/test');
+                    navigate(`/dashboard/test?id=${test.id}`);
                 } else {
                     console.error('Failed to load test detail for starting test:', response.status, response.statusText);
                     toast.error('Không thể tải bài kiểm tra');

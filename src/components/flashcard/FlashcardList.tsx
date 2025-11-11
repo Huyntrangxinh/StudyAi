@@ -439,36 +439,39 @@ export const FlashcardList: React.FC<FlashcardListProps> = ({
                                     <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
                                         <span className="text-sm font-semibold text-blue-600">{index + 1}</span>
                                     </div>
-                                    <select
-                                        value={flashcard.type || 'pair'}
-                                        onChange={(e) => {
-                                            const newType = e.target.value;
-                                            onSetFlashcards(prev => prev.map(c => {
-                                                if (c.id === flashcard.id) {
-                                                    if (newType === 'fillblank') {
-                                                        const answers = extractAnswersFromText(c.term || '');
-                                                        return {
-                                                            ...c,
-                                                            type: newType,
-                                                            fillBlankAnswers: answers.length > 0 ? answers : ['']
-                                                        };
-                                                    } else {
-                                                        return {
-                                                            ...c,
-                                                            type: newType,
-                                                            fillBlankAnswers: undefined
-                                                        };
+                                    {/* Only show dropdown in header when NOT editing */}
+                                    {editingCardId !== flashcard.id && (
+                                        <select
+                                            value={flashcard.type || 'pair'}
+                                            onChange={(e) => {
+                                                const newType = e.target.value;
+                                                onSetFlashcards(prev => prev.map(c => {
+                                                    if (c.id === flashcard.id) {
+                                                        if (newType === 'fillblank') {
+                                                            const answers = extractAnswersFromText(c.term || '');
+                                                            return {
+                                                                ...c,
+                                                                type: newType,
+                                                                fillBlankAnswers: answers.length > 0 ? answers : ['']
+                                                            };
+                                                        } else {
+                                                            return {
+                                                                ...c,
+                                                                type: newType,
+                                                                fillBlankAnswers: undefined
+                                                            };
+                                                        }
                                                     }
-                                                }
-                                                return c;
-                                            }));
-                                        }}
-                                        className="text-sm border border-gray-300 rounded-lg px-3 py-2"
-                                    >
-                                        <option value="pair">Thuật ngữ và Định nghĩa</option>
-                                        <option value="fillblank">Điền vào chỗ trống</option>
-                                        <option value="multiplechoice">Trắc nghiệm</option>
-                                    </select>
+                                                    return c;
+                                                }));
+                                            }}
+                                            className="text-sm border border-gray-300 rounded-lg px-3 py-2"
+                                        >
+                                            <option value="pair">Thuật ngữ và Định nghĩa</option>
+                                            <option value="fillblank">Điền vào chỗ trống</option>
+                                            <option value="multiplechoice">Trắc nghiệm</option>
+                                        </select>
+                                    )}
                                 </div>
                                 <div className="flex items-center space-x-2">
                                     <button
@@ -478,10 +481,12 @@ export const FlashcardList: React.FC<FlashcardListProps> = ({
                                     >
                                         <Pencil className="w-4 h-4" />
                                     </button>
-                                    <GripVertical
-                                        className="w-5 h-5 text-gray-400 cursor-move hover:text-gray-600"
-                                        onMouseDown={(e) => e.stopPropagation()}
-                                    />
+                                    {editingCardId !== flashcard.id && (
+                                        <GripVertical
+                                            className="w-5 h-5 text-gray-400 cursor-move hover:text-gray-600"
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                        />
+                                    )}
                                     <button
                                         onClick={() => onDeleteFlashcard(flashcard.id)}
                                         className="p-1 text-red-400 hover:text-red-600"
@@ -548,6 +553,32 @@ export const FlashcardList: React.FC<FlashcardListProps> = ({
                                                 </svg>
                                                 <span>Thêm hình ảnh</span>
                                             </button>
+                                            {flashcard.termImage && (
+                                                <div className="mt-3 relative group">
+                                                    <img
+                                                        src={flashcard.termImage}
+                                                        alt="Term image"
+                                                        className="w-full h-24 object-contain rounded-lg border border-gray-200 bg-gray-50"
+                                                        onError={(e) => {
+                                                            e.currentTarget.style.display = 'none';
+                                                        }}
+                                                    />
+                                                    <button
+                                                        onClick={() => {
+                                                            onSetFlashcards(prev => prev.map(f =>
+                                                                f.id === flashcard.id
+                                                                    ? { ...f, termImage: '' }
+                                                                    : f
+                                                            ));
+                                                        }}
+                                                        className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-600"
+                                                    >
+                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-3">Định nghĩa</label>
@@ -566,6 +597,32 @@ export const FlashcardList: React.FC<FlashcardListProps> = ({
                                                 </svg>
                                                 <span>Thêm hình ảnh</span>
                                             </button>
+                                            {flashcard.definitionImage && (
+                                                <div className="mt-3 relative group">
+                                                    <img
+                                                        src={flashcard.definitionImage}
+                                                        alt="Definition image"
+                                                        className="w-full h-24 object-contain rounded-lg border border-gray-200 bg-gray-50"
+                                                        onError={(e) => {
+                                                            e.currentTarget.style.display = 'none';
+                                                        }}
+                                                    />
+                                                    <button
+                                                        onClick={() => {
+                                                            onSetFlashcards(prev => prev.map(f =>
+                                                                f.id === flashcard.id
+                                                                    ? { ...f, definitionImage: '' }
+                                                                    : f
+                                                            ));
+                                                        }}
+                                                        className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-red-600"
+                                                    >
+                                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </>

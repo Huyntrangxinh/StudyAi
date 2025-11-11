@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Search,
     Plus,
@@ -7,7 +7,11 @@ import {
     FileText,
     Pencil,
     Upload,
-    ArrowLeft
+    ArrowLeft,
+    MoreVertical,
+    Trash2,
+    Edit2,
+    X
 } from 'lucide-react';
 
 interface Material {
@@ -25,14 +29,18 @@ interface MaterialsProps {
     onBack: () => void;
     isCollapsed?: boolean;
     onMaterialClick?: (materialId: string) => void;
+    onAddMaterial?: () => void;
 }
 
-const Materials: React.FC<MaterialsProps> = ({ studySetId, studySetName, onBack, isCollapsed = false, onMaterialClick }) => {
+const Materials: React.FC<MaterialsProps> = ({ studySetId, studySetName, onBack, isCollapsed = false, onMaterialClick, onAddMaterial }) => {
     const [materials, setMaterials] = useState<Material[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedType, setSelectedType] = useState('All Types');
-    const [showUploadModal, setShowUploadModal] = useState(false);
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
+    const [editingName, setEditingName] = useState('');
+    const menuRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
     useEffect(() => {
         loadMaterials();
@@ -60,6 +68,90 @@ const Materials: React.FC<MaterialsProps> = ({ studySetId, studySetName, onBack,
         } catch {
             return dateString;
         }
+    };
+
+    // Close menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (openMenuId) {
+                const menuElement = menuRefs.current[openMenuId];
+                if (menuElement && !menuElement.contains(event.target as Node)) {
+                    setOpenMenuId(null);
+                }
+            }
+        };
+
+        if (openMenuId) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [openMenuId]);
+
+    const handleDelete = async (materialId: string) => {
+        if (!window.confirm('Bạn có chắc chắn muốn xóa tài liệu này?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`http://localhost:3001/api/materials/${materialId}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                setMaterials(materials.filter(m => m.id !== materialId));
+                setOpenMenuId(null);
+            } else {
+                alert('Không thể xóa tài liệu');
+            }
+        } catch (error) {
+            console.error('Error deleting material:', error);
+            alert('Lỗi khi xóa tài liệu');
+        }
+    };
+
+    const handleStartEdit = (material: Material) => {
+        setEditingMaterialId(material.id);
+        setEditingName(material.name);
+        setOpenMenuId(null);
+    };
+
+    const handleSaveEdit = async (materialId: string) => {
+        if (!editingName.trim()) {
+            alert('Tên tài liệu không được để trống');
+            return;
+        }
+
+        try {
+            const response = await fetch(`http://localhost:3001/api/materials/${materialId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name: editingName.trim() })
+            });
+
+            if (response.ok) {
+                const updatedMaterial = await response.json();
+                setMaterials(materials.map(m =>
+                    m.id === materialId ? { ...m, name: updatedMaterial.name } : m
+                ));
+                setEditingMaterialId(null);
+                setEditingName('');
+            } else {
+                alert('Không thể cập nhật tên tài liệu');
+            }
+        } catch (error) {
+            console.error('Error updating material:', error);
+            alert('Lỗi khi cập nhật tên tài liệu');
+        }
+    };
+
+    const handleCancelEdit = () => {
+        setEditingMaterialId(null);
+        setEditingName('');
     };
 
     const filteredMaterials = materials.filter(material => {
@@ -132,7 +224,7 @@ const Materials: React.FC<MaterialsProps> = ({ studySetId, studySetName, onBack,
                 {/* Action Cards - First Row */}
                 <div className="mb-6 grid grid-cols-2 gap-4 max-w-4xl">
                     <button
-                        onClick={() => setShowUploadModal(true)}
+                        onClick={() => onAddMaterial?.()}
                         className="flex items-center gap-3 p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-md transition-all text-left"
                     >
                         <Plus className="w-6 h-6 text-gray-700" />
@@ -158,7 +250,7 @@ const Materials: React.FC<MaterialsProps> = ({ studySetId, studySetName, onBack,
                         </p>
                         {!searchTerm && (
                             <button
-                                onClick={() => setShowUploadModal(true)}
+                                onClick={() => onAddMaterial?.()}
                                 className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                             >
                                 Tải lên tài liệu
@@ -170,19 +262,106 @@ const Materials: React.FC<MaterialsProps> = ({ studySetId, studySetName, onBack,
                         {filteredMaterials.map((material) => (
                             <div
                                 key={material.id}
-                                onClick={() => onMaterialClick?.(material.id)}
-                                className="flex items-center gap-3 p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-md transition-all cursor-pointer"
+                                className="relative flex items-center gap-3 p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-md transition-all"
                             >
-                                <div className="relative flex-shrink-0">
-                                    <FileText className="w-10 h-10 text-blue-400" />
-                                    <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-yellow-400 rounded-full flex items-center justify-center">
-                                        <Pencil className="w-2.5 h-2.5 text-white" />
+                                <div
+                                    onClick={() => onMaterialClick?.(material.id)}
+                                    className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                                >
+                                    <div className="relative flex-shrink-0">
+                                        <FileText className="w-10 h-10 text-blue-400" />
+                                        <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-yellow-400 rounded-full flex items-center justify-center">
+                                            <Pencil className="w-2.5 h-2.5 text-white" />
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        {editingMaterialId === material.id ? (
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="text"
+                                                    value={editingName}
+                                                    onChange={(e) => setEditingName(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            handleSaveEdit(material.id);
+                                                        } else if (e.key === 'Escape') {
+                                                            handleCancelEdit();
+                                                        }
+                                                    }}
+                                                    className="flex-1 text-sm font-medium text-gray-900 border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    autoFocus
+                                                />
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleSaveEdit(material.id);
+                                                    }}
+                                                    className="p-1 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleCancelEdit();
+                                                    }}
+                                                    className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm font-medium text-gray-900 truncate">{material.name || 'Tài liệu chưa có tên'}</p>
+                                        )}
+                                        <p className="text-xs text-gray-500 mt-0.5">{formatDate(material.created_at)}</p>
                                     </div>
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-gray-900 truncate">{material.name || 'Tài liệu chưa có tên'}</p>
-                                    <p className="text-xs text-gray-500 mt-0.5">{formatDate(material.created_at)}</p>
-                                </div>
+
+                                {/* Menu Button */}
+                                {editingMaterialId !== material.id && (
+                                    <div
+                                        className="relative flex-shrink-0"
+                                        ref={(el) => {
+                                            menuRefs.current[material.id] = el;
+                                        }}
+                                    >
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setOpenMenuId(openMenuId === material.id ? null : material.id);
+                                            }}
+                                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                        >
+                                            <MoreVertical className="w-5 h-5 text-gray-600" />
+                                        </button>
+
+                                        {/* Dropdown Menu */}
+                                        {openMenuId === material.id && (
+                                            <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleStartEdit(material);
+                                                    }}
+                                                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                    <span>Đổi tên</span>
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDelete(material.id);
+                                                    }}
+                                                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                    <span>Xóa</span>
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>

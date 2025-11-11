@@ -31,7 +31,8 @@ export const useFlashcardGeneration = ({
         selectedMaterialIds: Set<string>,
         materialsInSet: Material[],
         typeCounts: TypeCounts,
-        flashcardName: string
+        flashcardName: string,
+        topicContext?: string // Optional: specific topic/module title to focus on
     ) => {
         try {
             if (selectedMaterialIds.size === 0) return;
@@ -74,6 +75,10 @@ export const useFlashcardGeneration = ({
                 multiple_choice: clampCount(typeCounts.multipleChoice),
                 fill_blank: clampCount(typeCounts.fillBlank),
             }));
+            // Add topic context if provided (for sub-module specific flashcards)
+            if (topicContext) {
+                form.append('topic_context', topicContext);
+            }
 
             setShowTypePicker(false);
             setShowMaterialPicker(false);
