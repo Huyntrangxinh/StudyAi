@@ -220,13 +220,53 @@ router.post('/:testId/results', async (req, res) => {
         return res.status(400).json({ error: 'Missing userId' });
     }
 
+    // LOG: Trước khi query update DB
+    console.log('🟢 [SERVER] Trước khi query update DB - Save test result:', {
+        testId: testId,
+        userId: userId,
+        score: score,
+        totalQuestions: totalQuestions,
+        correctAnswers: correctAnswers,
+        timeTaken: timeTaken,
+        answers: answers,
+        answersStringified: answers ? JSON.stringify(answers) : null,
+        timestamp: new Date().toISOString()
+    });
+
     const db = await getDb();
 
     return new Promise<void>((resolve, reject) => {
-        const stmt = db.prepare(`
+        const sql = `
             INSERT INTO test_results (test_id, user_id, score, total_questions, correct_answers, time_taken, answers, completed_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-        `);
+        `;
+
+        // LOG: Trước khi prepare statement
+        console.log('🟡 [SERVER] Trước khi prepare statement:', {
+            sql: sql,
+            params: [
+                testId,
+                userId,
+                score || null,
+                totalQuestions || 0,
+                correctAnswers || 0,
+                timeTaken || null,
+                answers ? JSON.stringify(answers) : null
+            ]
+        });
+
+        const stmt = db.prepare(sql);
+
+        // LOG: Trước khi run query
+        console.log('🟠 [SERVER] Trước khi run query INSERT:', {
+            testId: testId,
+            userId: userId,
+            score: score || null,
+            totalQuestions: totalQuestions || 0,
+            correctAnswers: correctAnswers || 0,
+            timeTaken: timeTaken || null,
+            answersJson: answers ? JSON.stringify(answers) : null
+        });
 
         stmt.run(
             testId,
@@ -239,8 +279,13 @@ router.post('/:testId/results', async (req, res) => {
             function (this: sqlite3.RunResult, err: Error | null) {
                 stmt.finalize();
                 db.close();
-                if (err) return reject(err);
 
+                if (err) {
+                    console.error('❌ [SERVER] Error khi run query:', err);
+                    return reject(err);
+                }
+
+                console.log('✅ [SERVER] Query thành công - lastID:', this.lastID);
                 res.status(201).json({ id: this.lastID });
                 resolve();
             }

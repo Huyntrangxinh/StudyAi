@@ -42,11 +42,13 @@ export const MultipleChoiceCard: React.FC<MultipleChoiceCardProps> = ({
                 {card.term}
             </div>
             {card.termImage && (
-                <img
-                    src={card.termImage}
-                    alt="Term"
-                    className="w-full max-w-md mx-auto rounded-lg object-contain mb-4"
-                />
+                <div className="flex-shrink-0 mb-4">
+                    <img
+                        src={card.termImage}
+                        alt="Term"
+                        className="max-w-xs max-h-64 w-auto h-auto mx-auto rounded-lg object-contain"
+                    />
+                </div>
             )}
 
             <div className="w-full max-w-2xl">

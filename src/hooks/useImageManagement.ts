@@ -31,29 +31,6 @@ export const useImageManagement = () => {
         }
     }, []);
 
-    const selectImage = useCallback((imageUrl: string, type: ImageSourceType = 'search') => {
-        setSelectedImage(imageUrl);
-        setSelectedImageType(type);
-        setShowImageSearch(false);
-        setShowUrlInput(false);
-
-        if (imageModalType) {
-            if (imageModalType === 'term') {
-                setTermImage(imageUrl);
-            } else if (imageModalType === 'definition') {
-                setDefinitionImage(imageUrl);
-            }
-            closeImageModal();
-        }
-    }, [imageModalType]);
-
-    const openImageModal = useCallback((type: 'term' | 'definition') => {
-        setImageModalType(type);
-        setShowImageModal(true);
-        setSelectedImage('');
-        setSelectedImageType(null);
-    }, []);
-
     const closeImageModal = useCallback(() => {
         setShowImageModal(false);
         setImageModalType(null);
@@ -61,6 +38,50 @@ export const useImageManagement = () => {
         setShowUrlInput(false);
         setSelectedImage('');
         setSelectedImageType(null);
+        setImageUrl(''); // Clear URL input when closing
+    }, []);
+
+    const selectImage = useCallback((imageUrl: string, type: ImageSourceType = 'search') => {
+        console.log('🔵 selectImage called:', { imageUrl, type, imageModalType });
+
+        // Store imageModalType in a variable before any state updates
+        const currentModalType = imageModalType;
+
+        if (!currentModalType) {
+            console.warn('⚠️ imageModalType is null, cannot update image');
+            return;
+        }
+
+        console.log('🔵 Updating image for type:', currentModalType);
+
+        // Update the appropriate image state first
+        if (currentModalType === 'term') {
+            console.log('🔵 Setting termImage to:', imageUrl);
+            setTermImage(imageUrl);
+        } else if (currentModalType === 'definition') {
+            console.log('🔵 Setting definitionImage to:', imageUrl);
+            setDefinitionImage(imageUrl);
+        }
+
+        // Update other states
+        setSelectedImage(imageUrl);
+        setSelectedImageType(type);
+        setShowImageSearch(false);
+        setShowUrlInput(false);
+
+        // Close the modal after a short delay to ensure state updates
+        setTimeout(() => {
+            console.log('🔵 Closing modal after image update');
+            closeImageModal();
+        }, 100);
+    }, [imageModalType, closeImageModal]);
+
+    const openImageModal = useCallback((type: 'term' | 'definition') => {
+        setImageModalType(type);
+        setShowImageModal(true);
+        setSelectedImage('');
+        setSelectedImageType(null);
+        setImageUrl(''); // Clear URL input when opening modal
     }, []);
 
     const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -82,6 +103,7 @@ export const useImageManagement = () => {
     }, [selectImage]);
 
     const handleUrlSubmit = useCallback(() => {
+        console.log('🔵 handleUrlSubmit called:', { imageUrl, imageModalType });
         if (!imageUrl.trim()) {
             alert('Vui lòng nhập URL hình ảnh');
             return;
@@ -89,11 +111,13 @@ export const useImageManagement = () => {
 
         try {
             new URL(imageUrl);
-            selectImage(imageUrl, 'url');
-        } catch {
+            console.log('🔵 URL is valid, calling selectImage');
+            selectImage(imageUrl.trim(), 'url');
+        } catch (error) {
+            console.error('❌ Invalid URL:', error);
             alert('URL không hợp lệ');
         }
-    }, [imageUrl, selectImage]);
+    }, [imageUrl, selectImage, imageModalType]);
 
     const removeSelectedImage = useCallback(() => {
         setSelectedImage('');

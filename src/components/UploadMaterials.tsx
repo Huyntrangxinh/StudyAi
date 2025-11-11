@@ -156,27 +156,56 @@ const UploadMaterials: React.FC<UploadMaterialsProps> = ({ studySetId, studySetN
             }
 
             console.log('All materials uploaded successfully');
+
+            // Tự động tạo study path sau khi upload thành công
+            try {
+                console.log('🔄 Generating study path for study set:', studySetId);
+                const studyPathResponse = await fetch('http://localhost:3001/api/study-paths/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ studySetId })
+                });
+
+                if (studyPathResponse.ok) {
+                    const studyPath = await studyPathResponse.json();
+                    console.log('✅ Study path generated successfully:', studyPath);
+                } else {
+                    const error = await studyPathResponse.json();
+                    console.error('❌ Error generating study path:', error);
+                }
+            } catch (error) {
+                console.error('❌ Error generating study path:', error);
+                // Không throw error để không làm gián đoạn quá trình upload
+            }
         } catch (error) {
             console.error('Error uploading materials:', error);
         }
     };
 
+    const horizontalPadding = isCollapsed ? '1rem' : '5rem';
+
     return (
-        <div className={`flex-1 p-8 bg-gray-50 min-h-screen transition-all duration-300 ${isCollapsed ? 'ml-16' : 'ml-48'}`}>
-            {/* Header */}
-            <div className="mb-8">
-                <div className="flex items-center space-x-3 mb-4">
-                    <button
-                        onClick={onBack}
-                        className="flex items-center justify-center w-10 h-10 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                        <ArrowLeft className="w-6 h-6" />
-                    </button>
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900">Tải lên tài liệu</h1>
-                        <p className="text-gray-600 mt-2">Thêm tài liệu vào "{studySetName}"</p>
+        <div
+            className="min-h-screen transition-all duration-300 bg-gray-50"
+            style={{ paddingLeft: horizontalPadding, paddingRight: '1.5rem', paddingTop: '2rem', paddingBottom: '2rem' }}
+        >
+            <div className="max-w-6xl" style={{ marginLeft: 0 }}>
+                {/* Header */}
+                <div className="mb-8">
+                    <div className="flex items-center space-x-3 mb-4">
+                        <button
+                            onClick={onBack}
+                            className="flex items-center justify-center w-10 h-10 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                        >
+                            <ArrowLeft className="w-6 h-6" />
+                        </button>
+                        <div>
+                            <h1 className="text-3xl font-bold text-gray-900">Tải lên tài liệu</h1>
+                            <p className="text-gray-600 mt-2">Thêm tài liệu vào "{studySetName}"</p>
+                        </div>
                     </div>
                 </div>
+
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

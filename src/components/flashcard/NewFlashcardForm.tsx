@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { extractAnswersFromText } from '../../utils/flashcardHelpers';
 import { ImageModal } from './ImageModal';
@@ -116,6 +116,16 @@ export const NewFlashcardForm: React.FC<NewFlashcardFormProps> = ({
     onUrlSubmit,
     onSaveFlashcard
 }) => {
+    // Debug: Log when termImage or definitionImage changes
+    // Hooks must be called before any conditional returns
+    useEffect(() => {
+        console.log('🟢 NewFlashcardForm - termImage changed:', termImage);
+    }, [termImage]);
+
+    useEffect(() => {
+        console.log('🟢 NewFlashcardForm - definitionImage changed:', definitionImage);
+    }, [definitionImage]);
+
     if (!showScratchEditor) return null;
 
     return (
@@ -270,7 +280,12 @@ export const NewFlashcardForm: React.FC<NewFlashcardFormProps> = ({
                                     src={termImage}
                                     alt="Term image"
                                     className="w-full h-24 object-contain rounded-lg border border-gray-200 bg-gray-50"
+                                    onLoad={() => {
+                                        console.log('✅ FillBlank term image loaded successfully:', termImage);
+                                    }}
                                     onError={(e) => {
+                                        console.error('❌ FillBlank term image failed to load:', termImage);
+                                        console.error('Error event:', e);
                                         e.currentTarget.style.display = 'none';
                                     }}
                                 />
@@ -314,7 +329,12 @@ export const NewFlashcardForm: React.FC<NewFlashcardFormProps> = ({
                                     src={termImage}
                                     alt="Term image"
                                     className="w-full h-24 object-contain rounded-lg border border-gray-200 bg-gray-50"
+                                    onLoad={() => {
+                                        console.log('✅ MultipleChoice term image loaded successfully:', termImage);
+                                    }}
                                     onError={(e) => {
+                                        console.error('❌ MultipleChoice term image failed to load:', termImage);
+                                        console.error('Error event:', e);
                                         e.currentTarget.style.display = 'none';
                                     }}
                                 />
@@ -418,7 +438,12 @@ export const NewFlashcardForm: React.FC<NewFlashcardFormProps> = ({
                                     src={termImage}
                                     alt="Term image"
                                     className="w-full h-24 object-contain rounded-lg border border-gray-200 bg-gray-50"
+                                    onLoad={() => {
+                                        console.log('✅ Pair term image loaded successfully:', termImage);
+                                    }}
                                     onError={(e) => {
+                                        console.error('❌ Pair term image failed to load:', termImage);
+                                        console.error('Error event:', e);
                                         e.currentTarget.style.display = 'none';
                                     }}
                                 />
@@ -456,7 +481,12 @@ export const NewFlashcardForm: React.FC<NewFlashcardFormProps> = ({
                                     src={definitionImage}
                                     alt="Definition image"
                                     className="w-full h-24 object-contain rounded-lg border border-gray-200 bg-gray-50"
+                                    onLoad={() => {
+                                        console.log('✅ Definition image loaded successfully:', definitionImage);
+                                    }}
                                     onError={(e) => {
+                                        console.error('❌ Definition image failed to load:', definitionImage);
+                                        console.error('Error event:', e);
                                         e.currentTarget.style.display = 'none';
                                     }}
                                 />

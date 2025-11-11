@@ -62,9 +62,9 @@ export const CardDisplayArea: React.FC<CardDisplayAreaProps> = ({
     onNext
 }) => {
     return (
-        <div className="flex-1 flex items-start md:items-center justify-center pl-0 pr-2 md:pl-0 md:pr-4 py-4 md:py-8">
-            <div className="w-full mx-auto" style={{ maxWidth: cardMaxWidth }}>
-                <div className="flex items-center justify-between mb-4 pr-0">
+        <div className="flex-1 flex items-start md:items-center justify-start pl-0 pr-2 md:pl-0 md:pr-4 py-4 md:py-6">
+            <div className="w-full" style={{ maxWidth: Math.min(cardMaxWidth, 800) }}>
+                <div className="flex items-center justify-between mb-3 pr-0">
                     <span className="text-sm font-medium text-gray-600">Thuật ngữ</span>
                     <span className="text-sm text-gray-500">
                         {currentCardIndex + 1}/{totalCards}

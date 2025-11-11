@@ -8,32 +8,38 @@ interface PairCardProps {
 export const PairCard: React.FC<PairCardProps> = ({ card, isFlipped }) => {
     if (!isFlipped) {
         return (
-            <>
-                <p className="text-2xl text-gray-800 mb-4 cursor-pointer">
+            <div className="flex flex-col items-center justify-center h-full">
+                <p className="text-2xl text-gray-800 mb-4 cursor-pointer text-center px-4">
                     {card.term}
                 </p>
                 {card.termImage && (
-                    <img
-                        src={card.termImage}
-                        alt="Term"
-                        className="w-full max-w-md mx-auto rounded-lg object-contain cursor-pointer"
-                    />
+                    <div className="flex-shrink-0 mb-4">
+                        <img
+                            src={card.termImage}
+                            alt="Term"
+                            className="max-w-xs max-h-64 w-auto h-auto rounded-lg object-contain cursor-pointer"
+                        />
+                    </div>
                 )}
-            </>
+            </div>
         );
     }
 
     return (
-        <>
-            <p className="text-2xl text-gray-800 mb-4">{card.definition}</p>
+        <div className="flex flex-col items-center justify-center h-full">
+            <p className="text-2xl text-gray-800 mb-4 text-center px-4">
+                {card.definition}
+            </p>
             {card.definitionImage && (
-                <img
-                    src={card.definitionImage}
-                    alt="Definition"
-                    className="w-full max-w-md mx-auto rounded-lg object-contain"
-                />
+                <div className="flex-shrink-0 mb-4">
+                    <img
+                        src={card.definitionImage}
+                        alt="Definition"
+                        className="max-w-xs max-h-64 w-auto h-auto rounded-lg object-contain"
+                    />
+                </div>
             )}
-        </>
+        </div>
     );
 };
 

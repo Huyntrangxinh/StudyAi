@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { ArrowLeft, Star, Share, Upload, Plus, Link, Lightbulb, Brain, Book } from 'lucide-react';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import { useAIChat } from '../hooks/useAIChat';
@@ -20,6 +20,7 @@ import { EmptyState } from './study/EmptyState';
 import { ScrollbarStyles } from './study/ScrollbarStyles';
 import { useCardNavigation } from '../hooks/useCardNavigation';
 import { useSidebarResize } from '../hooks/useSidebarResize';
+import { useAuth } from '../hooks/useAuth';
 
 interface StudyFlashcardsProps {
     flashcards: Array<{
@@ -37,9 +38,10 @@ interface StudyFlashcardsProps {
     isCollapsed: boolean;
     flashcardName?: string;
     studySetId?: string;
+    flashcardSetId?: number; // ID of the flashcard set
 }
 
-const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, isCollapsed, flashcardName, studySetId }) => {
+const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, isCollapsed, flashcardName, studySetId, flashcardSetId }) => {
     // Test log - should appear immediately
     console.log('🔊 [STUDY] ========== StudyFlashcards COMPONENT RENDERED ==========');
     console.log('🔊 [STUDY] Props:', {
@@ -51,14 +53,23 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
     console.warn('⚠️ [STUDY] TEST WARN LOG - If you see this, component is rendering');
     console.error('❌ [STUDY] TEST ERROR LOG - If you see this, component is rendering');
 
+    const { user } = useAuth();
     const [audioEnabled, setAudioEnabled] = useState<boolean>(() => {
         try { return localStorage.getItem('ttsEnabled') === '1'; } catch { return false; }
     });
+    // AI Sidebar state - can be closed
     const [showAiSidebar, setShowAiSidebar] = useState<boolean>(true);
     const [showHint, setShowHint] = useState<boolean>(false);
     const [currentCardIndex, setCurrentCardIndex] = useState(0);
+    const [showBookmarkedOnly, setShowBookmarkedOnly] = useState<boolean>(false);
+    const [shuffledFlashcards, setShuffledFlashcards] = useState<any[]>([]);
 
-    const studyState = useFlashcardStudy({ flashcards, currentCardIndex });
+    const studyState = useFlashcardStudy({
+        flashcards,
+        currentCardIndex,
+        userId: user?.id,
+        flashcardSetId: flashcardSetId
+    });
     const {
         isFlipped,
         setIsFlipped,
@@ -89,8 +100,18 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
     } = studyState;
 
 
+    // Filter flashcards based on bookmark filter
+    const filteredFlashcards = showBookmarkedOnly
+        ? flashcards.filter(card => studyState.bookmarkedCards.has(String(card.id)))
+        : flashcards;
+
+    // Use shuffled flashcards if shuffle is active, otherwise use filtered flashcards
+    const displayedFlashcards = isShuffled && shuffledFlashcards.length > 0
+        ? shuffledFlashcards
+        : filteredFlashcards;
+
     const navigation = useCardNavigation({
-        flashcardsLength: flashcards.length,
+        flashcardsLength: displayedFlashcards.length,
         isSliding,
         setIsSliding,
         slideDirection,
@@ -100,13 +121,62 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
     const { currentCardIndex: navCurrentCardIndex, nextCard, prevCard } = navigation;
 
     useEffect(() => {
-        setCurrentCardIndex(navCurrentCardIndex);
-    }, [navCurrentCardIndex]);
+        // When shuffled, use navCurrentCardIndex directly
+        // When not shuffled, map navigation index back to original flashcards array index
+        if (isShuffled) {
+            // When shuffled, the displayedFlashcards is already shuffled, so use navCurrentCardIndex directly
+            setCurrentCardIndex(navCurrentCardIndex);
+        } else if (showBookmarkedOnly && displayedFlashcards.length > 0) {
+            const displayedCard = displayedFlashcards[navCurrentCardIndex];
+            if (displayedCard) {
+                const originalIndex = flashcards.findIndex(card => card.id === displayedCard.id);
+                if (originalIndex >= 0) {
+                    setCurrentCardIndex(originalIndex);
+                }
+            }
+        } else {
+            setCurrentCardIndex(navCurrentCardIndex);
+        }
+    }, [navCurrentCardIndex, showBookmarkedOnly, displayedFlashcards, flashcards, isShuffled]);
+
+    // Track previous showBookmarkedOnly to detect changes
+    const prevShowBookmarkedOnly = React.useRef(showBookmarkedOnly);
+
+    // Adjust currentCardIndex when filter changes and reset shuffle
+    useEffect(() => {
+        // Only reset shuffle when bookmark filter actually changes (not on every render)
+        if (prevShowBookmarkedOnly.current !== showBookmarkedOnly && isShuffled) {
+            setIsShuffled(false);
+            setShuffledFlashcards([]);
+        }
+        prevShowBookmarkedOnly.current = showBookmarkedOnly;
+
+        if (showBookmarkedOnly && filteredFlashcards.length > 0) {
+            // If current card is not in filtered list, go to first bookmarked card
+            const currentCard = flashcards[currentCardIndex];
+            if (!currentCard || !studyState.bookmarkedCards.has(String(currentCard.id))) {
+                const firstBookmarkedIndex = flashcards.findIndex(card =>
+                    studyState.bookmarkedCards.has(String(card.id))
+                );
+                if (firstBookmarkedIndex >= 0) {
+                    setCurrentCardIndex(firstBookmarkedIndex);
+                }
+            }
+        }
+    }, [showBookmarkedOnly, studyState.bookmarkedCards, flashcards, currentCardIndex, filteredFlashcards.length, isShuffled]);
 
     const resize = useSidebarResize({ isCollapsed, showAiSidebar });
     const { sidebarWidth, setSidebarWidth, isResizing, setIsResizing, cardMaxWidth } = resize;
 
-        const currentCard = flashcards[currentCardIndex];
+    // Get current card from displayed flashcards
+    // When shuffled, use navCurrentCardIndex directly since shuffledFlashcards is already the displayed list
+    // When not shuffled, map currentCardIndex to displayedFlashcards index
+    const displayedIndex = isShuffled
+        ? navCurrentCardIndex
+        : (showBookmarkedOnly
+            ? displayedFlashcards.findIndex(card => card.id === flashcards[currentCardIndex]?.id)
+            : currentCardIndex);
+    const currentCard = displayedFlashcards[displayedIndex >= 0 ? displayedIndex : 0] || flashcards[currentCardIndex];
 
     const { speakText, unlockTTS, hasUserInteracted } = useTextToSpeech();
 
@@ -169,9 +239,29 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
     }, [currentCardIndex, audioEnabled, hasUserInteracted]);
 
 
-    const shuffleCards = () => {
-        setIsShuffled(!isShuffled);
-    };
+    const shuffleCards = useCallback(() => {
+        if (!isShuffled) {
+            // Shuffle the current filtered flashcards
+            const cardsToShuffle = [...filteredFlashcards];
+            // Fisher-Yates shuffle algorithm
+            for (let i = cardsToShuffle.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [cardsToShuffle[i], cardsToShuffle[j]] = [cardsToShuffle[j], cardsToShuffle[i]];
+            }
+            // Update state in a single batch to avoid flickering
+            setShuffledFlashcards(cardsToShuffle);
+            setIsShuffled(true);
+            // Reset to first card after shuffling
+            setCurrentCardIndex(0);
+        } else {
+            // Unshuffle - go back to original order
+            // Update state in a single batch to avoid flickering
+            setIsShuffled(false);
+            setShuffledFlashcards([]);
+            // Reset to first card
+            setCurrentCardIndex(0);
+        }
+    }, [isShuffled, filteredFlashcards]);
 
     const handleKeyPress = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -215,18 +305,18 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
     return (
         <>
             <ScrollbarStyles />
-            <div className={`min-h-screen bg-gray-50 transition-all duration-300 ${isCollapsed ? 'ml-16' : 'ml-48'}`}>
+            <div className="min-h-screen bg-white transition-all duration-300">
                 <StudyHeader isCollapsed={isCollapsed} flashcardName={flashcardName} onBack={onBack} />
 
                 <div className={`relative flex h-[calc(100vh-64px)] pt-16 ${isResizing ? 'select-none' : ''}`}
                 >
                     <div
-                        className={`flex-1 flex flex-col ${isCollapsed ? 'pl-0 pr-1 md:pl-0 md:pr-2 -ml-3 md:-ml-4' : 'pl-0 pr-1 md:pl-0 md:pr-2 -ml-16 md:-ml-20'}`}
+                        className="flex-1 flex flex-col max-w-4xl mx-auto px-4"
                         style={{ minWidth: 0 }}
                     >
                         <CardDisplayArea
-                            currentCardIndex={currentCardIndex}
-                            totalCards={flashcards.length}
+                            currentCardIndex={showBookmarkedOnly ? displayedIndex : currentCardIndex}
+                            totalCards={displayedFlashcards.length}
                             cardMaxWidth={cardMaxWidth}
                             currentCard={currentCard}
                             isFlipped={isFlipped}
@@ -257,25 +347,28 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
                         <ActionBar
                             isShuffled={isShuffled}
                             audioEnabled={audioEnabled}
-                            isBookmarked={bookmarkedCards.has(currentCard?.id || '')}
+                            isBookmarked={currentCard ? bookmarkedCards.has(String(currentCard.id)) : false}
+                            showBookmarkedOnly={showBookmarkedOnly}
                             isFlipped={isFlipped}
                             showAiSidebar={showAiSidebar}
                             sidebarWidth={sidebarWidth}
+                            isCollapsed={isCollapsed}
                             onShuffle={shuffleCards}
+                            onToggleBookmarkFilter={() => setShowBookmarkedOnly(!showBookmarkedOnly)}
                             onToggleAudio={() => {
-                                        const v = !audioEnabled;
-                                        setAudioEnabled(v);
+                                const v = !audioEnabled;
+                                setAudioEnabled(v);
                                 try { localStorage.setItem('ttsEnabled', v ? '1' : '0'); } catch { }
-                                        if (v) {
-                                            unlockTTS();
-                                        }
-                                        if (v && currentCard && !isFlipped) {
-                                            setTimeout(() => {
-                                                const term = currentCard.term?.toString().trim();
-                                                if (term) speakText(term);
-                                            }, 300);
-                                        }
-                                    }}
+                                if (v) {
+                                    unlockTTS();
+                                }
+                                if (v && currentCard && !isFlipped) {
+                                    setTimeout(() => {
+                                        const term = currentCard.term?.toString().trim();
+                                        if (term) speakText(term);
+                                    }, 300);
+                                }
+                            }}
                             onReplayAudio={() => {
                                 console.log('🔊 [STUDY] ========== Replay Audio Button Clicked ==========');
                                 console.log('🔊 [STUDY] Card state:', { isFlipped, hasCurrentCard: !!currentCard });
@@ -309,7 +402,7 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
 
                     <ResizableDivider
                         showAiSidebar={showAiSidebar}
-                            onMouseDown={() => setIsResizing(true)}
+                        onMouseDown={() => setIsResizing(true)}
                     />
 
                     <AISidebar
@@ -320,19 +413,33 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
                         isLoadingChat={isLoadingChat}
                         chatMessage={chatMessage}
                         onClose={() => setShowAiSidebar(false)}
-                        onSetSidebarWidth={setSidebarWidth}
+                        onSetSidebarWidth={(width) => {
+                            // Ensure width is never smaller than default (350px)
+                            setSidebarWidth(Math.max(350, width));
+                        }}
                         onSetChatMessage={setChatMessage}
                         onSendChatMessage={sendChatMessage}
                         onHandleAISubmit={handleAISubmit}
-                                            onKeyPress={handleKeyPress}
-                                        />
-                                    </div>
-                <FloatingChatToggle
-                    showAiSidebar={showAiSidebar}
-                    showHint={showHint}
-                    onOpenChat={() => { setShowAiSidebar(true); setShowHint(false); }}
-                    onHideHint={() => setShowHint(false)}
-                />
+                        onKeyPress={handleKeyPress}
+                    />
+                </div>
+
+                {/* Floating chat toggle when sidebar hidden */}
+                {!showAiSidebar && (
+                    <div className="fixed right-4 bottom-8 z-20">
+                        <button
+                            onClick={() => setShowAiSidebar(true)}
+                            className="w-40 h-40 rounded-3xl bg-transparent flex items-center justify-center"
+                            title="Open chat"
+                        >
+                            <img
+                                src={(process.env.PUBLIC_URL || '') + '/chatbot.gif'}
+                                alt="Chatbot"
+                                className="w-full h-full object-contain"
+                            />
+                        </button>
+                    </div>
+                )}
             </div>
         </>
     );

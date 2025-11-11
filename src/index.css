@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Fade in animation for chat message */
+@keyframes fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fade-in 0.3s ease-out;
+}
+
 /* Ripple animation for navigation buttons */
 @keyframes ripple {
     0% {
@@ -69,14 +86,14 @@
         box-sizing: border-box !important;
     }
 
-    /* Header constraints */
+    /* Header constraints - allow horizontal scroll for toolbar and note header */
     .note-header {
         max-width: 100% !important;
-        overflow: hidden !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
     }
 
     .note-header * {
-        max-width: 100% !important;
         box-sizing: border-box !important;
     }
 
@@ -86,9 +103,15 @@
         box-sizing: border-box !important;
     }
 
-    /* Ensure no horizontal overflow */
-    .pdf-viewer-container,
-    .pdf-viewer-container * {
+    /* Allow horizontal scroll for toolbar and note header only */
+    .toolbar-scroll,
+    .note-header {
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+    }
+
+    /* Ensure no horizontal overflow for other elements */
+    .pdf-viewer-container {
         overflow-x: hidden !important;
     }
 }
@@ -310,28 +333,73 @@
 
     /* Toolbar scrollbar - show horizontal scrollbar when needed */
     .toolbar-scroll {
-        overflow-x: auto;
-        scrollbar-width: thin;
-        scrollbar-color: #cbd5e0 #f7fafc;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        scrollbar-width: thin !important;
+        scrollbar-color: rgba(203, 213, 224, 0.2) transparent !important;
         white-space: nowrap;
     }
 
+    .toolbar-scroll:hover {
+        scrollbar-color: rgba(203, 213, 224, 0.5) transparent !important;
+    }
+
     .toolbar-scroll::-webkit-scrollbar {
-        height: 8px;
+        height: 2px !important;
+        display: block !important;
     }
 
     .toolbar-scroll::-webkit-scrollbar-track {
-        background: #f7fafc;
-        border-radius: 4px;
+        background: transparent !important;
+        border-radius: 0 !important;
     }
 
     .toolbar-scroll::-webkit-scrollbar-thumb {
-        background: #cbd5e0;
-        border-radius: 4px;
+        background: rgba(203, 213, 224, 0.2) !important;
+        border-radius: 0 !important;
+        transition: background 0.2s ease !important;
+    }
+
+    .toolbar-scroll:hover::-webkit-scrollbar-thumb {
+        background: rgba(203, 213, 224, 0.5) !important;
     }
 
     .toolbar-scroll::-webkit-scrollbar-thumb:hover {
-        background: #a0aec0;
+        background: rgba(160, 174, 192, 0.7) !important;
+    }
+
+    /* Note header scrollbar */
+    .note-header {
+        scrollbar-width: thin !important;
+        scrollbar-color: rgba(203, 213, 224, 0.2) transparent !important;
+    }
+
+    .note-header:hover {
+        scrollbar-color: rgba(203, 213, 224, 0.5) transparent !important;
+    }
+
+    .note-header::-webkit-scrollbar {
+        height: 2px !important;
+        display: block !important;
+    }
+
+    .note-header::-webkit-scrollbar-track {
+        background: transparent !important;
+        border-radius: 0 !important;
+    }
+
+    .note-header::-webkit-scrollbar-thumb {
+        background: rgba(203, 213, 224, 0.2) !important;
+        border-radius: 0 !important;
+        transition: background 0.2s ease !important;
+    }
+
+    .note-header:hover::-webkit-scrollbar-thumb {
+        background: rgba(203, 213, 224, 0.5) !important;
+    }
+
+    .note-header::-webkit-scrollbar-thumb:hover {
+        background: rgba(160, 174, 192, 0.7) !important;
     }
 }
 
@@ -349,4 +417,12 @@
     -moz-user-select: text !important;
     -ms-user-select: text !important;
     cursor: text !important;
+}
+
+/* Placeholder for empty contentEditable editors */
+[contenteditable="true"]:empty:before {
+    content: attr(data-placeholder);
+    pointer-events: none;
+    color: #9ca3af;
+    /* text-gray-400 */
 }

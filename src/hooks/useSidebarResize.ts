@@ -6,7 +6,8 @@ interface UseSidebarResizeProps {
 }
 
 export const useSidebarResize = ({ isCollapsed, showAiSidebar }: UseSidebarResizeProps) => {
-    const [sidebarWidth, setSidebarWidth] = useState<number>(300);
+    // Default sidebar width to match image 2 (around 350px for medium size)
+    const [sidebarWidth, setSidebarWidth] = useState<number>(350);
     const [isResizing, setIsResizing] = useState<boolean>(false);
     const [cardMaxWidth, setCardMaxWidth] = useState<number>(1200);
 
@@ -14,7 +15,11 @@ export const useSidebarResize = ({ isCollapsed, showAiSidebar }: UseSidebarResiz
         const onMouseMove = (e: MouseEvent) => {
             if (!isResizing) return;
             const viewportWidth = window.innerWidth;
-            const newWidth = Math.max(250, Math.min(600, viewportWidth - e.clientX));
+            const leftNavWidth = isCollapsed ? 64 : 192;
+            // Min width is default (350px), max width is 600px (size L)
+            const minWidth = 350; // Default chatbot width - cannot be smaller
+            const maxWidth = 600; // Maximum width is size L - cannot be larger
+            const newWidth = Math.max(minWidth, Math.min(maxWidth, viewportWidth - e.clientX));
             setSidebarWidth(newWidth);
         };
         const onMouseUp = () => setIsResizing(false);
@@ -26,7 +31,7 @@ export const useSidebarResize = ({ isCollapsed, showAiSidebar }: UseSidebarResiz
             window.removeEventListener('mousemove', onMouseMove);
             window.removeEventListener('mouseup', onMouseUp);
         };
-    }, [isResizing]);
+    }, [isResizing, isCollapsed]);
 
     useEffect(() => {
         const compute = () => {

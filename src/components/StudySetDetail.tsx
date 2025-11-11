@@ -16,7 +16,7 @@ import {
     Play,
     ArrowLeft
 } from 'lucide-react';
-import UploadMaterials from './UploadMaterials';
+import StudyPathViewer from './StudyPathViewer';
 
 interface StudySetDetailProps {
     studySet: {
@@ -28,13 +28,15 @@ interface StudySetDetailProps {
     onBack: () => void;
     onViewMaterial?: () => void;
     onViewFlashcards?: () => void;
+    onModuleClick?: (module: { id: number, title: string }) => void;
     isCollapsed?: boolean;
+    onUploadMaterial?: () => void;
 }
 
-const StudySetDetail: React.FC<StudySetDetailProps> = ({ studySet, onBack, onViewMaterial, onViewFlashcards, isCollapsed = false }) => {
+const StudySetDetail: React.FC<StudySetDetailProps> = ({ studySet, onBack, onViewMaterial, onViewFlashcards, onModuleClick, isCollapsed = false, onUploadMaterial }) => {
     const [showSuccessMessage, setShowSuccessMessage] = useState(true);
-    const [showUploadMaterials, setShowUploadMaterials] = useState(false);
     const [materials, setMaterials] = useState<any[]>([]);
+    const [isGeneratingSubRoadmap, setIsGeneratingSubRoadmap] = useState(false);
     const [stats, setStats] = useState([
         { label: 'Tài liệu', count: 0, icon: FileText, color: 'text-blue-500' },
         { label: 'Thẻ ghi nhớ', count: 0, icon: CreditCard, color: 'text-green-500' },
@@ -43,6 +45,7 @@ const StudySetDetail: React.FC<StudySetDetailProps> = ({ studySet, onBack, onVie
         { label: 'Trò chơi', count: 0, icon: Gamepad2, color: 'text-pink-500' },
         { label: 'Tóm tắt âm thanh', count: 0, icon: Volume2, color: 'text-blue-500' }
     ]);
+    const [overallProgress, setOverallProgress] = useState<number>(0);
 
     // Load stats from database
     useEffect(() => {
@@ -81,20 +84,8 @@ const StudySetDetail: React.FC<StudySetDetailProps> = ({ studySet, onBack, onVie
         }
     };
 
-    if (showUploadMaterials) {
-        return (
-            <UploadMaterials
-                studySetId={studySet.id}
-                studySetName={studySet.name}
-                onBack={() => setShowUploadMaterials(false)}
-                onViewMaterial={onViewMaterial}
-                isCollapsed={isCollapsed}
-            />
-        );
-    }
-
     return (
-        <div className={`flex-1 p-8 bg-gray-50 transition-all duration-300 ${isCollapsed ? 'ml-16' : 'ml-48'}`}>
+        <div className="flex-1 p-8 bg-white transition-all duration-300">
             {/* Success Message */}
             {showSuccessMessage && (
                 <div className="fixed bottom-6 right-6 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center space-x-2 z-50">
@@ -139,24 +130,34 @@ const StudySetDetail: React.FC<StudySetDetailProps> = ({ studySet, onBack, onVie
                             <p className="text-gray-600">{studySet.description || 'Hè'}</p>
                         </div>
                     </div>
-                    <div className="flex items-center space-x-3">
-                        <button className="flex items-center space-x-2 bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-                            <BookOpen className="w-4 h-4" />
-                            <span>Chuyển bộ học</span>
-                        </button>
-                        <button className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                    <div className="flex items-center space-x-6">
+                        {/* Overall progress small donut */}
+                        <div className="flex flex-col items-center">
+                            <div className="relative w-16 h-16">
+                                <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 36 36">
+                                    <path className="text-blue-100" strokeWidth="3.5" stroke="currentColor" fill="none" d="M18 2a16 16 0 1 1 0 32 16 16 0 1 1 0-32" />
+                                    <path className="text-blue-500" strokeWidth="3.5" strokeLinecap="round" stroke="currentColor" fill="none"
+                                        strokeDasharray={`${Math.max(0, Math.min(100, overallProgress))}, 100`} d="M18 2a16 16 0 1 1 0 32 16 16 0 1 1 0-32" />
+                                </svg>
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <span className="text-sm font-bold text-blue-600">{overallProgress}%</span>
+                                </div>
+                            </div>
+                            <span className="text-xs text-gray-600 mt-1">Hoàn thành</span>
+                        </div>
+                        <button className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm">
                             <Target className="w-4 h-4" />
-                            <span>Mục tiêu hàng ngày</span>
+                            <span>Tiếp tục học</span>
                         </button>
                     </div>
                 </div>
 
                 {/* Stats */}
-                <div className="grid grid-cols-6 gap-4 mb-8">
+                <div className="grid grid-cols-6 gap-3 mb-8">
                     {stats.map((stat, index) => (
                         <div
                             key={index}
-                            className={`bg-white rounded-lg p-4 text-center shadow-sm ${(stat.label === 'Tài liệu' && stat.count > 0) || stat.label === 'Thẻ ghi nhớ'
+                            className={`bg-white rounded-md p-3 text-center shadow-sm border border-gray-200 ${(stat.label === 'Tài liệu' && stat.count > 0) || stat.label === 'Thẻ ghi nhớ'
                                 ? 'cursor-pointer hover:shadow-md transition-shadow duration-200 hover:bg-blue-50'
                                 : ''
                                 }`}
@@ -168,9 +169,9 @@ const StudySetDetail: React.FC<StudySetDetailProps> = ({ studySet, onBack, onVie
                                 }
                             }}
                         >
-                            <stat.icon className={`w-6 h-6 mx-auto mb-2 ${stat.color}`} />
-                            <div className="text-2xl font-bold text-gray-900">{stat.count}</div>
-                            <div className="text-sm text-gray-600">{stat.label}</div>
+                            <stat.icon className={`w-5 h-5 mx-auto mb-1.5 ${stat.color}`} />
+                            <div className="text-xl font-bold text-gray-900">{stat.count}</div>
+                            <div className="text-xs text-gray-600">{stat.label}</div>
                         </div>
                     ))}
                 </div>
@@ -178,62 +179,101 @@ const StudySetDetail: React.FC<StudySetDetailProps> = ({ studySet, onBack, onVie
 
             {/* Main Content */}
             <div className="space-y-6">
-                {/* Upload First Material */}
-                <div className="bg-white rounded-xl p-8 shadow-sm border border-gray-200">
-                    <div className="flex items-start space-x-6">
-                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
-                            <Plus className="w-8 h-8 text-gray-400" />
-                        </div>
-                        <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-2">
-                                <span className="text-sm font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                                    Chưa bắt đầu
-                                </span>
-                            </div>
-                            <h2 className="text-2xl font-bold text-gray-900 mb-3">Tải lên tài liệu đầu tiên</h2>
-                            <p className="text-gray-600 mb-6">
-                                Bắt đầu bằng cách tải lên tài liệu học tập đầu tiên của bạn vào bộ học này.
-                            </p>
-                            <div className="flex items-center space-x-4">
-                                <button
-                                    onClick={() => setShowUploadMaterials(true)}
-                                    className="flex items-center space-x-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                                >
-                                    <Upload className="w-5 h-5" />
-                                    <span>Tải lên tài liệu</span>
-                                </button>
-                                <button className="flex items-center space-x-2 bg-white border border-gray-300 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-50 transition-colors font-medium">
-                                    <Settings className="w-5 h-5" />
-                                    <span>Tạo tài liệu từ chủ đề</span>
-                                </button>
-                            </div>
+                {/* Loading Screen for Sub-Roadmap Generation */}
+                {isGeneratingSubRoadmap && (
+                    <div className="fixed inset-0 bg-white z-50 flex items-center justify-center border border-gray-200" style={{ marginLeft: isCollapsed ? '64px' : '192px' }}>
+                        <div className="flex flex-col items-center justify-center">
+                            <img
+                                src="/SparkeSurf.gif"
+                                alt="Loading"
+                                className="w-64 h-64 object-contain"
+                            />
+                            <p className="text-gray-600 text-lg mt-4">Đang tạo sub-roadmap...</p>
                         </div>
                     </div>
-                </div>
+                )}
 
-                {/* Locked Sections */}
-                <div className="space-y-4">
-                    {[1, 2].map((index) => (
-                        <div key={index} className="bg-white rounded-xl p-8 shadow-sm border border-gray-200 opacity-60">
-                            <div className="flex items-center space-x-4">
-                                <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
-                                    <Lock className="w-6 h-6 text-gray-400" />
-                                </div>
-                                <div className="flex-1">
-                                    <div className="flex items-center space-x-2 mb-2">
-                                        <span className="text-sm font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                                            Đã khóa
-                                        </span>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                                        <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                                    </div>
-                                </div>
-                            </div>
+                {/* Study Path Viewer - Hiển thị nếu có materials */}
+                {materials.length > 0 && !isGeneratingSubRoadmap && (
+                    <StudyPathViewer
+                        studySetId={studySet.id}
+                        onProgressUpdate={(value) => setOverallProgress(value)}
+                        onModuleClick={async (module) => {
+                            console.log('Module clicked:', module);
+                            console.log('Module ID:', module.id, 'Type:', typeof module.id);
+                            console.log('Study Set ID:', studySet.id, 'Type:', typeof studySet.id);
+
+                            // Check if sub-roadmap already exists
+                            try {
+                                const checkResponse = await fetch(`http://localhost:3001/api/study-paths/module/${module.id}/sub-modules`);
+
+                                if (checkResponse.ok) {
+                                    const existingData = await checkResponse.json();
+                                    if (Array.isArray(existingData) && existingData.length > 0) {
+                                        // Sub-roadmap already exists, show it immediately without loading
+                                        console.log('Sub-roadmap already exists, showing directly');
+                                        setIsGeneratingSubRoadmap(false);
+                                        if (onModuleClick) {
+                                            onModuleClick(module);
+                                        }
+                                        return;
+                                    }
+                                }
+
+                                // Sub-roadmap doesn't exist, need to generate it
+                                // Show loading screen only when generating
+                                setIsGeneratingSubRoadmap(true);
+
+                                const requestBody = {
+                                    moduleId: module.id,
+                                    studySetId: studySet.id
+                                };
+                                console.log('Request body:', requestBody);
+
+                                const response = await fetch('http://localhost:3001/api/study-paths/generate-sub-roadmap', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(requestBody)
+                                });
+
+                                if (response.ok) {
+                                    const data = await response.json();
+                                    console.log('Sub-roadmap generated:', data);
+                                    // Hide loading and show sub-roadmap
+                                    setIsGeneratingSubRoadmap(false);
+                                    // Call parent callback to show sub-roadmap
+                                    if (onModuleClick) {
+                                        onModuleClick(module);
+                                    }
+                                } else {
+                                    const error = await response.json();
+                                    setIsGeneratingSubRoadmap(false);
+                                    alert('Không thể tạo sub-roadmap: ' + (error.error || 'Lỗi không xác định'));
+                                }
+                            } catch (error) {
+                                console.error('Error checking/generating sub-roadmap:', error);
+                                setIsGeneratingSubRoadmap(false);
+                                alert('Lỗi khi tạo sub-roadmap');
+                            }
+                        }}
+                    />
+                )}
+
+                {/* Upload First Material - Chỉ hiển thị nếu chưa có materials */}
+                {materials.length === 0 && (
+                    <div className="bg-white rounded-xl p-8 border-2 border-dashed border-gray-200 text-center">
+                        <div className="max-w-md mx-auto">
+                            <h2 className="text-2xl font-bold text-gray-900 mb-2">Bắt đầu bằng cách tải lên tài liệu</h2>
+                            <p className="text-gray-600 mb-4">Tải lên tài liệu để tạo lộ trình học tập và nội dung học phù hợp.</p>
+                            <button
+                                onClick={() => onUploadMaterial?.()}
+                                className="px-5 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                            >
+                                <Upload className="inline w-4 h-4 mr-2" /> Tải lên tài liệu
+                            </button>
                         </div>
-                    ))}
-                </div>
+                    </div>
+                )}
             </div>
         </div>
     );

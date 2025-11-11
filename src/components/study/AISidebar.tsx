@@ -1,5 +1,5 @@
 import React from 'react';
-import { Lightbulb, Brain, Book } from 'lucide-react';
+import { Lightbulb, Brain, Book, X } from 'lucide-react';
 import { isFillBlankCard, isMultipleChoiceCard } from '../../utils/flashcardStudyHelpers';
 import { renderMessage } from '../../utils/messageRenderer';
 
@@ -36,37 +36,18 @@ export const AISidebar: React.FC<AISidebarProps> = ({
 
     return (
         <div className="flex flex-col min-w-0 overflow-hidden h-[calc(100vh-64px)] rounded-l-xl shadow-xl bg-white/80 backdrop-blur"
-            style={{ width: `${sidebarWidth}px`, minWidth: 250, maxWidth: 600 }}>
+            style={{ width: `${sidebarWidth}px`, minWidth: 350 }}>
             <div className="bg-white/70 px-4 py-3 flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg active:scale-95 transition">
-                        <span className="text-2xl leading-none">×</span>
-                    </button>
-                    <span className="text-sm text-gray-600">AI Tutor</span>
+                    <span className="text-sm text-gray-600 font-medium">AI Tutor</span>
                 </div>
-                <div className="flex items-center space-x-1">
-                    <button
-                        onClick={() => onSetSidebarWidth(250)}
-                        className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                        title="Kích thước nhỏ"
-                    >
-                        S
-                    </button>
-                    <button
-                        onClick={() => onSetSidebarWidth(350)}
-                        className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                        title="Kích thước vừa"
-                    >
-                        M
-                    </button>
-                    <button
-                        onClick={() => onSetSidebarWidth(500)}
-                        className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                        title="Kích thước lớn"
-                    >
-                        L
-                    </button>
-                </div>
+                <button
+                    onClick={onClose}
+                    className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-200 transition-colors"
+                    title="Đóng cửa sổ"
+                >
+                    <X className="w-4 h-4 text-gray-600" />
+                </button>
             </div>
 
             <div className="flex-1 min-h-0 flex flex-col overflow-y-auto bg-white/50">

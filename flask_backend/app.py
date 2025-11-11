@@ -22,15 +22,27 @@ def configure_genai():
     genai.configure(api_key=api_key)
 
 
-def build_master_prompt(requests_dict: dict) -> str:
+def build_master_prompt(requests_dict: dict, topic_context: str = "") -> str:
     """Build a detailed master prompt instructing Gemini to return one JSON object.
 
     The prompt describes the role, the expected JSON schema and iterates over
     the requested flashcard types and counts.
+    
+    Args:
+        requests_dict: Dictionary of flashcard type counts
+        topic_context: Optional specific topic/module title to focus on
     """
     lines = []
     lines.append("Bạn là một gia sư chuyên nghiệp, có nhiệm vụ tạo bộ câu hỏi học tập từ tài liệu đính kèm.")
     lines.append("Hãy đọc kỹ tài liệu và tạo nội dung theo yêu cầu sau.")
+    
+    # Add topic context if provided
+    if topic_context and topic_context.strip():
+        lines.append("")
+        lines.append(f"QUAN TRỌNG: Tất cả các flashcard phải tập trung vào chủ đề: {topic_context}")
+        lines.append(f"Chỉ tạo flashcard liên quan trực tiếp đến chủ đề này. Bỏ qua các nội dung không liên quan.")
+        lines.append("Ví dụ: Nếu chủ đề là 'Biện pháp phòng chống mã độc', chỉ tạo flashcard về các biện pháp phòng chống, không tạo flashcard về định nghĩa mã độc nói chung.")
+    
     lines.append("")
     lines.append("Yêu cầu cụ thể (mỗi mục là số lượng cần tạo):")
     for key, value in (requests_dict or {}).items():
@@ -159,6 +171,7 @@ def create_app():
 
         file = request.files["document"]
         requests_str = request.form.get("requests", "{}")
+        topic_context = request.form.get("topic_context", "")  # Get topic context if provided
 
         try:
             user_requests = json.loads(requests_str or "{}")
@@ -202,8 +215,8 @@ def create_app():
                             "Please update: pip install --upgrade google-generativeai"
                         )
 
-            # Build master prompt
-            prompt = build_master_prompt(user_requests)
+            # Build master prompt with topic context if provided
+            prompt = build_master_prompt(user_requests, topic_context)
 
             # Dynamically choose a valid model via list_models()
             model_name = choose_available_model()
@@ -275,7 +288,7 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))
+    port = int(os.getenv("PORT", 5050))
     app.run(host="0.0.0.0", port=port, debug=True)
 
 

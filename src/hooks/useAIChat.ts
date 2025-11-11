@@ -11,10 +11,82 @@ export const useAIChat = ({ currentCard, studySetId }: UseAIChatProps) => {
     const [chatHistory, setChatHistory] = useState<Array<{ type: 'user' | 'ai', message: string }>>([]);
     const [isLoadingChat, setIsLoadingChat] = useState<boolean>(false);
 
+    // Detect flashcard type: English vocabulary vs specialized term
+    const detectFlashcardType = (): 'english_vocab' | 'specialized_term' | 'unknown' => {
+        const term = currentCard?.term || '';
+        const definition = currentCard?.definition || '';
+
+        if (!definition || definition.trim().length === 0) {
+            return 'unknown';
+        }
+
+        const definitionLower = definition.toLowerCase();
+        const termLower = term.toLowerCase();
+
+        // Check if term contains English words (not just Vietnamese)
+        const hasEnglishWords = /[a-zA-Z]{3,}/.test(term);
+
+        // Keywords indicating specialized/technical terms
+        const specializedKeywords = [
+            'sử dụng', 'để', 'kiểm soát', 'ngăn chặn', 'bảo vệ', 'hệ thống',
+            'công nghệ', 'phần mềm', 'thiết bị', 'mạng', 'lưu lượng', 'kết nối',
+            'quản lý', 'xử lý', 'phân tích', 'giám sát', 'cấu hình', 'triển khai',
+            'ứng dụng', 'chức năng', 'nhiệm vụ', 'mục đích', 'phương pháp', 'kỹ thuật',
+            'chiến lược', 'giải pháp', 'cơ chế', 'quy trình', 'hoạt động', 'vận hành'
+        ];
+
+        // Keywords indicating English vocabulary learning
+        const englishVocabKeywords = [
+            'từ tiếng anh', 'tiếng anh', 'english word', 'vocabulary', 'từ vựng',
+            'nghĩa là', 'có nghĩa là', 'được dịch là', 'dịch sang'
+        ];
+
+        // Count specialized keywords in definition
+        const specializedCount = specializedKeywords.filter(keyword =>
+            definitionLower.includes(keyword)
+        ).length;
+
+        // Count English vocab keywords
+        const vocabCount = englishVocabKeywords.filter(keyword =>
+            definitionLower.includes(keyword) || termLower.includes(keyword)
+        ).length;
+
+        // Check definition length and structure
+        const isLongDefinition = definition.length > 80;
+        const hasActionVerbs = /(sử dụng|để|kiểm soát|ngăn chặn|bảo vệ|quản lý)/.test(definitionLower);
+        const hasTechnicalContext = /(hệ thống|công nghệ|phần mềm|thiết bị|mạng)/.test(definitionLower);
+
+        // Decision logic
+        // If has explicit English vocab keywords, prioritize that
+        if (vocabCount > 0 && specializedCount === 0) {
+            return 'english_vocab';
+        }
+
+        // If has specialized keywords or technical context, it's specialized
+        if (specializedCount > 0 || hasActionVerbs || hasTechnicalContext || isLongDefinition) {
+            return 'specialized_term';
+        }
+
+        // If has English words but short definition without specialized context, might be vocab
+        if (hasEnglishWords && !isLongDefinition && specializedCount === 0) {
+            return 'english_vocab';
+        }
+
+        // Default to specialized if has English words (likely technical term with English name)
+        if (hasEnglishWords) {
+            return 'specialized_term';
+        }
+
+        return 'unknown';
+    };
+
     const buildFlashcardInfoSection = (): string => {
         const currentTerm = currentCard?.term || '';
+        const flashcardType = detectFlashcardType();
+
         let flashcardInfoSection = `Thông tin flashcard hiện tại:
-- Term (Thuật ngữ): ${currentTerm}`;
+- Term (Thuật ngữ): ${currentTerm}
+- Loại: ${flashcardType === 'english_vocab' ? 'Từ mới tiếng Anh' : flashcardType === 'specialized_term' ? 'Thuật ngữ chuyên ngành' : 'Không xác định'}`;
 
         if (isMultipleChoiceCard(currentCard)) {
             let options = currentCard.multipleChoiceOptions;
@@ -87,26 +159,78 @@ export const useAIChat = ({ currentCard, studySetId }: UseAIChatProps) => {
         for (let attempt = 0; attempt < maxRetries; attempt++) {
             try {
                 const flashcardInfoSection = buildFlashcardInfoSection();
-                const flashcardPrompt = `Bạn là AI tutor chuyên giúp học flashcard tên Huyền Trang. 
+                const flashcardType = detectFlashcardType();
+
+                // Build prompt based on flashcard type
+                let basePrompt = '';
+                if (flashcardType === 'english_vocab') {
+                    // English vocabulary learning prompt
+                    basePrompt = `Bạn là AI tutor chuyên giúp học từ mới tiếng Anh. 
             
 ${flashcardInfoSection}
 
-Câu hỏi của Huyền Trang: ${userMessage}
+Câu hỏi của bạn: ${userMessage}
 
 Hãy trả lời theo format sau:
-1. Bắt đầu với "Chào Huyền Trang! 🎉 Rất vui khi được giúp bạn hiểu rõ hơn về từ này! 😊"
-2. Hiển thị thông tin flashcard: "Flashcard của chúng ta hôm nay là: **Thuật ngữ:** [term]"
+1. Bắt đầu với "Chào bạn! 🎉 Rất vui khi được giúp bạn hiểu rõ hơn về từ này! 😊"
+2. Hiển thị thông tin flashcard: "Flashcard của chúng ta hôm nay là: **Từ:** [term]"
 3. **QUAN TRỌNG**: Nếu người dùng yêu cầu dịch/giải thích đáp án (ví dụ: "dịch cho tôi từng đáp án", "giải thích các đáp án", "translate the options"), hãy dịch và giải thích từng đáp án một cách chi tiết, rõ ràng.
-4. Nếu có lỗi chính tả, nhắc nhở nhẹ nhàng như "Có lẽ có một chút nhầm lẫn ở đây về từ [từ đúng] đó Huyền Trang ơi! 😉"
+4. Nếu có lỗi chính tả, nhắc nhở nhẹ nhàng như "Có lẽ có một chút nhầm lẫn ở đây về từ [từ đúng] đó bạn ơi! 😉"
 5. **Giải thích chi tiết** với:
    - Định nghĩa rõ ràng và dễ hiểu
    - **Ví dụ câu tiếng Anh** sử dụng từ đó
    - **Ví dụ câu tiếng Việt** tương ứng
    - Các từ liên quan hoặc từ đồng nghĩa
    - Lưu ý về cách sử dụng trong ngữ cảnh
-6. Kết thúc bằng "Huyền Trang có muốn mình giải thích kỹ hơn phần nào không? Mình luôn sẵn sàng giúp bạn học tập vui vẻ! 🎉😊"
-7. Sử dụng nhiều emoji, tone giáo dục thân thiện, và gọi tên "Huyền Trang" trong câu trả lời.
+6. Kết thúc bằng "Bạn có muốn mình giải thích kỹ hơn phần nào không? Mình luôn sẵn sàng giúp bạn học tập vui vẻ! 🎉😊"
+7. Sử dụng nhiều emoji, tone giáo dục thân thiện, và gọi "bạn" trong câu trả lời.
 8. **QUAN TRỌNG**: Không tự động hiển thị đáp án đúng hoặc định nghĩa cho câu hỏi trắc nghiệm/điền chỗ trống trừ khi người dùng yêu cầu cụ thể.`;
+                } else if (flashcardType === 'specialized_term') {
+                    // Specialized term learning prompt
+                    basePrompt = `Bạn là AI tutor chuyên giúp học thuật ngữ chuyên ngành. 
+            
+${flashcardInfoSection}
+
+Câu hỏi của bạn: ${userMessage}
+
+Hãy trả lời theo format sau:
+1. Bắt đầu với "Chào bạn! 🎉 Rất vui khi được giúp bạn hiểu rõ hơn về thuật ngữ này! 😊"
+2. Hiển thị thông tin flashcard: "Flashcard của chúng ta hôm nay là: **Thuật ngữ:** [term]"
+3. **QUAN TRỌNG**: Nếu người dùng yêu cầu dịch/giải thích đáp án (ví dụ: "dịch cho tôi từng đáp án", "giải thích các đáp án", "translate the options"), hãy dịch và giải thích từng đáp án một cách chi tiết, rõ ràng.
+4. Nếu có lỗi chính tả, nhắc nhở nhẹ nhàng như "Có lẽ có một chút nhầm lẫn ở đây về thuật ngữ [thuật ngữ đúng] đó bạn ơi! 😉"
+5. **Giải thích chi tiết** với:
+   - Định nghĩa rõ ràng và dễ hiểu về thuật ngữ chuyên ngành
+   - **Ví dụ thực tế** về cách sử dụng trong ngữ cảnh chuyên ngành
+   - **Ứng dụng thực tế** của thuật ngữ này
+   - Các khái niệm liên quan hoặc thuật ngữ đồng nghĩa
+   - Lưu ý về cách sử dụng và tầm quan trọng trong lĩnh vực chuyên ngành
+6. Kết thúc bằng "Bạn có muốn mình giải thích kỹ hơn phần nào không? Mình luôn sẵn sàng giúp bạn học tập vui vẻ! 🎉😊"
+7. Sử dụng nhiều emoji, tone giáo dục thân thiện, và gọi "bạn" trong câu trả lời.
+8. **QUAN TRỌNG**: Không tự động hiển thị đáp án đúng hoặc định nghĩa cho câu hỏi trắc nghiệm/điền chỗ trống trừ khi người dùng yêu cầu cụ thể.`;
+                } else {
+                    // Generic prompt for unknown type
+                    basePrompt = `Bạn là AI tutor chuyên giúp học flashcard. 
+            
+${flashcardInfoSection}
+
+Câu hỏi của bạn: ${userMessage}
+
+Hãy trả lời theo format sau:
+1. Bắt đầu với "Chào bạn! 🎉 Rất vui khi được giúp bạn hiểu rõ hơn! 😊"
+2. Hiển thị thông tin flashcard: "Flashcard của chúng ta hôm nay là: **Thuật ngữ:** [term]"
+3. **QUAN TRỌNG**: Nếu người dùng yêu cầu dịch/giải thích đáp án (ví dụ: "dịch cho tôi từng đáp án", "giải thích các đáp án", "translate the options"), hãy dịch và giải thích từng đáp án một cách chi tiết, rõ ràng.
+4. Nếu có lỗi chính tả, nhắc nhở nhẹ nhàng như "Có lẽ có một chút nhầm lẫn ở đây đó bạn ơi! 😉"
+5. **Giải thích chi tiết** với:
+   - Định nghĩa rõ ràng và dễ hiểu
+   - Ví dụ thực tế sử dụng
+   - Các khái niệm liên quan
+   - Lưu ý về cách sử dụng
+6. Kết thúc bằng "Bạn có muốn mình giải thích kỹ hơn phần nào không? Mình luôn sẵn sàng giúp bạn học tập vui vẻ! 🎉😊"
+7. Sử dụng nhiều emoji, tone giáo dục thân thiện, và gọi "bạn" trong câu trả lời.
+8. **QUAN TRỌNG**: Không tự động hiển thị đáp án đúng hoặc định nghĩa cho câu hỏi trắc nghiệm/điền chỗ trống trừ khi người dùng yêu cầu cụ thể.`;
+                }
+
+                const flashcardPrompt = basePrompt;
 
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -162,26 +286,75 @@ Hãy trả lời theo format sau:
 
     const handleAISubmit = async (prompt: string) => {
         const flashcardInfoSection = buildFlashcardInfoSection();
-        const flashcardPrompt = `Bạn là AI tutor chuyên giúp học flashcard tên Huyền Trang. 
+        const flashcardType = detectFlashcardType();
+
+        // Build prompt based on flashcard type
+        let basePrompt = '';
+        if (flashcardType === 'english_vocab') {
+            basePrompt = `Bạn là AI tutor chuyên giúp học từ mới tiếng Anh. 
             
 ${flashcardInfoSection}
 
-Yêu cầu của Huyền Trang: ${prompt}
+Yêu cầu của bạn: ${prompt}
 
 Hãy trả lời theo format sau:
-1. Bắt đầu với "Chào Huyền Trang! 🎉 Rất vui khi được giúp bạn hiểu rõ hơn về từ này! 😊"
-2. Hiển thị thông tin flashcard: "Flashcard của chúng ta hôm nay là: **Thuật ngữ:** [term]"
+1. Bắt đầu với "Chào bạn! 🎉 Rất vui khi được giúp bạn hiểu rõ hơn về từ này! 😊"
+2. Hiển thị thông tin flashcard: "Flashcard của chúng ta hôm nay là: **Từ:** [term]"
 3. **QUAN TRỌNG**: Nếu người dùng yêu cầu dịch/giải thích đáp án (ví dụ: "dịch cho tôi từng đáp án", "giải thích các đáp án", "translate the options"), hãy dịch và giải thích từng đáp án một cách chi tiết, rõ ràng.
-4. Nếu có lỗi chính tả, nhắc nhở nhẹ nhàng như "Có lẽ có một chút nhầm lẫn ở đây về từ [từ đúng] đó Huyền Trang ơi! 😉"
+4. Nếu có lỗi chính tả, nhắc nhở nhẹ nhàng như "Có lẽ có một chút nhầm lẫn ở đây về từ [từ đúng] đó bạn ơi! 😉"
 5. **Giải thích chi tiết** với:
    - Định nghĩa rõ ràng và dễ hiểu
    - **Ví dụ câu tiếng Anh** sử dụng từ đó
    - **Ví dụ câu tiếng Việt** tương ứng
    - Các từ liên quan hoặc từ đồng nghĩa
    - Lưu ý về cách sử dụng trong ngữ cảnh
-6. Kết thúc bằng "Huyền Trang có muốn mình giải thích kỹ hơn phần nào không? Mình luôn sẵn sàng giúp bạn học tập vui vẻ! 🎉😊"
-7. Sử dụng nhiều emoji, tone giáo dục thân thiện, và gọi tên "Huyền Trang" trong câu trả lời.
+6. Kết thúc bằng "Bạn có muốn mình giải thích kỹ hơn phần nào không? Mình luôn sẵn sàng giúp bạn học tập vui vẻ! 🎉😊"
+7. Sử dụng nhiều emoji, tone giáo dục thân thiện, và gọi "bạn" trong câu trả lời.
 8. **QUAN TRỌNG**: Không tự động hiển thị đáp án đúng hoặc định nghĩa cho câu hỏi trắc nghiệm/điền chỗ trống trừ khi người dùng yêu cầu cụ thể.`;
+        } else if (flashcardType === 'specialized_term') {
+            basePrompt = `Bạn là AI tutor chuyên giúp học thuật ngữ chuyên ngành. 
+            
+${flashcardInfoSection}
+
+Yêu cầu của bạn: ${prompt}
+
+Hãy trả lời theo format sau:
+1. Bắt đầu với "Chào bạn! 🎉 Rất vui khi được giúp bạn hiểu rõ hơn về thuật ngữ này! 😊"
+2. Hiển thị thông tin flashcard: "Flashcard của chúng ta hôm nay là: **Thuật ngữ:** [term]"
+3. **QUAN TRỌNG**: Nếu người dùng yêu cầu dịch/giải thích đáp án (ví dụ: "dịch cho tôi từng đáp án", "giải thích các đáp án", "translate the options"), hãy dịch và giải thích từng đáp án một cách chi tiết, rõ ràng.
+4. Nếu có lỗi chính tả, nhắc nhở nhẹ nhàng như "Có lẽ có một chút nhầm lẫn ở đây về thuật ngữ [thuật ngữ đúng] đó bạn ơi! 😉"
+5. **Giải thích chi tiết** với:
+   - Định nghĩa rõ ràng và dễ hiểu về thuật ngữ chuyên ngành
+   - **Ví dụ thực tế** về cách sử dụng trong ngữ cảnh chuyên ngành
+   - **Ứng dụng thực tế** của thuật ngữ này
+   - Các khái niệm liên quan hoặc thuật ngữ đồng nghĩa
+   - Lưu ý về cách sử dụng và tầm quan trọng trong lĩnh vực chuyên ngành
+6. Kết thúc bằng "Bạn có muốn mình giải thích kỹ hơn phần nào không? Mình luôn sẵn sàng giúp bạn học tập vui vẻ! 🎉😊"
+7. Sử dụng nhiều emoji, tone giáo dục thân thiện, và gọi "bạn" trong câu trả lời.
+8. **QUAN TRỌNG**: Không tự động hiển thị đáp án đúng hoặc định nghĩa cho câu hỏi trắc nghiệm/điền chỗ trống trừ khi người dùng yêu cầu cụ thể.`;
+        } else {
+            basePrompt = `Bạn là AI tutor chuyên giúp học flashcard. 
+            
+${flashcardInfoSection}
+
+Yêu cầu của bạn: ${prompt}
+
+Hãy trả lời theo format sau:
+1. Bắt đầu với "Chào bạn! 🎉 Rất vui khi được giúp bạn hiểu rõ hơn! 😊"
+2. Hiển thị thông tin flashcard: "Flashcard của chúng ta hôm nay là: **Thuật ngữ:** [term]"
+3. **QUAN TRỌNG**: Nếu người dùng yêu cầu dịch/giải thích đáp án (ví dụ: "dịch cho tôi từng đáp án", "giải thích các đáp án", "translate the options"), hãy dịch và giải thích từng đáp án một cách chi tiết, rõ ràng.
+4. Nếu có lỗi chính tả, nhắc nhở nhẹ nhàng như "Có lẽ có một chút nhầm lẫn ở đây đó bạn ơi! 😉"
+5. **Giải thích chi tiết** với:
+   - Định nghĩa rõ ràng và dễ hiểu
+   - Ví dụ thực tế sử dụng
+   - Các khái niệm liên quan
+   - Lưu ý về cách sử dụng
+6. Kết thúc bằng "Bạn có muốn mình giải thích kỹ hơn phần nào không? Mình luôn sẵn sàng giúp bạn học tập vui vẻ! 🎉😊"
+7. Sử dụng nhiều emoji, tone giáo dục thân thiện, và gọi "bạn" trong câu trả lời.
+8. **QUAN TRỌNG**: Không tự động hiển thị đáp án đúng hoặc định nghĩa cho câu hỏi trắc nghiệm/điền chỗ trống trừ khi người dùng yêu cầu cụ thể.`;
+        }
+
+        const flashcardPrompt = basePrompt;
 
         try {
             const response = await fetch('http://localhost:3001/api/ai/chat', {

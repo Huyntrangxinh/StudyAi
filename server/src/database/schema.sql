@@ -235,6 +235,51 @@ CREATE TABLE IF NOT EXISTS game_sessions (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- User Streaks table
+CREATE TABLE IF NOT EXISTS user_streaks (
+    user_id TEXT PRIMARY KEY,
+    current_streak INTEGER DEFAULT 0,
+    best_streak INTEGER DEFAULT 0,
+    last_activity_date TEXT,
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Study Paths table
+CREATE TABLE IF NOT EXISTS study_paths (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    study_set_id INTEGER NOT NULL,
+    exam_date TEXT, -- Optional exam date
+    status TEXT DEFAULT 'draft', -- 'draft', 'generating', 'ready', 'active'
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (study_set_id) REFERENCES study_sets(id) ON DELETE CASCADE
+);
+
+-- Study Path Modules table
+CREATE TABLE IF NOT EXISTS study_path_modules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    study_path_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'ready', -- 'ready', 'in_progress', 'completed'
+    progress REAL DEFAULT 0, -- 0-100
+    topics_count INTEGER DEFAULT 0,
+    materials_count INTEGER DEFAULT 0,
+    order_index INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (study_path_id) REFERENCES study_paths(id) ON DELETE CASCADE
+);
+
+-- Study Path Module Materials junction table
+CREATE TABLE IF NOT EXISTS study_path_module_materials (
+    module_id INTEGER NOT NULL,
+    material_id INTEGER NOT NULL,
+    PRIMARY KEY (module_id, material_id),
+    FOREIGN KEY (module_id) REFERENCES study_path_modules(id) ON DELETE CASCADE,
+    FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE
+);
+
 -- Indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_files_owner ON files(owner_id);
 CREATE INDEX IF NOT EXISTS idx_summaries_file ON summaries(file_id);
@@ -261,3 +306,7 @@ CREATE INDEX IF NOT EXISTS idx_games_user ON games(user_id);
 CREATE INDEX IF NOT EXISTS idx_games_study_set ON games(study_set_id);
 CREATE INDEX IF NOT EXISTS idx_game_sessions_game ON game_sessions(game_id);
 CREATE INDEX IF NOT EXISTS idx_game_sessions_user ON game_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_study_paths_study_set ON study_paths(study_set_id);
+CREATE INDEX IF NOT EXISTS idx_study_path_modules_path ON study_path_modules(study_path_id);
+CREATE INDEX IF NOT EXISTS idx_study_path_module_materials_module ON study_path_module_materials(module_id);
+CREATE INDEX IF NOT EXISTS idx_study_path_module_materials_material ON study_path_module_materials(material_id);

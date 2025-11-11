@@ -1,15 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, FolderPlus, MoreVertical, Calendar, FileText, Globe } from 'lucide-react';
-
-interface StudySet {
-    id: string;
-    name: string;
-    description?: string;
-    createdAt: string;
-    icon?: string;
-    color?: string;
-    materialsCount?: number;
-}
+import { Search, Plus, FolderPlus, FileText } from 'lucide-react';
+import MyStudySetsCard from './MyStudySetsCard';
+import RenameStudySetModal from './modals/RenameStudySetModal';
+import type { StudySet } from '../types/studySet';
 
 interface MyStudySetsProps {
     userId: string;
@@ -28,6 +21,12 @@ const MyStudySets: React.FC<MyStudySetsProps> = ({
     const [filteredStudySets, setFilteredStudySets] = useState<StudySet[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [isLoading, setIsLoading] = useState(true);
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [renameTarget, setRenameTarget] = useState<StudySet | null>(null);
+    const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+    const [renameValue, setRenameValue] = useState('');
+    const [renameError, setRenameError] = useState('');
 
     // Load study sets
     useEffect(() => {
@@ -91,39 +90,108 @@ const MyStudySets: React.FC<MyStudySetsProps> = ({
         }
     };
 
-    const getIconComponent = (iconName?: string) => {
-        // Map icon names to components (simplified - you can expand this)
-        const iconMap: { [key: string]: React.ReactNode } = {
-            'book': <FileText className="w-4 h-4" />,
-            'calculator': <FileText className="w-4 h-4" />,
-            'globe': <FileText className="w-4 h-4" />,
-            'hard-hat': <FileText className="w-4 h-4" />
-        };
-        return iconMap[iconName || 'book'] || <FileText className="w-4 h-4" />;
+    const applyStudySetUpdates = (updater: (prev: StudySet[]) => StudySet[]) => {
+        setStudySets(prev => {
+            const next = updater(prev);
+            if (!searchTerm.trim()) {
+                setFilteredStudySets(next);
+            } else {
+                const lower = searchTerm.toLowerCase();
+                setFilteredStudySets(
+                    next.filter(set =>
+                        set.name.toLowerCase().includes(lower) ||
+                        set.description?.toLowerCase().includes(lower)
+                    )
+                );
+            }
+            return next;
+        });
     };
 
-    // Generate random color for icon container based on study set ID
-    const getRandomIconColor = (id: string) => {
-        const colors = [
-            '#3b82f6', // Blue
-            '#10b981', // Green
-            '#f59e0b', // Amber
-            '#ef4444', // Red
-            '#8b5cf6', // Purple
-            '#ec4899', // Pink
-            '#06b6d4', // Cyan
-            '#f97316', // Orange
-            '#14b8a6', // Teal
-            '#6366f1', // Indigo
-        ];
-        // Use study set ID to get consistent color for same set
-        const index = parseInt(id) % colors.length;
-        return colors[index];
+    const handleRenameClick = (set: StudySet) => {
+        setOpenMenuId(null);
+        setRenameTarget(set);
+        setRenameValue(set.name);
+        setRenameError('');
+        setIsRenameModalOpen(true);
     };
 
-    const truncateDescription = (text: string, maxLength: number = 80) => {
-        if (text.length <= maxLength) return text;
-        return text.substring(0, maxLength) + '...';
+    const handleRenameSubmit = async () => {
+        if (!renameTarget) {
+            return;
+        }
+
+        const trimmedName = renameValue.trim();
+        if (!trimmedName) {
+            setRenameError('Tên study set không được để trống.');
+            return;
+        }
+
+        if (trimmedName === renameTarget.name) {
+            setIsRenameModalOpen(false);
+            setRenameTarget(null);
+            return;
+        }
+
+        try {
+            setIsProcessing(true);
+            setRenameError('');
+            const response = await fetch(`http://localhost:3001/api/study-sets/${renameTarget.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: trimmedName, userId })
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.json().catch(() => null);
+                throw new Error(errorBody?.error || 'Failed to rename study set');
+            }
+
+            const updated = await response.json();
+            applyStudySetUpdates(prev =>
+                prev.map(s => (s.id === renameTarget.id ? { ...s, name: updated.name || trimmedName } : s))
+            );
+            setIsRenameModalOpen(false);
+            setRenameTarget(null);
+        } catch (error) {
+            console.error('Error renaming study set:', error);
+            setRenameError('Không thể đổi tên study set. Vui lòng thử lại.');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleRenameCancel = () => {
+        setIsRenameModalOpen(false);
+        setRenameTarget(null);
+        setRenameError('');
+    };
+
+    const handleDeleteSet = async (set: StudySet) => {
+        const confirmed = window.confirm(`Bạn có chắc muốn xóa study set "${set.name}"?`);
+        if (!confirmed) {
+            setOpenMenuId(null);
+            return;
+        }
+
+        try {
+            setIsProcessing(true);
+            const response = await fetch(`http://localhost:3001/api/study-sets/${set.id}?userId=${encodeURIComponent(userId)}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to delete study set');
+            }
+
+            applyStudySetUpdates(prev => prev.filter(s => s.id !== set.id));
+        } catch (error) {
+            console.error('Error deleting study set:', error);
+            alert('Không thể xóa study set. Vui lòng thử lại.');
+        } finally {
+            setIsProcessing(false);
+            setOpenMenuId(null);
+        }
     };
 
     return (
@@ -189,94 +257,35 @@ const MyStudySets: React.FC<MyStudySetsProps> = ({
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {filteredStudySets.map((set) => {
-                        // Generate pastel background color based on set color or use default
-                        const getCardBackgroundColor = () => {
-                            if (set.color) {
-                                // Convert hex to pastel
-                                const hex = set.color.replace('#', '');
-                                const r = parseInt(hex.substr(0, 2), 16);
-                                const g = parseInt(hex.substr(2, 2), 16);
-                                const b = parseInt(hex.substr(4, 2), 16);
-                                // Lighten the color
-                                return `rgb(${Math.min(255, r + 200)}, ${Math.min(255, g + 200)}, ${Math.min(255, b + 200)})`;
-                            }
-                            // Default pastel colors
-                            const pastels = [
-                                'rgb(255, 250, 220)', // Light yellow
-                                'rgb(255, 235, 205)', // Light orange
-                                'rgb(220, 255, 220)', // Light green
-                                'rgb(220, 240, 255)', // Light blue
-                                'rgb(255, 220, 255)', // Light pink
-                                'rgb(240, 240, 255)', // Light purple
-                            ];
-                            return pastels[parseInt(set.id) % pastels.length];
-                        };
-
-                        return (
-                            <div
-                                key={set.id}
-                                onClick={() => onSelectStudySet?.(set)}
-                                className="relative flex flex-col p-3.5 rounded-xl border border-gray-200 hover:shadow-md transition-all cursor-pointer"
-                                style={{ backgroundColor: getCardBackgroundColor() }}
-                            >
-                                {/* Menu Button - Top Right */}
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        // TODO: Show menu
-                                    }}
-                                    className="absolute top-2.5 right-2.5 p-1 text-gray-400 hover:text-gray-600 hover:bg-white/50 rounded transition-colors"
-                                >
-                                    <MoreVertical className="w-4 h-4" />
-                                </button>
-
-                                {/* Icon - Top Left */}
-                                <div className="mb-2.5">
-                                    <div
-                                        className="w-10 h-10 rounded-full flex items-center justify-center"
-                                        style={{ backgroundColor: getRandomIconColor(set.id) }}
-                                    >
-                                        <div className="text-white">
-                                            {getIconComponent(set.icon)}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Content */}
-                                <div className="flex-1 flex flex-col min-h-0">
-                                    <h3 className="text-sm font-bold text-gray-900 mb-1 line-clamp-1" style={{ color: '#1e3a8a' }}>
-                                        {set.name}
-                                    </h3>
-                                    {set.description && (
-                                        <p className="text-xs text-gray-600 mb-2.5 line-clamp-1">
-                                            {truncateDescription(set.description, 60)}
-                                        </p>
-                                    )}
-
-                                    {/* Metadata - Horizontal at bottom */}
-                                    <div className="mt-auto pt-2 border-t border-gray-200/50">
-                                        <div className="flex items-center gap-3 text-xs text-gray-500">
-                                            <span className="flex items-center gap-1">
-                                                <FileText className="w-3 h-3" />
-                                                {set.materialsCount || 0} materials
-                                            </span>
-                                            <span className="flex items-center gap-1">
-                                                <Calendar className="w-3 h-3" />
-                                                {formatDate(set.createdAt)}
-                                            </span>
-                                            <span className="flex items-center gap-1">
-                                                <Globe className="w-3 h-3" />
-                                                Public
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })}
+                    {filteredStudySets.map((set) => (
+                        <MyStudySetsCard
+                            key={set.id}
+                            studySet={set}
+                            isMenuOpen={openMenuId === set.id}
+                            isProcessing={isProcessing}
+                            onSelect={() => onSelectStudySet?.(set)}
+                            onToggleMenu={(e: React.MouseEvent<HTMLButtonElement>) => {
+                                e.stopPropagation();
+                                setOpenMenuId(prev => (prev === set.id ? null : set.id));
+                            }}
+                            onRenameClick={() => handleRenameClick(set)}
+                            onDeleteClick={() => handleDeleteSet(set)}
+                            formatDate={formatDate}
+                        />
+                    ))}
                 </div>
             )}
+
+            <RenameStudySetModal
+                isOpen={isRenameModalOpen}
+                currentName={renameTarget?.name}
+                value={renameValue}
+                error={renameError}
+                isSubmitting={isProcessing}
+                onChange={setRenameValue}
+                onCancel={handleRenameCancel}
+                onSubmit={handleRenameSubmit}
+            />
         </div>
     );
 };
