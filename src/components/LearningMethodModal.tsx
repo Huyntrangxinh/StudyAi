@@ -55,6 +55,14 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
     const [flashcards, setFlashcards] = useState<any[]>([]);
     const [isGeneratingTest, setIsGeneratingTest] = useState(false);
 
+    const normalizeText = useCallback((value: string) => {
+        return (value || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .trim();
+    }, []);
+
     // Flashcard generation hook
     const flashcardGen = useFlashcardGeneration({
         studySetId,
@@ -105,6 +113,15 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
         }
     };
 
+    React.useEffect(() => {
+        setCreatedFlashcardSetId(null);
+        setFlashcards([]);
+        setIsGenerating(false);
+        setIsGeneratingTest(false);
+        setGenDone(0);
+        setGenTotal(0);
+    }, [subModule?.id, studySetId]);
+
     // Handle flashcards generation
     const handleFlashcardsClick = useCallback(async () => {
         const moduleMaterials = getModuleMaterials();
@@ -116,6 +133,8 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
 
         // Generate flashcard name from module title
         const flashcardName = `Khái niệm ${moduleTitle}`;
+        const normalizedFlashcardName = normalizeText(flashcardName);
+        const normalizedModuleTitle = normalizeText(moduleTitle);
 
         try {
             // Mark progress (50% on first method, 100% on second)
@@ -138,13 +157,14 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
 
             if (flashcardSetsInSet.length > 0) {
                 // Strategy 1: Find by name matching module title
-                const moduleTitleLower = moduleTitle.toLowerCase();
                 const nameMatch = flashcardSetsInSet.find((set: any) => {
-                    const setName = (set.name || '').toLowerCase();
-                    // Check if set name contains module title or vice versa
-                    return setName.includes(moduleTitleLower) ||
-                        moduleTitleLower.includes(setName) ||
-                        setName.includes('khái niệm') && moduleTitleLower.includes(setName.replace('khái niệm', '').trim());
+                    const normalizedSetName = normalizeText(set.name || '');
+                    if (!normalizedSetName) return false;
+                    if (normalizedSetName === normalizedFlashcardName) {
+                        return true;
+                    }
+                    return normalizedSetName.includes(normalizedModuleTitle) ||
+                        normalizedModuleTitle.includes(normalizedSetName);
                 });
 
                 if (nameMatch) {
@@ -165,23 +185,6 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                                 break;
                             }
                         }
-                    }
-                }
-
-                // Strategy 3: If still not found, use the most recent set with matching name pattern
-                if (!existingFlashcardSet) {
-                    const sortedSets = [...flashcardSetsInSet]
-                        .filter((set: any) => {
-                            const setName = (set.name || '').toLowerCase();
-                            return setName.includes('khái niệm');
-                        })
-                        .sort((a: any, b: any) => {
-                            const dateA = new Date(a.created_at || 0).getTime();
-                            const dateB = new Date(b.created_at || 0).getTime();
-                            return dateB - dateA; // Most recent first
-                        });
-                    if (sortedSets.length > 0) {
-                        existingFlashcardSet = sortedSets[0];
                     }
                 }
             }
@@ -231,7 +234,7 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
             alert('Có lỗi xảy ra khi tạo flashcard');
             setIsGenerating(false);
         }
-    }, [getModuleMaterials, flashcardGen, moduleTitle, studySetId, subModule, onSelectMethod]);
+    }, [getModuleMaterials, flashcardGen, moduleTitle, studySetId, subModule, onSelectMethod, normalizeText]);
 
     // Watch for when generation completes and flashcard set is created
     React.useEffect(() => {

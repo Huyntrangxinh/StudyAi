@@ -125,6 +125,50 @@ const initDb = () => {
             )
         `);
         // Add columns if they don't exist (no-op if already present)
+        db.run(`ALTER TABLE materials ADD COLUMN type TEXT`, (err) => {
+            if (err && !String(err.message).includes('duplicate column name')) {
+                console.error('Error adding type column:', err);
+            }
+        });
+        db.run(`ALTER TABLE materials ADD COLUMN size INTEGER`, (err) => {
+            if (err && !String(err.message).includes('duplicate column name')) {
+                console.error('Error adding size column:', err);
+            }
+        });
+        db.run(`ALTER TABLE materials ADD COLUMN generate_notes BOOLEAN DEFAULT 0`, (err) => {
+            if (err && !String(err.message).includes('duplicate column name')) {
+                console.error('Error adding generate_notes column:', err);
+            }
+        });
+        db.run(`ALTER TABLE materials ADD COLUMN note_type TEXT DEFAULT 'summarized'`, (err) => {
+            if (err && !String(err.message).includes('duplicate column name')) {
+                console.error('Error adding note_type column:', err);
+            }
+        });
+        db.run(`ALTER TABLE materials ADD COLUMN status TEXT DEFAULT 'uploaded'`, (err) => {
+            if (err && !String(err.message).includes('duplicate column name')) {
+                console.error('Error adding status column:', err);
+            }
+        });
+        db.run(`ALTER TABLE materials ADD COLUMN updated_at DATETIME`, (err) => {
+            if (err) {
+                if (!String(err.message).includes('duplicate column name')) {
+                    console.error('Error adding updated_at column:', err);
+                }
+                return;
+            }
+
+            db.run(
+                `UPDATE materials 
+                 SET updated_at = COALESCE(updated_at, created_at, datetime('now')) 
+                 WHERE updated_at IS NULL`,
+                (updateErr) => {
+                    if (updateErr) {
+                        console.error('Error backfilling updated_at column:', updateErr);
+                    }
+                }
+            );
+        });
         db.run(`ALTER TABLE materials ADD COLUMN file_hash TEXT`, (err) => {
             if (err && !String(err.message).includes('duplicate column name')) {
                 console.error('Error adding file_hash column:', err);

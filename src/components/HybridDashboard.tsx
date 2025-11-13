@@ -10,7 +10,6 @@ import {
     Video,
     CreditCard,
     CheckSquare,
-    HelpCircle,
     Gamepad2,
     FileText,
     Play,
@@ -48,7 +47,18 @@ import {
     Send,
     RotateCcw,
     Eye,
-    Trash2
+    Trash2,
+    Info,
+    Monitor,
+    MessageSquare,
+    Gift,
+    HelpCircle,
+    ShoppingCart,
+    Rocket,
+    Laptop,
+    FileEdit,
+    Award,
+    Grid
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useViewTestHandler } from '../hooks/useViewTestHandler';
@@ -56,6 +66,7 @@ import DashboardContent from './DashboardContent';
 import StudySetCard from './StudySetCard';
 import StudySetDetail from './StudySetDetail';
 import PDFViewerFixed from './PDFViewerFixed';
+import ChatView from './ChatView';
 import Flashcards from './Flashcards';
 import ExplainerVideoPage from './ExplainerVideoPage';
 import ExplainerVideoGenerating from './ExplainerVideoGenerating';
@@ -70,6 +81,8 @@ import UploadMaterials from './UploadMaterials';
 import SubRoadmapViewer from './SubRoadmapViewer';
 import toast from 'react-hot-toast';
 
+type SettingsTab = 'settings' | 'subscription' | 'privacy' | 'support';
+
 // Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
@@ -79,7 +92,14 @@ const HybridDashboard: React.FC = () => {
     const location = useLocation();
     const [activeSection, setActiveSection] = useState('home');
     const [isCollapsed, setIsCollapsed] = useState(false);
-    const [isDarkMode, setIsDarkMode] = useState(false);
+    const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+        if (typeof window !== 'undefined') {
+            const stored = window.localStorage.getItem('dashboard-dark-mode');
+            if (stored === 'true') return true;
+            if (stored === 'false') return false;
+        }
+        return false;
+    });
     const [studySets, setStudySets] = useState<Array<{ id: string, name: string, description: string, createdAt: string }>>([]);
     const [studySetScrollIndex, setStudySetScrollIndex] = useState(0);
     const studySetScrollRef = useRef<HTMLDivElement>(null);
@@ -104,6 +124,7 @@ const HybridDashboard: React.FC = () => {
     const [showGamePlay, setShowGamePlay] = useState(false);
     const [currentGameId, setCurrentGameId] = useState<number | null>(null);
     const [showPractice, setShowPractice] = useState(false);
+    const [showChatView, setShowChatView] = useState(false);
     const [practiceTab, setPracticeTab] = useState<'tests' | 'quizfetch'>('tests');
     const [showCreateTest, setShowCreateTest] = useState(false);
     const [testCreationMode, setTestCreationMode] = useState<'materials' | 'flashcards' | null>(null);
@@ -120,6 +141,12 @@ const HybridDashboard: React.FC = () => {
     const [homeStats, setHomeStats] = useState<{ materialsCount: number; testsCount: number; flashcardsCount: number; explainersCount: number }>({ materialsCount: 0, testsCount: 0, flashcardsCount: 0, explainersCount: 0 });
     const [streakInfo, setStreakInfo] = useState<{ current: number; best: number }>({ current: 0, best: 0 });
     const [isLoadingStreak, setIsLoadingStreak] = useState<boolean>(false);
+    const [showProfileDropdown, setShowProfileDropdown] = useState<boolean>(false);
+    const profileDropdownRef = useRef<HTMLDivElement>(null);
+    const [showGameProfile, setShowGameProfile] = useState<boolean>(false);
+    const [gameProfileTab, setGameProfileTab] = useState<'level-up' | 'leaderboards'>('level-up');
+    const [showSettingsView, setShowSettingsView] = useState<boolean>(false);
+    const [settingsTab, setSettingsTab] = useState<SettingsTab>('settings');
     const [recentMaterials, setRecentMaterials] = useState<Array<{ id: string; name: string; created_at: string }>>([]);
     const [savedTests, setSavedTests] = useState<Array<{ id: number; name: string; description?: string; created_at: string; study_set_id: number }>>([]);
     const [isLoadingTests, setIsLoadingTests] = useState(false);
@@ -176,6 +203,22 @@ const HybridDashboard: React.FC = () => {
     const [referenceAnswers, setReferenceAnswers] = useState<Map<number, string>>(new Map());
     const [loadingReferenceAnswer, setLoadingReferenceAnswer] = useState<Set<number>>(new Set());
 
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            window.localStorage.setItem('dashboard-dark-mode', isDarkMode ? 'true' : 'false');
+        }
+        const root = document.documentElement;
+        if (isDarkMode) {
+            root.classList.add('dark-mode');
+        } else {
+            root.classList.remove('dark-mode');
+        }
+
+        return () => {
+            root.classList.remove('dark-mode');
+        };
+    }, [isDarkMode]);
+
     // Handle start learning
     const handleStartLearning = () => {
         // Reset all view states
@@ -231,6 +274,23 @@ const HybridDashboard: React.FC = () => {
         setShowMaterials(true);
         setShowStudySetDetail(false);
     };
+
+    // Close profile dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target as Node)) {
+                setShowProfileDropdown(false);
+            }
+        };
+
+        if (showProfileDropdown) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showProfileDropdown]);
 
     // Handle open material from citation - Open in modal and load world text
     const handleOpenCitation = async (materialId: string | undefined, page: number) => {
@@ -2157,9 +2217,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 { id: 'tests', label: 'Tests & QuizFetch', icon: CheckSquare },
                 { id: 'tutor', label: 'Gia sư của tôi', icon: HelpCircle },
                 { id: 'arcade', label: 'Trò chơi', icon: Gamepad2 },
-                { id: 'essay', label: 'Chấm điểm bài luận', icon: FileText },
                 { id: 'explainers', label: 'Giải thích', icon: Play },
-                { id: 'audio', label: 'Tóm tắt âm thanh', icon: Volume2 },
                 { id: 'notes', label: 'Ghi chú & Tài liệu', icon: Notebook }
             ];
 
@@ -2310,6 +2368,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             setShowPractice(false);
             setShowExplainerVideo(false);
             setShowArcade(false);
+            setShowChatView(false);
+            setShowGameProfile(false);
+            setShowSettingsView(false);
 
             // Đặc biệt cho "Trang chủ": đảm bảo về dashboard chính
             if (itemId === 'home') {
@@ -2331,6 +2392,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 setShowArcade(false);
                 setShowGamePlay(false);
                 setShowSubRoadmap(false);
+                setShowGameProfile(false);
+                setShowSettingsView(false);
+                setShowChatView(false);
                 navigate('/dashboard');
                 setTestQuestions([]);
                 setCurrentQuestionIndex(0);
@@ -2382,6 +2446,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             if (selectedStudySet) {
                 setActiveSection(''); // Reset active section
                 setShowFlashcards(true);
+                setShowChatView(false);
+                setShowGameProfile(false);
+                setShowSettingsView(false);
             } else {
                 toast.error('Vui lòng chọn một bộ học trước khi xem thẻ ghi nhớ', {
                     duration: 3000,
@@ -2395,6 +2462,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             setShowMaterialViewer(false);
             setShowStudySetDetail(false);
             setShowPractice(true);
+            setShowChatView(false);
+            setShowGameProfile(false);
+            setShowSettingsView(false);
             // Load tests when Practice view is shown
             if (selectedStudySet?.id) {
                 loadSavedTests();
@@ -2409,8 +2479,25 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             setShowStudySetDetail(false);
             setShowPractice(false);
             setShowArcade(false);
+            setShowChatView(false);
+            setShowGameProfile(false);
+            setShowSettingsView(false);
             setShowExplainerVideo(true);
             navigate('/dashboard/explainers');
+        } else if (itemId === 'chat') {
+            // Xử lý click vào "Trò chuyện"
+            console.log('Navigating to chat view');
+            setActiveSection('chat'); // Set active section để highlight menu
+            setShowFlashcards(false);
+            setShowMaterialViewer(false);
+            setShowStudySetDetail(false);
+            setShowPractice(false);
+            setShowExplainerVideo(false);
+            setShowArcade(false);
+            setShowChatView(true);
+            setShowGameProfile(false);
+            setShowSettingsView(false);
+            navigate('/dashboard/chat');
         } else if (itemId === 'arcade') {
             // Xử lý click vào "Trò chơi"
             console.log('Navigating to arcade page');
@@ -2421,6 +2508,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             setShowPractice(false);
             setShowExplainerVideo(false);
             setShowArcade(true);
+            setShowChatView(false);
+            setShowGameProfile(false);
+            setShowSettingsView(false);
             navigate('/dashboard/arcade');
         } else if (itemId === 'sets') {
             // Xử lý click vào "Bộ học của tôi"
@@ -2431,6 +2521,8 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             setShowPractice(false);
             setShowExplainerVideo(false);
             setShowArcade(false);
+            setShowGameProfile(false);
+            setShowSettingsView(false);
             // Navigate to studyset route
             navigate('/dashboard/studyset');
             // Reload study sets when viewing
@@ -4139,10 +4231,414 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
         );
     };
 
+    const renderGameProfile = () => {
+        const currentXP = 30;
+        const maxXP = 87;
+        const level = 4;
+        const bones = 312;
+        const username = user?.email?.split('@')[0] || 'huyềntrang1695119';
+
+        return (
+            <div className={`flex-1 transition-all duration-300 min-h-screen bg-white`}>
+                <div className="max-w-7xl mx-auto p-8">
+                    {/* Back Button */}
+                    <button
+                        onClick={() => setShowGameProfile(false)}
+                        className="mb-8 flex items-center text-gray-700 hover:text-gray-900 transition-colors font-medium"
+                    >
+                        <ArrowLeft className="w-5 h-5 mr-2" />
+                        <span className="text-lg">Back</span>
+                    </button>
+
+                    {/* BONES Section - Top Center */}
+                    <div className="text-center mb-8">
+                        <div className="flex items-center justify-center gap-2 mb-4">
+                            <span className="text-3xl">🦴</span>
+                            <span className="text-2xl font-bold text-gray-900">BONES: {bones}</span>
+                        </div>
+                        <button className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors">
+                            <ShoppingCart className="w-5 h-5" />
+                            Bone Shop
+                        </button>
+                    </div>
+
+                    <div className="flex gap-8">
+                        {/* Left Side - User Profile Card */}
+                        <div className="flex-1">
+                            {/* User Profile Card */}
+                            <div className="mb-8">
+                                <div className="flex items-start gap-4">
+                                    {/* Avatar */}
+                                    <div className="relative">
+                                        <div className="w-24 h-24 rounded-full flex items-center justify-center text-white font-bold text-4xl" style={{ backgroundColor: '#BF360C' }}>
+                                            {user?.name?.charAt(0).toUpperCase() || 'H'}
+                                        </div>
+                                        <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 bg-white border-2 text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap" style={{ borderColor: '#1f1f1f', color: '#1f1f1f' }}>
+                                            Level {level}
+                                        </div>
+                                    </div>
+
+                                    {/* User Info */}
+                                    <div className="flex-1 pt-1">
+                                        <h2 className="text-2xl font-bold text-gray-900 mb-1">{user?.name || 'Huyền Trang'}</h2>
+                                        <p className="text-gray-500 mb-4 text-base">@{username}</p>
+                                        <div className="mb-4">
+                                            <div className="w-80 bg-gray-200 rounded-full h-2 mb-0.5">
+                                                <div
+                                                    className="bg-green-500 h-2 rounded-full transition-all"
+                                                    style={{ width: `${(currentXP / maxXP) * 100}%` }}
+                                                ></div>
+                                            </div>
+                                            <div className="flex items-center justify-between text-xs">
+                                                <span className="text-gray-700 font-medium">Level {level}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm text-gray-700 mb-4">
+                                            <img
+                                                src={`${process.env.PUBLIC_URL || ''}/fire.gif`}
+                                                alt="Streak"
+                                                className="w-4 h-4 object-contain"
+                                            />
+                                            <span className="font-medium">Current Streak: {streakInfo.current} Day(s)</span>
+                                        </div>
+                                        <div className="mb-4">
+                                            <p className="text-gray-600 text-sm leading-relaxed">
+                                                <span className="font-semibold text-gray-800">Collect Bones:</span><br />
+                                                Every time you level up, you receive Spark.E Bones!
+                                            </p>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-semibold text-white transition-colors">
+                                                <Settings className="w-3.5 h-3.5" />
+                                                My Collection
+                                            </button>
+                                            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-semibold text-white transition-colors">
+                                                <Play className="w-3.5 h-3.5" />
+                                                Tutorials
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* How To Level Up & Leaderboards */}
+                            <div className="bg-white border border-gray-200 rounded-2xl p-4 w-full">
+                                <div className="flex border-b border-gray-200 mb-4">
+                                    <button
+                                        onClick={() => setGameProfileTab('level-up')}
+                                        className={`px-4 py-2 text-sm font-semibold transition-colors ${gameProfileTab === 'level-up'
+                                            ? 'text-blue-600 border-b-2 border-blue-600'
+                                            : 'text-gray-500 hover:text-gray-700'
+                                            }`}
+                                    >
+                                        How To Level Up
+                                    </button>
+                                    <button
+                                        onClick={() => setGameProfileTab('leaderboards')}
+                                        className={`ml-4 px-4 py-2 text-sm font-semibold transition-colors ${gameProfileTab === 'leaderboards'
+                                            ? 'text-blue-600 border-b-2 border-blue-600'
+                                            : 'text-gray-500 hover:text-gray-700'
+                                            }`}
+                                    >
+                                        Leaderboards
+                                    </button>
+                                </div>
+
+                                {gameProfileTab === 'level-up' && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                                        {[
+                                            {
+                                                title: 'Chat with Spark.E',
+                                                xp: '5 XP',
+                                                note: 'Max: 250 XP/day',
+                                                icon: `${process.env.PUBLIC_URL || ''}/SPARKE.gif`
+                                            },
+                                            {
+                                                title: 'Edit a Document using Spark.E AI',
+                                                xp: '5 XP',
+                                                note: 'Max: 500 XP/day',
+                                                icon: null,
+                                                glyph: <FileEdit className="w-8 h-8 text-blue-500" />
+                                            },
+                                            {
+                                                title: 'Use Spark.E Visuals',
+                                                xp: '3 XP',
+                                                note: 'Max: 150 XP/day',
+                                                icon: `${process.env.PUBLIC_URL || ''}/SPARKE.gif`
+                                            },
+                                            {
+                                                title: 'Share a Study Set',
+                                                xp: '50 XP',
+                                                note: 'Max: 400 XP/day',
+                                                icon: `${process.env.PUBLIC_URL || ''}/SPARKE.gif`
+                                            },
+                                            {
+                                                title: 'Complete a Test',
+                                                xp: '10 XP',
+                                                note: 'Max: 50 XP/day',
+                                                icon: null,
+                                                glyph: <Laptop className="w-8 h-8 text-blue-500" />
+                                            },
+                                            {
+                                                title: 'Perfect Score on a Test',
+                                                xp: '25 XP',
+                                                note: 'Max: 125 XP/day',
+                                                icon: null,
+                                                glyph: <Award className="w-8 h-8 text-blue-500" />
+                                            },
+                                            {
+                                                title: 'Complete a Match Game',
+                                                xp: '10 XP',
+                                                note: 'Max: 50 XP/day',
+                                                icon: null,
+                                                glyph: <Grid className="w-8 h-8 text-blue-500" />
+                                            },
+                                            {
+                                                title: 'Perfect Score on a Match Game',
+                                                xp: '25 XP',
+                                                note: 'Max: 125 XP/day',
+                                                icon: null,
+                                                glyph: <Rocket className="w-8 h-8 text-blue-500" />
+                                            }
+                                        ].map((card) => (
+                                            <div
+                                                key={card.title}
+                                                className="flex items-center gap-3 px-4 py-4 rounded-2xl border border-gray-200 hover:border-blue-200 hover:shadow-md transition-all bg-white"
+                                            >
+                                                <div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                                    {card.icon ? (
+                                                        <img src={card.icon} alt={card.title} className="w-10 h-10 object-contain" />
+                                                    ) : (
+                                                        card.glyph
+                                                    )}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <h4 className="text-sm font-semibold text-gray-900">{card.title}</h4>
+                                                    <p className="text-xs text-gray-500 truncate">
+                                                        <span className="font-semibold text-blue-600">{card.xp}</span> ({card.note})
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {gameProfileTab === 'leaderboards' && (
+                                    <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-6 text-center text-sm text-gray-500">
+                                        Leaderboards coming soon...
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Right Side - Daily Objectives */}
+                        <div className="w-[26rem]">
+                            {/* Daily Objectives */}
+                            <div className="bg-white border border-gray-200 rounded-2xl p-3">
+                                <h3 className="text-lg font-bold text-gray-900 mb-3">Daily Objectives</h3>
+                                <div className="space-y-2.5 mb-3">
+                                    <div className="bg-gray-50 rounded-lg px-2.5 py-2">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <FileEdit className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                                            <span className="text-xs text-gray-800 font-medium whitespace-nowrap">Edit a Document using Spark.E AI</span>
+                                        </div>
+                                        <div className="pl-5">
+                                            <div className="w-full bg-gray-200 rounded-full h-[3px] mb-0.5">
+                                                <div className="bg-blue-600 h-[3px] rounded-full" style={{ width: '0%' }}></div>
+                                            </div>
+                                            <p className="text-[10px] text-gray-500">0 / 3</p>
+                                        </div>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-2.5 py-2">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <Laptop className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                                            <span className="text-xs text-gray-800 font-medium whitespace-nowrap">Complete a Test</span>
+                                        </div>
+                                        <div className="pl-5">
+                                            <div className="w-full bg-gray-200 rounded-full h-[3px] mb-0.5">
+                                                <div className="bg-blue-600 h-[3px] rounded-full" style={{ width: '0%' }}></div>
+                                            </div>
+                                            <p className="text-[10px] text-gray-500">0 / 3</p>
+                                        </div>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-2.5 py-2">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <Rocket className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                                            <span className="text-xs text-gray-800 font-medium whitespace-nowrap">Perfect Score on a Match Game</span>
+                                        </div>
+                                        <div className="pl-5">
+                                            <div className="w-full bg-gray-200 rounded-full h-[3px] mb-0.5">
+                                                <div className="bg-blue-600 h-[3px] rounded-full" style={{ width: '0%' }}></div>
+                                            </div>
+                                            <p className="text-[10px] text-gray-500">0 / 1</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-gray-500 text-center pt-2.5 border-t border-gray-200">Resets in 20h 24m 25s</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderSettingsView = () => {
+        const email = user?.email || 'user@example.com';
+        const name = user?.name || (user as any)?.username || 'Spark User';
+        const username = (user as any)?.username || email.split('@')[0] || 'sparkuser';
+        const settingsTabs: Array<{ id: SettingsTab; label: string }> = [
+            { id: 'settings', label: 'Cài đặt' },
+            { id: 'subscription', label: 'Gói đăng ký' },
+            { id: 'privacy', label: 'Quyền riêng tư & Dữ liệu' },
+            { id: 'support', label: 'Hỗ trợ' }
+        ];
+
+        return (
+            <div className="flex-1 transition-all duration-300 min-h-screen bg-white">
+                <div className="max-w-5xl mx-auto p-8 space-y-6">
+                    <button
+                        onClick={() => {
+                            setShowSettingsView(false);
+                            setShowGameProfile(false);
+                            setSettingsTab('settings');
+                        }}
+                        className="flex items-center text-gray-700 hover:text-gray-900 transition-colors font-medium text-lg"
+                    >
+                        <ArrowLeft className="w-5 h-5 mr-2" />
+                        <span>Quay lại</span>
+                    </button>
+
+                    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm w-full">
+                        <div className="border-b border-gray-200 px-6 pt-6">
+                            <div className="flex flex-wrap items-center">
+                                {settingsTabs.map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setSettingsTab(tab.id)}
+                                        className={`mr-6 pb-3 text-sm font-semibold transition-colors ${settingsTab === tab.id
+                                            ? 'text-blue-600 border-b-2 border-blue-600'
+                                            : 'text-gray-500 hover:text-gray-700'
+                                            }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="p-6 space-y-8">
+                            {settingsTab === 'settings' && (
+                                <>
+
+                                    <div className="flex flex-wrap items-start gap-6">
+                                        <div className="flex flex-col items-center">
+                                            <div className="w-32 h-32 rounded-2xl bg-[#BF360C] text-white flex items-center justify-center text-4xl font-bold">
+                                                {name.charAt(0).toUpperCase()}
+                                            </div>
+                                            <p className="text-xs text-gray-500 mt-2">Kích thước đề xuất: 200x200</p>
+                                        </div>
+                                        <div className="flex-1 min-w-[250px] bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
+                                            <h3 className="text-sm font-semibold text-gray-900">Đăng nhập ứng dụng di động</h3>
+                                            <p className="text-sm text-gray-600">
+                                                Nhấn nút bên dưới để tạo mã QR và đăng nhập vào ứng dụng di động.
+                                            </p>
+                                            <button className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors">
+                                                Tạo mã đăng nhập QR
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-semibold text-gray-500 uppercase">Email</label>
+                                            <input
+                                                readOnly
+                                                value={email}
+                                                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700"
+                                            />
+                                            <p className="text-xs text-gray-400">Email không thể thay đổi</p>
+                                        </div>
+                                        <div></div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-semibold text-gray-500 uppercase">Họ và tên</label>
+                                            <input
+                                                defaultValue={name}
+                                                className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-semibold text-gray-500 uppercase">Tên người dùng</label>
+                                            <input
+                                                defaultValue={username}
+                                                className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-semibold text-gray-500 uppercase">Ngôn ngữ</label>
+                                            <select className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600">
+                                                <option>Tiếng Việt 🇻🇳</option>
+                                                <option>English 🇺🇸🇬🇧</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-3">
+                                        <div>
+                                            <span className="text-xs font-semibold text-gray-500 uppercase">Loại tài khoản</span>
+                                            <p className="text-sm text-gray-900">Học viên</p>
+                                        </div>
+                                        <div>
+                                            <h4 className="text-sm font-semibold text-gray-900">StudyFetch dành cho giáo viên</h4>
+                                            <p className="text-sm text-gray-600">
+                                                Truy cập bộ công cụ và tài nguyên được thiết kế riêng cho giáo viên.
+                                            </p>
+                                        </div>
+                                        <button className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors">
+                                            Kích hoạt tài khoản giáo viên
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+
+                            {settingsTab !== 'settings' && (
+                                <div className="bg-gray-50 border border-dashed border-gray-300 rounded-2xl p-10 text-center text-sm text-gray-500">
+                                    {settingsTab === 'subscription' && 'Tính năng quản lý gói đăng ký sẽ sớm được cập nhật.'}
+                                    {settingsTab === 'privacy' && 'Bạn sẽ sớm có thể quản lý quyền riêng tư và dữ liệu tại đây.'}
+                                    {settingsTab === 'support' && 'Tài nguyên hỗ trợ sẽ sớm có mặt.'}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const renderMainContent = () => {
         // If admin section, use old DashboardContent logic
         if (user?.role === 'admin' && ['admin', 'add-teacher', 'add-student', 'upload-file', 'ai-learning', 'progress', 'assignments'].includes(activeSection)) {
             return <DashboardContent activeSection={activeSection} />;
+        }
+
+        // Show Settings view if requested
+        if (showSettingsView) {
+            return renderSettingsView();
+        }
+
+        // Show Game Profile if requested
+        if (showGameProfile) {
+            return renderGameProfile();
+        }
+
+        // Show Chat View if requested
+        if (showChatView) {
+            return (
+                <ChatView
+                    studySetId={selectedStudySet?.id}
+                    studySetName={selectedStudySet?.name}
+                    isCollapsed={isCollapsed}
+                />
+            );
         }
 
         // Show Loading view if generating test
@@ -4309,7 +4805,26 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             );
         }
 
-        // Show Study Set Detail if selected (check AFTER Flashcards)
+        // Show Upload Materials page if requested (check BEFORE Study Set Detail)
+        if (showUploadMaterials && selectedStudySet) {
+            return (
+                <UploadMaterials
+                    studySetId={selectedStudySet.id}
+                    studySetName={selectedStudySet.name}
+                    onBack={() => {
+                        setShowUploadMaterials(false);
+                        setShowStudySetDetail(true);
+                    }}
+                    onViewMaterial={() => {
+                        setShowUploadMaterials(false);
+                        setShowStudySetDetail(true);
+                    }}
+                    isCollapsed={isCollapsed}
+                />
+            );
+        }
+
+        // Show Study Set Detail if selected (check AFTER Flashcards and Upload Materials)
         if (showStudySetDetail && selectedStudySet) {
             return (
                 <StudySetDetail
@@ -4349,6 +4864,10 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                     }}
                     onViewMaterial={handleViewMaterial}
                     onViewFlashcards={handleViewFlashcards}
+                    onUploadMaterial={() => {
+                        setShowUploadMaterials(true);
+                        setShowStudySetDetail(false);
+                    }}
                     isCollapsed={isCollapsed}
                 />
             );
@@ -4389,25 +4908,6 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                     studySetId={selectedStudySet.id}
                     studySetName={selectedStudySet.name}
                     onBack={() => setShowFlashcards(false)}
-                    isCollapsed={isCollapsed}
-                />
-            );
-        }
-
-        // Show Upload Materials page if requested
-        if (showUploadMaterials && selectedStudySet) {
-            return (
-                <UploadMaterials
-                    studySetId={selectedStudySet.id}
-                    studySetName={selectedStudySet.name}
-                    onBack={() => {
-                        setShowUploadMaterials(false);
-                        setShowMaterials(true);
-                    }}
-                    onViewMaterial={() => {
-                        setShowUploadMaterials(false);
-                        setShowMaterials(true);
-                    }}
                     isCollapsed={isCollapsed}
                 />
             );
@@ -4510,35 +5010,6 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                             </div>
                         </div>
 
-                        {/* Top Action Buttons */}
-                        <div className="flex items-center space-x-3">
-                            <button className="flex items-center space-x-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 transition-colors">
-                                <span>Nâng cấp</span>
-                                <ChevronDown className="w-4 h-4 rotate-180" />
-                            </button>
-                            <button className="flex items-center space-x-2 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm border border-gray-300 hover:bg-gray-50 transition-colors">
-                                <span>Phản hồi</span>
-                                <span className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">i</span>
-                            </button>
-                            <div className="relative">
-                                <button className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
-                                    <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center relative">
-                                        {/* Diamond shape */}
-                                        <div className="w-3 h-3 bg-green-400 transform rotate-45 relative">
-                                            {/* Purple triangles pointing inward */}
-                                            <div className="absolute -top-1 -left-1 w-0 h-0 border-l-2 border-r-2 border-b-2 border-transparent border-b-purple-600"></div>
-                                            <div className="absolute -top-1 -right-1 w-0 h-0 border-l-2 border-r-2 border-b-2 border-transparent border-b-purple-600"></div>
-                                            <div className="absolute -bottom-1 -left-1 w-0 h-0 border-l-2 border-r-2 border-t-2 border-transparent border-t-purple-600"></div>
-                                            <div className="absolute -bottom-1 -right-1 w-0 h-0 border-l-2 border-r-2 border-t-2 border-transparent border-t-purple-600"></div>
-                                        </div>
-                                        {/* Notification badge */}
-                                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-white border-2 border-purple-600 rounded-full flex items-center justify-center">
-                                            <span className="text-purple-600 text-xs font-bold">1</span>
-                                        </div>
-                                    </div>
-                                </button>
-                            </div>
-                        </div>
                     </div>
 
                     {/* Study Set Buttons */}
@@ -4569,12 +5040,19 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                             // Add study set to navigation (only one at a time)
                                             addStudySetToNavigation({ id: set.id, name: set.name, icon: (set as any).icon });
                                         }}
-                                        className={`flex-1 flex items-center space-x-3 px-6 py-4 rounded-lg transition-colors shadow-sm ${selectedStudySet?.id === set.id
-                                            ? 'bg-blue-100 border-2 border-blue-400 text-gray-900'
-                                            : 'bg-white border-2 border-gray-200 text-gray-900 hover:border-blue-300 hover:bg-gray-50'
+                                        className={`flex-1 flex items-center space-x-3 px-6 py-4 rounded-lg transition-all shadow-sm border ${selectedStudySet?.id === set.id
+                                            ? isDarkMode
+                                                ? 'bg-[#0B1B33] border-blue-500 text-slate-100 shadow-[0_0_0_2px_rgba(59,130,246,0.35)]'
+                                                : 'bg-blue-100 border-blue-400 text-gray-900'
+                                            : isDarkMode
+                                                ? 'bg-slate-900/40 border-slate-700 text-slate-100 hover:bg-slate-800 hover:border-blue-400'
+                                                : 'bg-white border-gray-200 text-gray-900 hover:border-blue-300 hover:bg-gray-50'
                                             }`}
                                     >
-                                        <div className="w-8 h-8 bg-orange-200 rounded-lg flex items-center justify-center">
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${selectedStudySet?.id === set.id
+                                            ? isDarkMode ? 'bg-blue-900/40' : 'bg-orange-200'
+                                            : isDarkMode ? 'bg-slate-800' : 'bg-orange-200'
+                                            }`}>
                                             <div className="flex flex-wrap w-4 h-4">
                                                 <div className="w-1 h-1 bg-blue-600 rounded-full m-0.5"></div>
                                                 <div className="w-1 h-1 bg-yellow-500 rounded-full m-0.5"></div>
@@ -4582,12 +5060,12 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                                 <div className="w-1 h-1 bg-blue-500 rounded-full m-0.5"></div>
                                             </div>
                                         </div>
-                                        <span className="font-semibold text-gray-900 whitespace-nowrap">{set.name}</span>
+                                        <span className={`font-semibold whitespace-nowrap ${isDarkMode ? 'text-slate-100' : 'text-gray-900'}`}>{set.name}</span>
                                     </button>
                                 ))
                             ) : (
-                                <button className="flex-1 flex items-center space-x-3 bg-blue-50 border-2 border-blue-300 text-gray-900 px-6 py-4 rounded-lg hover:border-blue-400 transition-colors shadow-sm">
-                                    <div className="w-8 h-8 bg-orange-200 rounded-lg flex items-center justify-center">
+                                <button className={`flex-1 flex items-center space-x-3 px-6 py-4 rounded-lg transition-colors shadow-sm border ${isDarkMode ? 'bg-[#0B1B33] border-blue-500 text-slate-100' : 'bg-blue-50 border-blue-300 text-gray-900'}`}>
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isDarkMode ? 'bg-blue-900/40' : 'bg-orange-200'}`}>
                                         <div className="flex flex-wrap w-4 h-4">
                                             <div className="w-1 h-1 bg-blue-600 rounded-full m-0.5"></div>
                                             <div className="w-1 h-1 bg-yellow-500 rounded-full m-0.5"></div>
@@ -4595,17 +5073,20 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                             <div className="w-1 h-1 bg-blue-500 rounded-full m-0.5"></div>
                                         </div>
                                     </div>
-                                    <span className="font-semibold text-gray-900">Bộ học đầu tiên của tôi</span>
+                                    <span className={`font-semibold ${isDarkMode ? 'text-slate-100' : 'text-gray-900'}`}>Bộ học đầu tiên của tôi</span>
                                 </button>
                             )}
                             <button
                                 onClick={() => setShowAddSetModal(true)}
-                                className="flex-1 flex items-center justify-center space-x-3 bg-gray-50 border-2 border-dashed border-gray-300 text-gray-600 px-6 py-4 rounded-lg hover:border-gray-400 transition-colors shadow-sm"
+                                className={`flex-1 flex items-center justify-center space-x-3 px-6 py-4 rounded-lg transition-colors shadow-sm border-2 border-dashed ${isDarkMode
+                                    ? 'bg-slate-900/40 border-slate-700 text-slate-200 hover:border-slate-500'
+                                    : 'bg-gray-50 border-gray-300 text-gray-600 hover:border-gray-400'
+                                    }`}
                             >
-                                <div className="w-8 h-8 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
-                                    <span className="text-gray-600 text-lg font-bold">+</span>
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-gray-200'}`}>
+                                    <span className={`${isDarkMode ? 'text-slate-200' : 'text-gray-600'} text-lg font-bold`}>+</span>
                                 </div>
-                                <span className="font-semibold text-gray-600 whitespace-nowrap text-sm">Thêm bộ học</span>
+                                <span className={`font-semibold whitespace-nowrap text-sm ${isDarkMode ? 'text-slate-200' : 'text-gray-600'}`}>Thêm bộ học</span>
                             </button>
                         </div>
 
@@ -4616,9 +5097,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                     const maxIndex = Math.max(0, studySets.length - 5);
                                     setStudySetScrollIndex(Math.min(maxIndex, studySetScrollIndex + 1));
                                 }}
-                                className="flex-shrink-0 w-10 h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-50 transition-colors z-10"
+                                className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-colors z-10 ${isDarkMode ? 'bg-slate-800 text-slate-200 hover:bg-slate-700' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                             >
-                                <ChevronRight className="w-5 h-5 text-gray-600" />
+                                <ChevronRight className="w-5 h-5" />
                             </button>
                         )}
                     </div>
@@ -4747,13 +5228,100 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
     };
 
     return (
-        <div className={`min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`}>
+        <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-white text-gray-900'}`}>
+            {/* Top Right Header - Fixed (Feedback & Profile) */}
+            <div className="fixed top-0 right-4 z-50 flex items-center space-x-3 pt-2">
+                <button
+                    className={`flex items-center space-x-2 px-4 py-2 rounded-full text-sm transition-colors border ${isDarkMode
+                        ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
+                        : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'
+                        }`}
+                >
+                    <Info className="w-4 h-4" />
+                    <span>Feedback</span>
+                </button>
+                <div className="relative" ref={profileDropdownRef}>
+                    <div
+                        onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm cursor-pointer transition-colors"
+                        style={{ backgroundColor: '#BF360C' }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#A0300A'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#BF360C'}
+                    >
+                        {user?.name?.charAt(0).toUpperCase() || 'H'}
+                    </div>
+
+                    {/* Profile Dropdown Menu */}
+                    {showProfileDropdown && (
+                        <div className={`absolute top-full right-0 mt-2 w-56 rounded-lg shadow-xl border z-50 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-700'}`}>
+                            <div className="py-1">
+                                <button
+                                    onClick={() => {
+                                        setShowGameProfile(true);
+                                        setShowSettingsView(false);
+                                        setShowProfileDropdown(false);
+                                    }}
+                                    className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                                >
+                                    <Monitor className="w-4 h-4" />
+                                    <span>Your Profile</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowSettingsView(true);
+                                        setSettingsTab('settings');
+                                        setShowGameProfile(false);
+                                        setShowProfileDropdown(false);
+                                    }}
+                                    className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                                >
+                                    <Settings className="w-4 h-4" />
+                                    <span>Settings</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setIsDarkMode(!isDarkMode);
+                                        setShowProfileDropdown(false);
+                                    }}
+                                    className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                                >
+                                    <Moon className="w-4 h-4" />
+                                    <span>Dark Mode</span>
+                                </button>
+                                <button className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-50'}`}>
+                                    <Pencil className="w-4 h-4" />
+                                    <span>Give Us Feedback</span>
+                                </button>
+                                <button className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-50'}`}>
+                                    <Gift className="w-4 h-4" />
+                                    <span>Friends Get 50% off</span>
+                                </button>
+                                <button className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-50'}`}>
+                                    <HelpCircle className="w-4 h-4" />
+                                    <span>Support</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowProfileDropdown(false);
+                                        logout();
+                                    }}
+                                    className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-red-400 hover:bg-red-900/30' : 'text-red-600 hover:bg-red-50'}`}
+                                >
+                                    <LogOut className="w-4 h-4" />
+                                    <span>Đăng xuất</span>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
             {/* Left Sidebar - Fixed */}
             <div className={`fixed left-0 top-0 h-screen z-30 ${isCollapsed ? 'w-16' : 'w-48'} ${isDarkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg flex flex-col transition-all duration-300`}>
                 {/* Logo */}
                 <div className="p-3 border-b">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-2 flex-1">
                             <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden">
                                 <img
                                     src="/SPARKE.gif"
@@ -4762,26 +5330,28 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 />
                             </div>
                             {!isCollapsed && (
-                                <span className={`font-bold text-xl ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>STUDY FETCH</span>
+                                <>
+                                    <span className={`font-bold text-lg ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>STUDY FETCH</span>
+                                    <div className="flex items-center space-x-1.5 ml-1">
+                                        <img
+                                            src={`${process.env.PUBLIC_URL || ''}/fire.gif`}
+                                            alt="Streak"
+                                            className="w-5 h-5 object-contain"
+                                        />
+                                        <span className={`text-base font-semibold ${isDarkMode ? 'text-gray-300' : 'text-gray-900'}`}>
+                                            {isLoadingStreak ? '...' : streakInfo.current}
+                                        </span>
+                                    </div>
+                                </>
                             )}
                         </div>
                         {/* Removed Dark Mode Button */}
                     </div>
                 </div>
 
-                {/* Search and Flame */}
-                <div className="p-2 border-b">
-                    <div className="flex items-center space-x-3">
-                        <div className="flex items-center space-x-2 text-gray-600">
-                            <Flame className="w-4 h-4" />
-                            {!isCollapsed && <span className="text-sm">0</span>}
-                        </div>
-                    </div>
-                </div>
-
                 {/* Navigation */}
-                <nav className="flex-1 p-2 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-                    <ul className="space-y-1">
+                <nav className="flex-1 p-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+                    <ul className="space-y-0.5">
                         {navigationItems.map((item) => {
                             const Icon = item.icon;
                             // Logic active state: chỉ một nút active tại một thời điểm
@@ -4791,11 +5361,12 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 // Home active khi: không có view nào đang mở (dashboard chính)
                                 // và không phải đang ở test/review test/practice
                                 // và không phải đang ở studyset hay subroadmap
+                                // và không phải đang ở chat
                                 isActive = !showFlashcards && !showMaterialViewer && !showStudySetDetail && !showSubRoadmap &&
                                     !showReviewTest && !showTestView && !showCreateTest &&
                                     !showMaterialSelection && !showFlashcardSelection && !showTestTypeSelection && !showPractice &&
                                     !showExplainerVideo && !showExplainerVideoResult && !showExplainerVideoGenerating &&
-                                    !showArcade && activeSection !== 'sets';
+                                    !showArcade && !showChatView && activeSection !== 'sets' && activeSection !== 'chat';
                             } else if (item.id === 'sets') {
                                 // Sets active khi: activeSection là 'sets'
                                 isActive = activeSection === 'sets';
@@ -4813,6 +5384,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                             } else if (item.id === 'arcade') {
                                 // Arcade active khi: đang xem arcade page
                                 isActive = showArcade;
+                            } else if (item.id === 'chat') {
+                                // Chat active khi: đang xem chat view
+                                isActive = showChatView || activeSection === 'chat';
                             } else if (item.id.startsWith('study-set-')) {
                                 // Study set active khi: đang xem StudySetDetail của study set đó
                                 const studySetId = item.id.replace('study-set-', '');
@@ -4833,13 +5407,13 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 <li key={item.id}>
                                     <button
                                         onClick={(e) => handleNavigationClick(item.id, e)}
-                                        className={`w-full flex items-center space-x-2 px-1.5 py-1 rounded-md text-left transition-all duration-200 text-sm transform hover:scale-105 active:scale-95 ${isActive
+                                        className={`w-full flex items-center space-x-2 px-2 py-1.5 rounded-md text-left transition-all duration-200 text-sm transform hover:scale-105 active:scale-95 ${isActive
                                             ? isDarkMode
-                                                ? 'bg-blue-900 text-blue-400'
+                                                ? 'bg-blue-800 text-blue-100'
                                                 : 'bg-blue-50'
                                             : isAdmin
-                                                ? isDarkMode ? 'text-orange-400 hover:bg-orange-900' : 'text-orange-600 hover:bg-orange-50'
-                                                : isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
+                                                ? isDarkMode ? 'text-orange-300 hover:bg-orange-900/40' : 'text-orange-600 hover:bg-orange-50'
+                                                : isDarkMode ? 'text-slate-200 hover:bg-slate-700/70' : 'text-gray-700 hover:bg-gray-50'
                                             }`}
                                         title={isCollapsed ? item.label : undefined}
                                         style={isActive && studySetIconColor ? {
@@ -4903,7 +5477,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             {/* Main Content - Adjust padding to account for fixed sidebar */}
             <div
                 className={`transition-all duration-300 ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`}
-                style={{ paddingLeft: isCollapsed ? '4rem' : '12rem' }}
+                style={{ marginLeft: isCollapsed ? '4rem' : '12rem' }}
             >
                 {renderMainContent()}
             </div>
@@ -5088,4 +5662,3 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
 
 export default HybridDashboard;
 export { };
-

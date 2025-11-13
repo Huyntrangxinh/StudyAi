@@ -19,6 +19,7 @@ import studySetsRouter from "./routes/studySets";
 import flashcardSetsRouter from "./routes/flashcardSets";
 import foldersRouter from "./routes/folders";
 import aiRouter from "./routes/ai";
+import aiStudyFlashcardRouter from "./routes/aiStudyFlashcard";
 import chatHistoryRouter from "./routes/chatHistory";
 import flashcardsRouter from "./routes/flashcards";
 import testsRouter from "./routes/tests";
@@ -67,6 +68,7 @@ app.use('/api/tests', testsRouter);
 app.use('/api/flashcard-sets', flashcardSetsRouter);
 app.use('/api/folders', foldersRouter);
 app.use('/api/ai', aiRouter);
+app.use('/api/ai', aiStudyFlashcardRouter);
 app.use('/api/chat-history', chatHistoryRouter);
 app.use('/api/flashcards', flashcardsRouter);
 // Enable videos router for GET endpoint (to fetch slideshow videos from database)

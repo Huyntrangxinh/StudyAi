@@ -12,28 +12,56 @@ router.get('/sessions/:studySetId', async (req, res) => {
 
         const db = new sqlite3.Database(dbPath);
 
-        db.all(
-            `SELECT 
-        cs.id,
-        cs.title,
-        cs.created_at,
-        cs.updated_at,
-        COUNT(cm.id) as message_count
-      FROM chat_sessions cs
-      LEFT JOIN chat_messages cm ON cs.id = cm.session_id
-      WHERE cs.study_set_id = ?
-      GROUP BY cs.id
-      ORDER BY cs.updated_at DESC`,
-            [studySetId],
-            (err, rows) => {
-                db.close();
-                if (err) {
-                    console.error('Error fetching chat sessions:', err);
-                    return res.status(500).json({ error: 'Failed to fetch chat sessions' });
+        // ✅ Nếu studySetId là 'chat', lấy tất cả sessions có study_set_id IS NULL (riêng cho màn chat)
+        if (studySetId === 'chat') {
+            console.log('📥 Fetching chat sessions (study_set_id IS NULL)');
+            db.all(
+                `SELECT 
+            cs.id,
+            cs.title,
+            cs.created_at,
+            cs.updated_at,
+            COUNT(cm.id) as message_count
+          FROM chat_sessions cs
+          LEFT JOIN chat_messages cm ON cs.id = cm.session_id
+          WHERE cs.study_set_id IS NULL
+          GROUP BY cs.id
+          ORDER BY cs.updated_at DESC`,
+                [],
+                (err, rows) => {
+                    db.close();
+                    if (err) {
+                        console.error('❌ Error fetching chat sessions:', err);
+                        return res.status(500).json({ error: 'Failed to fetch chat sessions', details: err.message });
+                    }
+                    console.log(`✅ Found ${rows?.length || 0} chat sessions`);
+                    res.json(rows || []);
                 }
-                res.json(rows || []);
-            }
-        );
+            );
+        } else {
+            db.all(
+                `SELECT 
+            cs.id,
+            cs.title,
+            cs.created_at,
+            cs.updated_at,
+            COUNT(cm.id) as message_count
+          FROM chat_sessions cs
+          LEFT JOIN chat_messages cm ON cs.id = cm.session_id
+          WHERE cs.study_set_id = ?
+          GROUP BY cs.id
+          ORDER BY cs.updated_at DESC`,
+                [studySetId],
+                (err, rows) => {
+                    db.close();
+                    if (err) {
+                        console.error('Error fetching chat sessions:', err);
+                        return res.status(500).json({ error: 'Failed to fetch chat sessions' });
+                    }
+                    res.json(rows || []);
+                }
+            );
+        }
     } catch (error) {
         console.error('Chat sessions error:', error);
         res.status(500).json({ error: 'Internal server error' });
@@ -74,37 +102,44 @@ router.post('/sessions', async (req, res) => {
     try {
         const { studySetId, title } = req.body;
 
-        if (!studySetId || !title) {
-            return res.status(400).json({ error: 'studySetId and title are required' });
+        console.log('📥 Creating chat session:', { studySetId, title });
+
+        if (!title) {
+            return res.status(400).json({ error: 'title is required' });
         }
 
         const dbPath = path.join(__dirname, '../../database/app.db');
         const db = new sqlite3.Database(dbPath);
 
+        // ✅ Cho phép studySetId là null (cho màn chat riêng)
+        const finalStudySetId = studySetId === null || studySetId === undefined ? null : studySetId;
+        console.log('📝 Final studySetId:', finalStudySetId);
+
         db.run(
             `INSERT INTO chat_sessions (study_set_id, title, created_at, updated_at)
        VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-            [studySetId, title],
+            [finalStudySetId, title],
             function (err) {
                 if (err) {
-                    console.error('Error creating chat session:', err);
+                    console.error('❌ Error creating chat session:', err);
                     db.close();
-                    return res.status(500).json({ error: 'Failed to create chat session' });
+                    return res.status(500).json({ error: 'Failed to create chat session', details: err.message });
                 }
 
                 const sessionId = this.lastID;
+                console.log('✅ Chat session created:', sessionId);
                 db.close();
                 res.json({
                     id: sessionId,
-                    studySetId,
+                    studySetId: finalStudySetId,
                     title,
                     messageCount: 0
                 });
             }
         );
-    } catch (error) {
-        console.error('Create session error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+    } catch (error: any) {
+        console.error('❌ Create session error:', error);
+        res.status(500).json({ error: 'Internal server error', details: error.message });
     }
 });
 

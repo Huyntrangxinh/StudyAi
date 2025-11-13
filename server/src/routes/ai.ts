@@ -320,18 +320,6 @@ YÊU CẦU ĐẦU RA (Markdown, tiếng Việt):
 `;
 }
 
-async function rewriteAsTutor(userName: string, fileName: string, structuredJson: any) {
-    const completion = await openai.chat.completions.create({
-        model: MODEL,
-        temperature: 0.5,
-        max_tokens: 2000, // ✅ tăng từ 1200
-        messages: [
-            { role: "system", content: tutorSystem },
-            { role: "user", content: tutorUserPrompt(userName, fileName, structuredJson) },
-        ],
-    });
-    return completion.choices[0]?.message?.content?.trim() || "";
-}
 
 // ✅ Natural Tutor cho câu hỏi follow-up (không dùng template cố định)
 const naturalTutorSystem = `Bạn là Spark.E — trợ giảng thân thiện. Nhiệm vụ: trả lời câu hỏi cụ thể một cách tự nhiên, không dùng template cố định.
@@ -350,59 +338,8 @@ QUAN TRỌNG:
 - Kết thúc bằng câu hỏi thân thiện
 - Giả sử đây là câu hỏi follow-up trong cuộc trò chuyện đang diễn ra`;
 
-function naturalTutorUserPrompt(userName: string, fileName: string, structuredJson: any, originalQuestion: string) {
-    return `Người đọc: ${userName || "bạn"}
-Tên tài liệu: "${fileName}"
-Câu hỏi gốc: "${originalQuestion}"
 
-THÔNG TIN TỪ TÀI LIỆU:
-${JSON.stringify(structuredJson, null, 2)}
 
-YÊU CẦU: 
-- Trả lời câu hỏi một cách tự nhiên, không dùng template cố định
-- Chỉ tập trung vào câu hỏi được hỏi
-- KHÔNG bắt đầu bằng "Chào bạn! Hôm nay chúng ta sẽ cùng nhau khám phá..."
-- KHÔNG giới thiệu lại tài liệu
-- Bắt đầu trực tiếp với câu trả lời
-- Giả sử đây là câu hỏi follow-up trong cuộc trò chuyện đang diễn ra`;
-}
-
-async function rewriteAsNaturalTutor(userName: string, fileName: string, structuredJson: any, originalQuestion: string) {
-    const completion = await openai.chat.completions.create({
-        model: MODEL,
-        temperature: 0.6,
-        max_tokens: 1500,
-        messages: [
-            { role: "system", content: naturalTutorSystem },
-            { role: "user", content: naturalTutorUserPrompt(userName, fileName, structuredJson, originalQuestion) },
-        ],
-    });
-
-    let response = completion.choices[0]?.message?.content?.trim() || "";
-
-    // ✅ Post-processing: Loại bỏ câu chào dài
-    const greetingPatterns = [
-        /^Chào bạn!.*?📚.*?Hôm nay.*?khám phá.*?\.\s*/,
-        /^Chào bạn!.*?🎉.*?Hôm nay.*?tìm hiểu.*?\.\s*/,
-        /^Chào bạn!.*?Hôm nay.*?cùng nhau.*?\.\s*/,
-        /^Chào bạn!.*?Hôm nay.*?sẽ cùng.*?\.\s*/,
-        /^Chào bạn!.*?Hôm nay.*?muốn chia sẻ.*?\.\s*/,
-        /^Chào bạn!.*?Hôm nay.*?rất vui.*?\.\s*/,
-        /^Chào bạn!.*?Hôm nay.*?thú vị.*?\.\s*/
-    ];
-
-    for (const pattern of greetingPatterns) {
-        response = response.replace(pattern, '');
-    }
-
-    // Nếu response bắt đầu bằng "###" hoặc có nội dung, giữ nguyên
-    // Nếu response rỗng sau khi loại bỏ greeting, thêm câu chào ngắn
-    if (!response.trim()) {
-        response = `Chào bạn! ${originalQuestion}...`;
-    }
-
-    return response;
-}
 
 /* -------------------- Humanizer (Pass-3) -------------------- */
 
@@ -436,24 +373,9 @@ QUAN TRỌNG: Giữ nguyên ĐỘ DÀI và ĐẦY ĐỦ nội dung.
 `;
 }
 
-async function humanizeMarkdown(userName: string, mdText: string) {
-    const completion = await openai.chat.completions.create({
-        model: MODEL,
-        temperature: 0.7,
-        max_tokens: 2000, // ✅ tăng từ 1200
-        messages: [
-            { role: "system", content: humanizeSystem },
-            { role: "user", content: humanizeUserPrompt(userName, mdText) },
-        ],
-    });
-    return completion.choices[0]?.message?.content?.trim() || mdText;
-}
+/* -------------------- Web Search (FIXED) -------------------- */
 
-/* -------------------- Web Search -------------------- */
-
-// Google Custom Search API configuration
 const GOOGLE_API_KEY = 'AIzaSyAZUBz_XwWGTEcU2gznml2Fx3ac4AssY8w';
-// Search Engine ID from config (loaded from .env)
 const SEARCH_ENGINE_ID = config.SEARCH_ENGINE_ID || '820473ad04dab4ac3';
 
 interface WebSearchResult {
@@ -463,161 +385,291 @@ interface WebSearchResult {
     displayLink: string;
 }
 
-// Detect when web search is needed
+// ✅ Detect when web search is needed
 function needsWebSearch(message: string, topChunks: any[]): boolean {
     const searchKeywords = [
         'lịch sử', 'history', 'hình thành', 'phát triển',
         'ra đời', 'xuất hiện', 'năm nào', 'khi nào',
         'thông tin mới', 'cập nhật', 'hiện tại', 'mới nhất',
-        'tìm trên web', 'search web', 'tìm kiếm web'
+        'tìm trên web', 'search web', 'tìm kiếm web',
+        'xu hướng', 'trend', 'tin tức', 'news'
     ];
 
     const hasSearchKeyword = searchKeywords.some(keyword =>
         message.toLowerCase().includes(keyword)
     );
 
-    // If has keyword OR if we don't have enough relevant chunks
     return hasSearchKeyword || topChunks.length < 3;
 }
 
-// Perform web search using Google Custom Search API
+// ✅ Perform web search
 async function performWebSearch(query: string): Promise<WebSearchResult[]> {
     if (!GOOGLE_API_KEY || !SEARCH_ENGINE_ID) {
-        console.warn('⚠️ Web search not configured: Missing API key or Search Engine ID');
+        console.warn('⚠️ Web search not configured');
         return [];
     }
 
     try {
-        // Force AI-related context to the query to avoid off-topic results
-        const AI_KEYWORDS = [
-            'AI', 'trí tuệ nhân tạo', 'artificial intelligence',
-            'machine learning', 'deep learning', 'gen ai', 'generative ai'
-        ];
-        const hasAiInQuery = AI_KEYWORDS.some(k => query.toLowerCase().includes(k.toLowerCase()));
-        const amplifiedQuery = hasAiInQuery
-            ? query
-            : `${query} (AI OR "trí tuệ nhân tạo" OR "artificial intelligence" OR "machine learning" OR "generative AI")`;
+        // ✅ FIX: Stop words đầy đủ hơn
+        const stopWords = new Set([
+            'tôi', 'bạn', 'muốn', 'biết', 'về', 'là', 'gì', 'của', 'và', 'hoặc',
+            'có', 'được', 'những', 'các', 'trong', 'cho', 'từ', 'như', 'khi', 'nào',
+            'the', 'a', 'an', 'is', 'are', 'what', 'about', 'how', 'why', 'when'
+        ]);
 
-        // Locale + relevance tweaks
+        const lowerQuery = query.toLowerCase();
+
+        // ✅ Extract meaningful keywords
+        const queryKeywords = lowerQuery
+            .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+            .split(/\s+/)
+            .filter(k => k.length > 2 && !stopWords.has(k));
+
+        console.log('🔍 Query keywords:', queryKeywords);
+
+        // ✅ FIX: Topic detection với word boundaries
+        const topicPatterns = [
+            {
+                // ✅ Ưu tiên malware-specific terms trước, sau đó mới đến virus (có thể là virus máy tính)
+                pattern: /\b(mã\s*độc|malware|trojan|worm|rootkit|ransomware|spyware|backdoor|adware|virus\s*máy\s*tính|virus\s*computer|computer\s*virus|cyber\s*virus)\b/gi,
+                topic: 'malware',
+                keywords: ['mã độc', 'malware', 'trojan', 'worm', 'ransomware', 'spyware', 'virus máy tính', 'computer virus']
+            },
+            {
+                pattern: /\b(chất\s*độc|dioxin|agent\s*orange|độc\s*hại|hóa\s*chất)\b/gi,
+                topic: 'toxin',
+                keywords: ['chất độc', 'dioxin', 'agent orange']
+            },
+            {
+                pattern: /\b(http|https|giao\s*thức|protocol|ssl|tls)\b/gi,
+                topic: 'http',
+                keywords: ['http', 'https', 'giao thức', 'protocol']
+            },
+            {
+                pattern: /\b(trí\s*tuệ\s*nhân\s*tạo|artificial\s*intelligence|machine\s*learning|deep\s*learning|neural\s*network)\b/gi,
+                topic: 'ai',
+                keywords: ['ai', 'trí tuệ nhân tạo', 'machine learning']
+            }
+        ];
+
+        let detectedTopic: string | null = null;
+        let mainTopicKeywords: string[] = [];
+
+        for (const { pattern, topic, keywords } of topicPatterns) {
+            const matches = lowerQuery.match(pattern);
+            if (matches && matches.length > 0) {
+                detectedTopic = topic;
+                mainTopicKeywords = keywords;
+                console.log(`✅ Detected topic: ${topic}, keywords:`, mainTopicKeywords);
+                break;
+            }
+        }
+
+        // ✅ If no topic detected, use all keywords
+        if (!detectedTopic) {
+            mainTopicKeywords = queryKeywords.slice(0, 5); // Top 5 keywords
+            console.log('📝 No specific topic, using keywords:', mainTopicKeywords);
+        }
+
+        // ✅ Modify search query for better results
+        let searchQuery = query;
+
+        // ✅ For malware topic, add computer context to avoid biological virus results
+        if (detectedTopic === 'malware') {
+            // If query doesn't already have computer context, add it
+            const hasComputerContext = /\b(máy\s*tính|computer|cyber|mạng|internet|phần\s*mềm|hệ\s*thống|bảo\s*mật)\b/gi.test(lowerQuery);
+            if (!hasComputerContext) {
+                // Add "máy tính" or "computer" to disambiguate
+                searchQuery = `${query} máy tính`;
+                console.log('🔧 Modified search query for malware context:', searchQuery);
+            }
+        }
+
+        // ✅ API call
         const params = new URLSearchParams({
             key: GOOGLE_API_KEY,
             cx: SEARCH_ENGINE_ID,
-            q: amplifiedQuery,
-            num: '10',              // fetch more, we'll re-rank and cut to top 3 later
-            lr: 'lang_vi',          // prioritize Vietnamese
-            gl: 'vn',               // country bias
+            q: searchQuery,
+            num: '10',
+            lr: 'lang_vi',
+            gl: 'vn',
             safe: 'active'
         });
-        const searchUrl = `https://www.googleapis.com/customsearch/v1?${params.toString()}`;
 
-        const response = await fetch(searchUrl);
+        const response = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`);
 
         if (!response.ok) {
-            console.error('❌ Web search API error:', response.status, response.statusText);
+            console.error('❌ Web search error:', response.status, response.statusText);
             return [];
         }
 
         const data = await response.json() as { items?: Array<{ title?: string; link?: string; snippet?: string; displayLink?: string }> };
 
         if (!data.items || data.items.length === 0) {
-            console.log('📭 No web search results found');
+            console.log('📭 No results found');
             return [];
         }
 
-        // Convert items
+        // ✅ Convert results
         let results: WebSearchResult[] = data.items.map((item: any) => ({
             title: item.title || '',
             link: item.link || '',
             snippet: item.snippet || '',
-            displayLink: item.displayLink || (item.link ? new URL(item.link).hostname : '')
+            displayLink: item.displayLink || new URL(item.link || 'https://example.com').hostname
         }));
 
-        // Simple re-ranking + filtering
-        const blacklist = ['facebook.com', 'm.facebook.com', 'twitter.com', 'x.com', 'tiktok.com', 'instagram.com'];
-        const whitelistBoost = ['aws.amazon.com', 'microsoft.com', 'news.microsoft.com', 'viettelidc.com.vn', 'viblo.asia', 'vnptai.io', 'medium.com', 'towardsdatascience.com', 'google.com', 'developers.google.com'];
+        console.log(`📊 Raw results: ${results.length}`);
 
-        const lowerQuery = query.toLowerCase();
-        const yearMatch = lowerQuery.match(/\b(20\d{2})\b/);
-        const year = yearMatch ? yearMatch[1] : '';
-        const keywords = lowerQuery
-            .replace(/[\p{P}\p{S}]/gu, ' ')
-            .split(/\s+/)
-            .filter(Boolean);
+        // ✅ FIX: Simplified blacklist (chỉ spam thực sự)
+        const blacklist = [
+            'facebook.com', 'm.facebook.com', 'twitter.com', 'x.com',
+            'tiktok.com', 'instagram.com', 'pinterest.com'
+        ];
 
-        const aiMatch = (text: string): boolean => {
-            const t = (text || '').toLowerCase();
-            return AI_KEYWORDS.some(k => t.includes(k.toLowerCase()));
+        // ✅ Whitelist credible sources
+        const whitelist = [
+            'wikipedia.org', 'vi.wikipedia.org',
+            'vietnamnet.vn', 'vnexpress.net', 'dantri.com.vn', 'tuoitre.vn', 'thanhnien.vn',
+            'viblo.asia', 'kipalog.com',
+            'aws.amazon.com', 'microsoft.com', 'google.com',
+            '.gov', '.edu', '.org'
+        ];
+
+        // ✅ Topic exclusions (opposite topics)
+        const topicExclusions: Record<string, string[]> = {
+            'malware': [
+                // Chất độc hóa học
+                'chất độc', 'dioxin', 'agent orange', 'độc hại hóa học', 'chất độc da cam', 'vava.org',
+                // Virus sinh học
+                'rsv', 'corona', 'covid', 'covid-19', 'sars', 'mers', 'hô hấp', 'đường hô hấp',
+                'trẻ em', 'trẻ sơ sinh', 'bệnh', 'y tế', 'vaccine', 'tiêm chủng', 'triệu chứng',
+                'viêm phổi', 'sức khỏe', 'bác sĩ', 'bệnh viện', 'nhiễm trùng', 'vi khuẩn',
+                'gleneagles', 'bbc.com', 'thegioididong' // Các domain thường có virus sinh học
+            ],
+            'toxin': ['mã độc', 'malware', 'virus', 'trojan', 'computer', 'máy tính'],
+            'http': ['chất độc', 'dioxin', 'mã độc'],
+            'ai': ['chất độc', 'dioxin', 'mã độc']
         };
 
-        const score = (r: WebSearchResult): number => {
-            const host = (r.displayLink || r.link || '').toLowerCase();
-            if (blacklist.some(b => host.includes(b))) return -100;
+        // ✅ FIX: Simplified relevance check
+        const isRelevant = (r: WebSearchResult): boolean => {
+            const host = r.displayLink.toLowerCase();
 
-            const title = (r.title || '').toLowerCase();
-            const snippet = (r.snippet || '').toLowerCase();
+            // Block social media
+            if (blacklist.some(b => host.includes(b))) return false;
+
+            const combined = `${r.title} ${r.snippet}`.toLowerCase();
+
+            // Check for topic exclusions - if query is about malware, exclude virus sinh học
+            if (detectedTopic && topicExclusions[detectedTopic]) {
+                const exclusions = topicExclusions[detectedTopic];
+                const hasExclusion = exclusions.some(ex => {
+                    const exLower = ex.toLowerCase();
+                    return combined.includes(exLower) || host.includes(exLower);
+                });
+                if (hasExclusion) {
+                    console.log(`❌ Filtered (opposite topic): ${r.title.substring(0, 50)}`);
+                    return false; // Exclude results about opposite topic
+                }
+            }
+
+            // ✅ For malware topic, require computer/cyber context
+            if (detectedTopic === 'malware') {
+                const computerKeywords = ['máy tính', 'computer', 'cyber', 'mạng', 'internet', 'phần mềm', 'hệ thống', 'bảo mật', 'hacker', 'tấn công'];
+                const hasComputerContext = computerKeywords.some(k => combined.includes(k));
+                if (!hasComputerContext) {
+                    // If no computer context, check if it's clearly about biological virus
+                    const biologicalVirusKeywords = ['trẻ em', 'bệnh', 'y tế', 'vaccine', 'triệu chứng', 'hô hấp', 'viêm phổi'];
+                    if (biologicalVirusKeywords.some(k => combined.includes(k))) {
+                        console.log(`❌ Filtered (biological virus): ${r.title.substring(0, 50)}`);
+                        return false;
+                    }
+                }
+            }
+
+            // Must match at least 1 main keyword OR 2 query keywords
+            const mainMatches = mainTopicKeywords.filter(k =>
+                combined.includes(k.toLowerCase())
+            ).length;
+
+            const queryMatches = queryKeywords.filter(k =>
+                combined.includes(k)
+            ).length;
+
+            const isMatch = mainMatches > 0 || queryMatches >= 2;
+
+            if (!isMatch) {
+                console.log(`❌ Filtered (no match): ${r.title.substring(0, 50)}`);
+            }
+
+            return isMatch;
+        };
+
+        // ✅ FIX: Simplified scoring
+        const score = (r: WebSearchResult): number => {
+            const host = r.displayLink.toLowerCase();
+            const combined = `${r.title} ${r.snippet}`.toLowerCase();
 
             let s = 0;
-            // keyword hits
-            for (const k of keywords) {
-                if (k.length <= 2) continue;
-                if (title.includes(k)) s += 5;
-                if (snippet.includes(k)) s += 2;
+
+            // Heavy penalty for opposite topic
+            if (detectedTopic && topicExclusions[detectedTopic]) {
+                const exclusions = topicExclusions[detectedTopic];
+                if (exclusions.some(ex => {
+                    const exLower = ex.toLowerCase();
+                    return combined.includes(exLower) || host.includes(exLower);
+                })) {
+                    return -1000; // Heavy penalty, will be filtered out
+                }
             }
-            // year boost
-            if (year) {
-                if (title.includes(year)) s += 4;
-                if (snippet.includes(year)) s += 2;
+
+            // ✅ For malware topic, boost computer/cyber context
+            if (detectedTopic === 'malware') {
+                const computerContextKeywords = ['máy tính', 'computer', 'cyber', 'mạng', 'internet', 'phần mềm', 'hệ thống', 'bảo mật', 'hacker', 'tấn công', 'mã độc', 'malware'];
+                const computerContextCount = computerContextKeywords.filter(k => combined.includes(k)).length;
+                if (computerContextCount > 0) {
+                    s += computerContextCount * 5; // Boost for computer context
+                }
             }
-            // AI topic boost/penalty
-            if (aiMatch(title) || aiMatch(snippet)) {
-                s += 10;
-            } else {
-                s -= 10; // demote non-AI pages
+
+            // Main topic keywords (high weight)
+            for (const k of mainTopicKeywords) {
+                const kLower = k.toLowerCase();
+                if (r.title.toLowerCase().includes(kLower)) s += 10;
+                if (r.snippet.toLowerCase().includes(kLower)) s += 3;
             }
-            // whitelist boost
-            if (whitelistBoost.some(w => host.includes(w))) s += 3;
-            // shorter, cleaner titles preferred
-            s += Math.max(0, 60 - (r.title?.length || 0)) / 20;
+
+            // Other keywords
+            for (const k of queryKeywords) {
+                if (mainTopicKeywords.some(mk => mk.toLowerCase().includes(k))) continue;
+                if (r.title.toLowerCase().includes(k)) s += 3;
+                if (r.snippet.toLowerCase().includes(k)) s += 1;
+            }
+
+            // Whitelist boost
+            if (whitelist.some(w => host.includes(w))) s += 5;
+
+            // Title length penalty (spam often has long titles)
+            if (r.title.length > 100) s -= 3;
+
             return s;
         };
 
+        // ✅ Rank and filter
         results = results
+            .filter(r => isRelevant(r))
             .map(r => ({ r, s: score(r) }))
             .sort((a, b) => b.s - a.s)
             .map(x => x.r)
-            // filter out clearly off-topic after scoring
-            .filter(r => aiMatch(r.title) || aiMatch(r.snippet))
-            .slice(0, 5); // keep top 5; FE shows top 3
+            .slice(0, 5);
 
-        // Fallback: if still too few AI-relevant results, try a second focused query
-        if (results.length < 3) {
-            const fallback = `xu hướng AI 2025 site:(.vn OR .com)`;
-            const p2 = new URLSearchParams({
-                key: GOOGLE_API_KEY,
-                cx: SEARCH_ENGINE_ID,
-                q: fallback,
-                num: '10', lr: 'lang_vi', gl: 'vn', safe: 'active'
-            });
-            const url2 = `https://www.googleapis.com/customsearch/v1?${p2.toString()}`;
-            try {
-                const r2 = await fetch(url2);
-                if (r2.ok) {
-                    const d2 = await r2.json() as { items?: Array<{ title?: string; link?: string; snippet?: string; displayLink?: string }> };
-                    if (d2.items?.length) {
-                        const more: WebSearchResult[] = d2.items.map((item: any) => ({
-                            title: item.title || '',
-                            link: item.link || '',
-                            snippet: item.snippet || '',
-                            displayLink: item.displayLink || (item.link ? new URL(item.link).hostname : '')
-                        })).filter((it: WebSearchResult) => aiMatch(it.title) || aiMatch(it.snippet));
-                        results = [...results, ...more].slice(0, 5);
-                    }
-                }
-            } catch { }
-        }
+        console.log(`✅ Final results: ${results.length}`);
+        results.forEach((r, i) => {
+            console.log(`  ${i + 1}. ${r.title.substring(0, 60)}... (${r.displayLink})`);
+        });
 
-        console.log(`🔍 Ranked web search results (top=${results.length})`);
         return results;
+
     } catch (error: any) {
         console.error('❌ Web search error:', error.message);
         return [];
@@ -628,10 +680,13 @@ async function performWebSearch(query: string): Promise<WebSearchResult[]> {
 
 router.post('/chat', async (req, res) => {
     try {
+        console.log('📥 Chat request:', req.body);
         const { message, studySetId, materialId, forceWebSearch } = req.body;
         if (!message || !studySetId) {
             return res.status(400).json({ error: 'Message and studySetId are required' });
         }
+
+        console.log('📥 Chat request:', { studySetId, materialId, messageLength: message.length });
 
         // 1) load materials + gom text
         const materials = await getMaterialsForStudySet(studySetId);
@@ -639,14 +694,16 @@ router.post('/chat', async (req, res) => {
             return res.json({ response: 'Chưa có tài liệu trong set này. Hãy upload PDF trước nhé.' });
         }
 
+        console.log(`📚 Found ${materials.length} materials:`, materials.map((m: any) => ({ id: m.id, name: m.name })));
+
         let allText = '';
-        console.log('Processing materials:', materials.length);
         // If materialId is provided, use that; else default to latest
         const chosen = materialId ? materials.find((m: any) => String(m.id) === String(materialId)) : materials[0];
         if (!chosen) {
+            console.error('❌ Material not found:', { requestedMaterialId: materialId, availableIds: materials.map((m: any) => m.id) });
             return res.json({ response: 'Không tìm thấy tài liệu đã chọn.' });
         }
-        console.log('Using material:', chosen.id, chosen.name, 'file_path:', chosen.file_path);
+        console.log('✅ Using material:', { id: chosen.id, name: chosen.name, file_path: chosen.file_path });
         if (!chosen.file_path) {
             return res.json({ response: 'File path không tồn tại cho tài liệu này.' });
         }

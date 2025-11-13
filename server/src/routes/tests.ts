@@ -154,7 +154,7 @@ router.get('/study-set/:studySetId', async (req, res) => {
 
     return new Promise<void>((resolve, reject) => {
         db.all(
-            'SELECT id, study_set_id, user_id, COALESCE(name, title) as name, description, status, time_limit, material_ids, created_at, updated_at FROM tests WHERE study_set_id = ? ORDER BY created_at DESC',
+            'SELECT id, study_set_id, user_id, name, description, status, time_limit, material_ids, created_at, updated_at FROM tests WHERE study_set_id = ? ORDER BY created_at DESC',
             [studySetId],
             (err: Error | null, tests: any[]) => {
                 db.close();
@@ -336,28 +336,18 @@ router.patch('/:testId', async (req, res) => {
     const db = await getDb();
     const finalize = () => db.close();
 
-    // Try updating name column; if it fails (column missing), fallback to title
-    const runUpdate = (sql: string, params: any[]) => new Promise<void>((resolve, reject) => {
-        db.run(sql, params, function (err: Error | null) {
-            if (err) return reject(err);
-            resolve();
-        });
-    });
-
     try {
         if (name !== undefined || description !== undefined) {
-            try {
-                await runUpdate(
+            await new Promise<void>((resolve, reject) => {
+                db.run(
                     'UPDATE tests SET name = COALESCE(?, name), description = COALESCE(?, description), updated_at = datetime(\'now\') WHERE id = ?',
-                    [name ?? null, description ?? null, testId]
+                    [name ?? null, description ?? null, testId],
+                    function (err: Error | null) {
+                        if (err) return reject(err);
+                        resolve();
+                    }
                 );
-            } catch (e) {
-                // Fallback for older schema using title
-                await runUpdate(
-                    'UPDATE tests SET title = COALESCE(?, title), description = COALESCE(?, description), updated_at = datetime(\'now\') WHERE id = ?',
-                    [name ?? null, description ?? null, testId]
-                );
-            }
+            });
         }
 
         db.get('SELECT * FROM tests WHERE id = ?', [testId], (err: Error | null, row: any) => {

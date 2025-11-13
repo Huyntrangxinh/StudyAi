@@ -47,7 +47,7 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
     const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
     const [refreshChatHistory, setRefreshChatHistory] = useState(0);
     const [noteContent, setNoteContent] = useState('');
-    const [currentMaterial, setCurrentMaterial] = useState<{ name: string; totalPages: number } | null>(null);
+    const [currentMaterial, setCurrentMaterial] = useState<{ id: number; name: string; totalPages: number } | null>(null);
     const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
 
     // Floating Bottom Tabs states (minimize + drag)
@@ -452,6 +452,7 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
 
                     if (material) {
                         setCurrentMaterial({
+                            id: material.id,
                             name: material.name,
                             totalPages: numPages || 0
                         });
@@ -691,6 +692,7 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
                 body: JSON.stringify({
                     message: userMessage,
                     studySetId: studySetId,
+                    materialId: targetMaterialId || currentMaterial?.id || undefined, // ✅ Send materialId to ensure correct document
                     forceWebSearch: isWebSearchMode // ✅ Force web search if mode is enabled
                 })
             });
