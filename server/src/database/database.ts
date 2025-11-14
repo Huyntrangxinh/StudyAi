@@ -63,7 +63,7 @@ class DatabaseService {
 
     private runMigrations() {
         try {
-            // Check if transcript column exists in videos table
+            // Check if columns exist in videos table
             const columns = this.db.prepare("PRAGMA table_info(videos)").all() as any[];
             const columnNames = columns.map(c => c.name);
 
@@ -75,6 +75,26 @@ class DatabaseService {
             if (!columnNames.includes('highlights')) {
                 console.log('Adding highlights column to videos table...');
                 this.db.exec('ALTER TABLE videos ADD COLUMN highlights TEXT');
+            }
+
+            if (!columnNames.includes('video_title')) {
+                console.log('Adding video_title column to videos table...');
+                this.db.exec('ALTER TABLE videos ADD COLUMN video_title TEXT');
+            }
+
+            if (!columnNames.includes('style')) {
+                console.log('Adding style column to videos table...');
+                this.db.exec('ALTER TABLE videos ADD COLUMN style TEXT');
+            }
+
+            if (!columnNames.includes('length')) {
+                console.log('Adding length column to videos table...');
+                this.db.exec('ALTER TABLE videos ADD COLUMN length TEXT');
+            }
+
+            if (!columnNames.includes('language')) {
+                console.log('Adding language column to videos table...');
+                this.db.exec('ALTER TABLE videos ADD COLUMN language TEXT');
             }
         } catch (error: any) {
             console.error('Migration error:', error.message);

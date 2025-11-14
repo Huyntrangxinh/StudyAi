@@ -2,7 +2,62 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 const config = require('../../config');
-import crypto from 'crypto';
+import { generateOpenAITTSAuto } from '../services/openaiTtsService';
+
+// Web search interface
+interface WebSearchResult {
+    title: string;
+    link: string;
+    snippet: string;
+}
+
+// Perform web search for topic information
+async function performWebSearch(query: string): Promise<WebSearchResult[]> {
+    const GOOGLE_API_KEY = config.GEMINI_API_KEY; // Using Gemini key as fallback, or add separate key
+    const SEARCH_ENGINE_ID = config.SEARCH_ENGINE_ID || '820473ad04dab4ac3';
+
+    if (!GOOGLE_API_KEY || !SEARCH_ENGINE_ID) {
+        console.warn('⚠️ Web search not configured');
+        return [];
+    }
+
+    try {
+        const params = new URLSearchParams({
+            key: GOOGLE_API_KEY,
+            cx: SEARCH_ENGINE_ID,
+            q: query,
+            num: '5',
+            lr: 'lang_vi',
+            gl: 'vn',
+            safe: 'active'
+        });
+
+        const response = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`);
+
+        if (!response.ok) {
+            console.error('❌ Web search error:', response.status, response.statusText);
+            return [];
+        }
+
+        const data: any = await response.json();
+        if (!data.items || data.items.length === 0) {
+            console.log('📭 No web search results found');
+            return [];
+        }
+
+        const results: WebSearchResult[] = data.items.map((item: any) => ({
+            title: item.title || '',
+            link: item.link || '',
+            snippet: item.snippet || ''
+        }));
+
+        console.log(`✅ Found ${results.length} web search results`);
+        return results;
+    } catch (error: any) {
+        console.error('❌ Web search error:', error.message);
+        return [];
+    }
+}
 
 const router = express.Router();
 
@@ -447,7 +502,7 @@ Xem xét cách khái niệm này xuất hiện trong đời sống hàng ngày, 
 
 Nhớ: Viết như văn bản liền mạch với chuyển ý mượt mà. KHÔNG có tiêu đề, KHÔNG bullet points, KHÔNG markdown. Tổng cộng phải ít nhất 600-700 từ.`;
 
-    return `${head}\n${detailedGeneric}`;
+    return detailedGeneric;
 }
 
 // Enhanced emergency fallback with detailed content
@@ -762,15 +817,35 @@ router.post('/generate', async (req, res) => {
 
         let script = '';
         let attemptLog: string[] = [];
+        let webSearchResults: WebSearchResult[] = [];
 
         try {
+            // Step 1: Search web for related information about the topic
+            console.log('🔍 Step 1: Searching web for information about:', prompt);
+            webSearchResults = await performWebSearch(prompt);
+            let webSearchContext = '';
+
+            if (webSearchResults.length > 0) {
+                webSearchContext = `\n\nThông tin bổ sung từ tìm kiếm web về "${prompt}":\n${webSearchResults.map((r, i) =>
+                    `${i + 1}. ${r.title}\n   ${r.snippet}\n   Nguồn: ${r.link}`
+                ).join('\n\n')}\n\nHãy sử dụng thông tin trên để tạo nội dung chi tiết và chính xác về "${prompt}".`;
+                console.log(`✅ Found ${webSearchResults.length} web search results, adding to context`);
+            } else {
+                console.log('⚠️ No web search results, proceeding without additional context');
+            }
+
             const geminiKey = config.GEMINI_API_KEY;
 
             if (geminiKey) {
                 console.log('📡 Attempt 1: Calling Gemini API...');
                 attemptLog.push('Attempt 1: Gemini API');
 
-                const instruction = getDetailedInstruction(prompt, language);
+                const baseInstruction = getDetailedInstruction(prompt, language);
+                const instruction = baseInstruction + webSearchContext +
+                    (language === 'en'
+                        ? '\n\n⚠️ CRITICAL: Write actual content, NOT templates. Do NOT include phrases like "PART 1 is", "PART 2 is" in your response. Write the actual lesson content directly.'
+                        : '\n\n⚠️ QUAN TRỌNG: Viết nội dung thực tế, KHÔNG dùng template. KHÔNG bao gồm các cụm từ như "PHẦN 1 là", "PHẦN 2 là" trong câu trả lời. Viết nội dung bài học trực tiếp.');
+
                 console.log('📝 Instruction length:', instruction.length, 'chars');
                 console.log('📝 Language:', language);
 
@@ -1022,15 +1097,39 @@ router.post('/generate', async (req, res) => {
         // Use emergency fallback only if everything failed
         // Check word count, not just character count
         const finalWords = script ? script.split(' ').length : 0;
-        const shouldUseFallback = !script || finalWords < 350 || /chưa có tài liệu|không tìm thấy|không thể|lỗi/i.test(script);
+
+        // Check if script contains template phrases (indicating AI returned template instead of content)
+        const hasTemplatePhrases = script ? /PHẦN\s*\d+\s*là|PART\s*\d+\s*is|phần\s*\d+\s*là|part\s*\d+\s*is/i.test(script) : false;
+
+        const shouldUseFallback = !script || finalWords < 350 || hasTemplatePhrases || /chưa có tài liệu|không tìm thấy|không thể|lỗi/i.test(script);
 
         if (shouldUseFallback) {
             console.log('\n🚨 Using EMERGENCY FALLBACK');
             console.log('   - Reason: script length =', script?.length || 0, 'chars');
             console.log('   - Reason: word count =', finalWords, 'words');
+            console.log('   - Has template phrases:', hasTemplatePhrases);
             console.log('   - Language:', language);
             attemptLog.push('Using emergency fallback');
-            const fallbackScript = getEmergencyFallback(prompt, language);
+
+            // Try to use web search results if available, otherwise use static fallback
+            let fallbackScript = '';
+
+            // If we have web search results, create content from them
+            if (webSearchResults && webSearchResults.length > 0) {
+                console.log('   - Creating fallback from web search results');
+                const searchContent = webSearchResults.map((r, i) =>
+                    `${r.title}: ${r.snippet}`
+                ).join('\n\n');
+
+                if (language === 'en') {
+                    fallbackScript = `Based on current information about "${prompt}":\n\n${searchContent}\n\nThis topic is important because it relates to fundamental concepts in its field. Understanding ${prompt} helps you grasp broader principles and apply them in practical situations. When studying this topic, focus on understanding the core mechanisms, real-world examples, and common applications. Practice with concrete examples and connect this knowledge to related concepts you've learned.`;
+                } else {
+                    fallbackScript = `Dựa trên thông tin hiện tại về "${prompt}":\n\n${searchContent}\n\nChủ đề này quan trọng vì nó liên quan đến các khái niệm cơ bản trong lĩnh vực của nó. Hiểu về ${prompt} giúp bạn nắm bắt các nguyên tắc rộng hơn và áp dụng chúng trong các tình huống thực tế. Khi học chủ đề này, hãy tập trung vào việc hiểu các cơ chế cốt lõi, ví dụ thực tế, và các ứng dụng phổ biến. Thực hành với các ví dụ cụ thể và kết nối kiến thức này với các khái niệm liên quan bạn đã học.`;
+                }
+            } else {
+                // Use static fallback if no web search results
+                fallbackScript = getEmergencyFallback(prompt, language);
+            }
 
             // Expand fallback if it's too short
             let expandedFallback = fallbackScript;
@@ -1057,557 +1156,51 @@ router.post('/generate', async (req, res) => {
         console.log('   - Attempt log:', attemptLog.join(' → '));
         console.log('   - First 250 chars:', script.substring(0, 250));
 
-        // 2) Generate audio using Google TTS or ElevenLabs
+        // 2) Generate audio using OpenAI TTS
         console.log('\n🎵 Starting TTS generation...');
         console.log('   - Language:', language);
 
-        // If English, use ElevenLabs directly
-        if (language === 'en') {
-            console.log('🔐 Using ElevenLabs for English...');
+        try {
+            const ttsResult = await generateOpenAITTSAuto(
+                script,
+                language as 'en' | 'vi'
+            );
 
-            // Try multiple English voice IDs (public voices only - no custom voices)
-            // Custom voices may hit limit, so we use only public voices
-            const englishVoices = [
-                '21m00Tcm4TlvDq8ikWAM', // Rachel - female, clear
-                'AZnzlk1XvdvUeBnXmlld', // Domi - female
-                'EXAVITQu4vr4xnSDxMaL', // Bella - female
-                'pNInz6obpgDQGcFmaJgB', // Adam - male
-                'yoZ06aMxZJJ28mfd3POQ', // Sam - male
-                'ThT5KcBeYPX3keUQqHPh'  // Dorothy - female
-            ];
+            console.log('\n========================================');
+            console.log('🎉 Audio generation completed!');
+            console.log('   Provider: OpenAI TTS (gpt-4o-mini-tts)');
+            console.log('   Language:', language);
+            console.log('   Voice:', ttsResult.voice);
+            console.log('   URL:', ttsResult.audioUrl);
+            console.log('========================================\n');
 
-            let lastError: any = null;
-            let success = false;
-            let finalVoiceId = '';
-            let finalBuffer: Buffer | null = null;
-
-            for (const voiceId of englishVoices) {
-                let timeout: NodeJS.Timeout | null = null;
-                try {
-                    console.log(`   Trying voice ID: ${voiceId}`);
-                    const controller = new AbortController();
-                    timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
-                    const ttsResp = await fetch(
-                        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-                        {
-                            method: 'POST',
-                            headers: {
-                                'xi-api-key': config.ELEVENLABS_API_KEY || '',
-                                'Content-Type': 'application/json',
-                                'Accept': 'audio/mpeg'
-                            },
-                            body: JSON.stringify({
-                                text: script,
-                                model_id: 'eleven_multilingual_v2',
-                                voice_settings: {
-                                    stability: 0.45,
-                                    similarity_boost: 0.85,
-                                    style: 0.25,
-                                    use_speaker_boost: true
-                                },
-                                output_format: 'mp3_44100_128'
-                            }),
-                            signal: controller.signal
-                        }
-                    );
-                    if (timeout) clearTimeout(timeout);
-
-                    const ct = ttsResp.headers.get('content-type') || '';
-                    if (ttsResp.ok && ct.includes('audio')) {
-                        try {
-                            const buf = Buffer.from(await ttsResp.arrayBuffer());
-                            if (buf && buf.length >= 100) {
-                                finalVoiceId = voiceId;
-                                finalBuffer = buf;
-                                success = true;
-                                console.log(`   ✅ Voice ${voiceId} SUCCESS`);
-                                break;
-                            } else {
-                                lastError = { status: ttsResp.status, message: 'Audio buffer too small' };
-                                console.warn(`   ⚠️  Voice ${voiceId} returned small buffer: ${buf.length} bytes`);
-                            }
-                        } catch (bufErr: any) {
-                            lastError = { status: ttsResp.status, message: `Buffer error: ${bufErr.message}` };
-                            console.warn(`   ⚠️  Voice ${voiceId} buffer error: ${bufErr.message}`);
-                            continue;
-                        }
-                    } else {
-                        try {
-                            const errText = await ttsResp.text().catch(() => '');
-                            lastError = { status: ttsResp.status, message: errText };
-
-                            // Parse error JSON to check for quota/limit errors
-                            let isQuotaError = false;
-                            try {
-                                const errJson = JSON.parse(errText);
-                                const detail = errJson.detail || errJson.error || {};
-                                const status = detail.status || detail.code || '';
-                                const message = (detail.message || errText || '').toLowerCase();
-
-                                // Only treat as quota error if status code is 401/403 AND message contains quota/limit keywords
-                                if ((ttsResp.status === 401 || ttsResp.status === 403) &&
-                                    (status.includes('quota_exceeded') ||
-                                        status.includes('voice_limit_reached') ||
-                                        message.includes('quota_exceeded') ||
-                                        message.includes('exceeds your quota') ||
-                                        message.includes('voice_limit_reached') ||
-                                        message.includes('maximum amount of custom voices'))) {
-                                    isQuotaError = true;
-                                }
-                            } catch (parseErr) {
-                                // If can't parse JSON, check plain text only for quota messages
-                                const lowerText = errText.toLowerCase();
-                                if ((ttsResp.status === 401 || ttsResp.status === 403) &&
-                                    (lowerText.includes('quota_exceeded') ||
-                                        lowerText.includes('exceeds your quota') ||
-                                        lowerText.includes('voice_limit_reached'))) {
-                                    isQuotaError = true;
-                                }
-                            }
-
-                            // Only skip all voices if it's a real quota/limit error
-                            if (isQuotaError) {
-                                console.warn(`   ⚠️  Voice ${voiceId} hit limit/quota, skipping all ElevenLabs voices`);
-                                console.log('🔄 Voice limit/quota reached, falling back to Google TTS immediately...');
-                                success = false;
-                                break; // Exit loop immediately
-                            }
-
-                            // Otherwise, log error and continue to next voice
-                            console.warn(`   ⚠️  Voice ${voiceId} failed: ${ttsResp.status} - ${errText.substring(0, 150)}`);
-                            console.log(`   → Trying next voice...`);
-                        } catch (textErr: any) {
-                            lastError = { status: ttsResp.status, message: `Failed to read error text: ${textErr.message}` };
-                            console.warn(`   ⚠️  Voice ${voiceId} failed: ${ttsResp.status} (error reading response)`);
-                            console.log(`   → Trying next voice...`);
-                        }
-                    }
-                } catch (err: any) {
-                    lastError = err;
-                    const errorMsg = (err?.message || String(err) || '').toLowerCase();
-
-                    // Only treat as quota error if it's explicitly mentioned in exception
-                    // Network errors, timeouts, etc. should not be treated as quota errors
-                    const isQuotaError = errorMsg.includes('quota_exceeded') ||
-                        errorMsg.includes('exceeds your quota') ||
-                        errorMsg.includes('voice_limit_reached') ||
-                        errorMsg.includes('maximum amount of custom voices');
-
-                    if (isQuotaError) {
-                        console.warn(`   ⚠️  Voice ${voiceId} hit limit/quota in exception, skipping all ElevenLabs voices`);
-                        console.log('🔄 Voice limit/quota reached, falling back to Google TTS immediately...');
-                        success = false;
-                        // Clear timeout if it was set
-                        if (timeout) {
-                            try { clearTimeout(timeout); } catch { }
-                        }
-                        break; // Exit loop immediately
-                    }
-
-                    // For other errors (network, timeout, etc.), try next voice
-                    console.warn(`   ⚠️  Voice ${voiceId} exception: ${err?.message || String(err)}`);
-                    console.log(`   → Trying next voice...`);
-                    // Clear timeout if it was set
-                    if (timeout) {
-                        try { clearTimeout(timeout); } catch { }
-                    }
-                    continue;
-                } finally {
-                    // Make sure timeout is cleared
-                    if (timeout) {
-                        try { clearTimeout(timeout); } catch { }
-                    }
+            return res.json({
+                audioUrl: ttsResult.audioUrl,
+                script,
+                path: ttsResult.path,
+                provider: 'openai',
+                voice: ttsResult.voice,
+                language: language,
+                stats: {
+                    scriptLength: script.length,
+                    wordCount: script.split(' ').length,
+                    attempts: attemptLog
                 }
-            }
+            });
 
-            if (!success || !finalBuffer) {
-                // Check if we detected quota/limit error early
-                const quotaDetected = lastError && (
-                    JSON.stringify(lastError).includes('quota_exceeded') ||
-                    JSON.stringify(lastError).includes('exceeds your quota') ||
-                    JSON.stringify(lastError).includes('voice_limit_reached')
-                );
-
-                if (quotaDetected) {
-                    console.log('ℹ️  ElevenLabs quota/limit reached - automatically using Google TTS');
-                    console.log('   (This is normal - Google TTS will provide high-quality English voice)');
-                } else {
-                    console.warn('⚠️  ElevenLabs unavailable');
-                    if (lastError) {
-                        console.warn('   Reason:', JSON.stringify(lastError, null, 2));
-                    }
-                    console.log('🔄 Falling back to Google TTS for English...');
-                }
-                // Fall through to Google TTS fallback below
-            } else {
-                // ElevenLabs succeeded, return early
-                const uploadDir = path.join(__dirname, '../../uploads');
-                if (!fs.existsSync(uploadDir)) {
-                    fs.mkdirSync(uploadDir, { recursive: true });
-                }
-
-                const filename = `audio-elevenlabs-${Date.now()}.mp3`;
-                const absPath = path.join(uploadDir, filename);
-
-                fs.writeFileSync(absPath, finalBuffer);
-
-                console.log('✅ ElevenLabs TTS SUCCESS');
-                console.log('   - File:', absPath);
-                console.log('   - Size:', finalBuffer.length, 'bytes');
-                console.log('   - Voice ID:', finalVoiceId);
-
-                const publicUrl = `http://localhost:3001/uploads/${filename}`;
-
-                console.log('\n========================================');
-                console.log('🎉 Audio generation completed!');
-                console.log('   Provider: ElevenLabs');
-                console.log('   Language: English');
-                console.log('   Voice ID:', finalVoiceId);
-                console.log('   URL:', publicUrl);
-                console.log('========================================\n');
-
-                const responseData = {
-                    audioUrl: publicUrl,
-                    script,
-                    path: absPath,
-                    provider: 'elevenlabs',
-                    voice: finalVoiceId,
-                    language: 'en',
-                    stats: {
-                        scriptLength: script.length,
-                        wordCount: script.split(' ').length,
-                        attempts: attemptLog
-                    }
-                };
-                return res.json(responseData);
-            }
-        }
-
-        // Vietnamese: Use Google TTS
-        const gsaPath = config.GOOGLE_TTS_CREDENTIALS_PATH;
-        if (gsaPath && fs.existsSync(gsaPath)) {
-            try {
-                console.log('🔐 Attempting Google TTS...');
-
-                const raw = fs.readFileSync(gsaPath, 'utf8');
-                const sa = JSON.parse(raw);
-                const now = Math.floor(Date.now() / 1000);
-                const header = { alg: 'RS256', typ: 'JWT' };
-                const claim = {
-                    iss: sa.client_email,
-                    scope: 'https://www.googleapis.com/auth/cloud-platform',
-                    aud: 'https://oauth2.googleapis.com/token',
-                    exp: now + 3600,
-                    iat: now
-                };
-
-                const base64url = (obj: any) =>
-                    Buffer.from(JSON.stringify(obj))
-                        .toString('base64')
-                        .replace(/=/g, '')
-                        .replace(/\+/g, '-')
-                        .replace(/\//g, '_');
-
-                const unsigned = base64url(header) + '.' + base64url(claim);
-                const sign = crypto.createSign('RSA-SHA256');
-                sign.update(unsigned);
-                const signature = sign
-                    .sign(sa.private_key, 'base64')
-                    .replace(/=/g, '')
-                    .replace(/\+/g, '-')
-                    .replace(/\//g, '_');
-                const assertion = unsigned + '.' + signature;
-
-                const tokenResp = await fetch('https://oauth2.googleapis.com/token', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({
-                        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-                        assertion
-                    }).toString()
-                });
-
-                const tokenJson: any = await tokenResp.json();
-                if (!tokenResp.ok) {
-                    throw new Error(`Google OAuth failed: ${tokenJson.error}`);
-                }
-
-                console.log('✅ Google OAuth successful');
-
-                // Determine language and voices
-                let preferredVoices: string[];
-                let languageCode: string;
-                let xmlLang: string;
-                let ssmlGender: string;
-                let speakingRate: number;
-                let prosodyPitchSt: number;
-
-                if (language === 'en') {
-                    // English voices (preferred female voices)
-                    preferredVoices = [
-                        'en-US-Neural2-A', // Female
-                        'en-US-Neural2-C', // Female
-                        'en-US-Neural2-D', // Female
-                        'en-US-Neural2-E', // Female
-                        'en-US-Neural2-F', // Female
-                        'en-US-Neural2-G', // Female
-                        'en-US-Neural2-H', // Female
-                        'en-US-Neural2-I', // Female
-                        'en-US-Neural2-J', // Female
-                        'en-US-Wavenet-A', // Female (fallback)
-                        'en-US-Wavenet-C', // Female (fallback)
-                        'en-US-Wavenet-D', // Female (fallback)
-                        'en-US-Wavenet-E', // Female (fallback)
-                        'en-US-Wavenet-F', // Female (fallback)
-                        'en-US-Standard-A', // Female (fallback)
-                        'en-US-Standard-C', // Female (fallback)
-                    ];
-                    languageCode = 'en-US';
-                    xmlLang = 'en-US';
-                    ssmlGender = 'FEMALE';
-                    speakingRate = 1.0;
-                    prosodyPitchSt = 0.0;
-                } else {
-                    // Vietnamese voices
-                    preferredVoices = [
-                        // Ưu tiên giọng nữ tiếng Việt
-                        'vi-VN-Wavenet-A', // Female
-                        'vi-VN-Wavenet-D', // Female
-                        // Neural2 có thể chưa khả dụng trong dự án hiện tại
-                        'vi-VN-Neural2-C',
-                        'vi-VN-Neural2-D',
-                        'vi-VN-Neural2-A',
-                        // Nam (fallback cuối nếu không còn lựa chọn)
-                        'vi-VN-Wavenet-B'
-                    ];
-                    languageCode = 'vi-VN';
-                    xmlLang = 'vi-VN';
-                    ssmlGender = 'FEMALE';
-                    speakingRate = 1.02;
-                    prosodyPitchSt = 0.3; // semitones
-                }
-
-                // Build SSML to preserve tones and add mild prosody
-                const ssml = `<speak xml:lang="${xmlLang}"><prosody rate="${speakingRate}" pitch="${prosodyPitchSt}st">${script}</prosody></speak>`;
-
-                let googleSavedPath: string | null = null;
-                let googlePublicUrl: string | null = null;
-                let googleVoiceUsed: string | null = null;
-                let lastError: string | null = null;
-
-                for (const voiceName of preferredVoices) {
-                    try {
-                        console.log('🔈 Trying Google voice:', voiceName);
-                        const resp = await fetch(
-                            'https://texttospeech.googleapis.com/v1/text:synthesize',
-                            {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Bearer ${tokenJson.access_token}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    input: { ssml },
-                                    voice: {
-                                        languageCode: languageCode,
-                                        name: voiceName,
-                                        ssmlGender: ssmlGender
-                                    },
-                                    audioConfig: {
-                                        audioEncoding: 'MP3',
-                                        speakingRate: speakingRate,
-                                        pitch: prosodyPitchSt,
-                                        effectsProfileId: ['headphone-class-device']
-                                    }
-                                })
-                            }
-                        );
-                        const json: any = await resp.json();
-                        if (!resp.ok || !json.audioContent) {
-                            const msg = json?.error?.message || 'No audio content';
-                            throw new Error(msg);
-                        }
-                        const uploadDir = path.join(__dirname, '../../uploads');
-                        if (!fs.existsSync(uploadDir)) {
-                            fs.mkdirSync(uploadDir, { recursive: true });
-                        }
-                        const filename = `audio-google-${Date.now()}.mp3`;
-                        const absPath = path.join(uploadDir, filename);
-                        const buf = Buffer.from(json.audioContent, 'base64');
-                        fs.writeFileSync(absPath, buf);
-                        console.log('✅ Google TTS SUCCESS with voice:', voiceName);
-                        console.log('   - File:', absPath);
-                        console.log('   - Size:', buf.length, 'bytes');
-                        googleSavedPath = absPath;
-                        googlePublicUrl = `http://localhost:3001/uploads/${filename}`;
-                        googleVoiceUsed = voiceName;
-                        break;
-                    } catch (err: any) {
-                        lastError = err?.message || String(err);
-                        console.warn('   ↪︎ Voice try failed:', voiceName, '-', lastError);
-                        continue;
-                    }
-                }
-
-                if (!googleSavedPath) {
-                    // Thử một lần cuối: không chỉ định name, yêu cầu FEMALE
-                    try {
-                        console.log(`🔈 Trying Google voice: languageCode only (${ssmlGender})`);
-                        const resp = await fetch(
-                            'https://texttospeech.googleapis.com/v1/text:synthesize',
-                            {
-                                method: 'POST',
-                                headers: {
-                                    'Authorization': `Bearer ${tokenJson.access_token}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    input: { ssml },
-                                    voice: {
-                                        languageCode: languageCode,
-                                        ssmlGender: ssmlGender
-                                    },
-                                    audioConfig: {
-                                        audioEncoding: 'MP3',
-                                        speakingRate: speakingRate,
-                                        pitch: prosodyPitchSt,
-                                        effectsProfileId: ['headphone-class-device']
-                                    }
-                                })
-                            }
-                        );
-                        const json: any = await resp.json();
-                        if (resp.ok && json.audioContent) {
-                            const uploadDir = path.join(__dirname, '../../uploads');
-                            if (!fs.existsSync(uploadDir)) {
-                                fs.mkdirSync(uploadDir, { recursive: true });
-                            }
-                            const filename = `audio-google-${Date.now()}.mp3`;
-                            const absPath = path.join(uploadDir, filename);
-                            const buf = Buffer.from(json.audioContent, 'base64');
-                            fs.writeFileSync(absPath, buf);
-                            console.log(`✅ Google TTS SUCCESS with languageCode-only ${ssmlGender}`);
-                            googleSavedPath = absPath;
-                            googlePublicUrl = `http://localhost:3001/uploads/${filename}`;
-                            googleVoiceUsed = `${languageCode} (default ${ssmlGender})`;
-                        }
-                    } catch (err) {
-                        // ignore
-                    }
-                }
-
-                if (googleSavedPath && googlePublicUrl) {
-                    console.log('\n========================================');
-                    console.log('🎉 Audio generation completed!');
-                    console.log('   Provider: Google TTS');
-                    console.log('   Language:', language);
-                    console.log('   Voice:', googleVoiceUsed);
-                    console.log('   URL:', googlePublicUrl);
-                    console.log('========================================\n');
-
-                    return res.json({
-                        audioUrl: googlePublicUrl,
-                        script,
-                        path: googleSavedPath,
-                        provider: 'google',
-                        voice: googleVoiceUsed,
-                        language: language,
-                        stats: {
-                            scriptLength: script.length,
-                            wordCount: script.split(' ').length,
-                            attempts: attemptLog
-                        }
-                    });
-                }
-
-                throw new Error(`Google TTS failed for all preferred voices. Last error: ${lastError}`);
-
-            } catch (gerr: any) {
-                console.warn('⚠️  Google TTS failed, trying ElevenLabs...');
-                console.warn('   Error:', gerr.message);
-            }
-        }
-
-        // Fallback: ElevenLabs
-        console.log('🔐 Attempting ElevenLabs TTS...');
-
-        const voiceId = config.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
-        const ttsResp = await fetch(
-            `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-            {
-                method: 'POST',
-                headers: {
-                    'xi-api-key': config.ELEVENLABS_API_KEY,
-                    'Content-Type': 'application/json',
-                    'Accept': 'audio/mpeg'
-                },
-                body: JSON.stringify({
-                    text: script,
-                    model_id: 'eleven_multilingual_v2',
-                    voice_settings: {
-                        stability: 0.45,
-                        similarity_boost: 0.85,
-                        style: 0.25,
-                        use_speaker_boost: true
-                    },
-                    output_format: 'mp3_44100_128'
-                })
-            }
-        );
-
-        const ct = ttsResp.headers.get('content-type') || '';
-        if (!ttsResp.ok || !ct.includes('audio')) {
-            const errText = await ttsResp.text().catch(() => '');
-            console.error('❌ ElevenLabs FAILED:', ttsResp.status);
-            console.error('   Content-Type:', ct);
-            console.error('   Error:', errText.substring(0, 200));
+        } catch (ttsError: any) {
+            console.error('❌ TTS generation failed:', ttsError.message);
+            console.error('❌ Error details:', JSON.stringify(ttsError, null, 2));
             return res.status(500).json({
-                error: 'TTS failed',
-                details: errText || `Unexpected content-type: ${ct}`
+                error: 'TTS generation failed',
+                details: ttsError.message,
+                debug: {
+                    language: language,
+                    scriptLength: script?.length || 0,
+                    hasOpenAIKey: !!config.OPENAI_API_KEY
+                }
             });
         }
-
-        const uploadDir = path.join(__dirname, '../../uploads');
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
-
-        const filename = `audio-${Date.now()}.mp3`;
-        const absPath = path.join(uploadDir, filename);
-        const buf = Buffer.from(await ttsResp.arrayBuffer());
-
-        if (!buf || buf.length < 100) {
-            console.error('❌ ElevenLabs returned empty audio');
-            return res.status(500).json({ error: 'TTS returned empty audio' });
-        }
-
-        fs.writeFileSync(absPath, buf);
-
-        console.log('✅ ElevenLabs TTS SUCCESS');
-        console.log('   - File:', absPath);
-        console.log('   - Size:', buf.length, 'bytes');
-        console.log('   - Exists:', fs.existsSync(absPath));
-
-        const publicUrl = `http://localhost:3001/uploads/${filename}`;
-
-        console.log('\n========================================');
-        console.log('🎉 Audio generation completed!');
-        console.log('   Provider: ElevenLabs');
-        console.log('   URL:', publicUrl);
-        console.log('========================================\n');
-
-        return res.json({
-            audioUrl: publicUrl,
-            script,
-            path: absPath,
-            provider: 'elevenlabs',
-            stats: {
-                scriptLength: script.length,
-                wordCount: script.split(' ').length,
-                attempts: attemptLog
-            }
-        });
 
     } catch (error: any) {
         console.error('\n❌❌❌ FATAL ERROR ❌❌❌');

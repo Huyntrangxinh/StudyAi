@@ -18,6 +18,15 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '32402427703-636ai8dcanhb6ltnf4n2vktcbvrcflsi.apps.googleusercontent.com';
 
+// Log environment variables status (only in development)
+if (process.env.NODE_ENV === 'development') {
+    console.log('🔐 Frontend Environment Variables Status:');
+    console.log('  REACT_APP_GOOGLE_CLIENT_ID:', process.env.REACT_APP_GOOGLE_CLIENT_ID
+        ? `✅ Set (${process.env.REACT_APP_GOOGLE_CLIENT_ID.substring(0, 20)}...)`
+        : '❌ Not set (using fallback)');
+    console.log('  Using GOOGLE_CLIENT_ID:', GOOGLE_CLIENT_ID.substring(0, 30) + '...');
+}
+
 function App() {
     return (
         <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>

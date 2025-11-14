@@ -75,10 +75,23 @@ initDb();
 
 // POST /api/study-paths/generate - Generate study path from materials
 router.post('/generate', async (req, res) => {
+    console.log('🚀 [STUDY-PATHS] Generate request received');
     const { studySetId } = req.body;
 
     if (!studySetId) {
+        console.error('❌ [STUDY-PATHS] Missing studySetId');
         return res.status(400).json({ error: 'studySetId is required' });
+    }
+
+    // Log environment variables status
+    const config = require('../../config');
+    console.log('🔐 [STUDY-PATHS] Environment Variables Status:');
+    console.log('  OPENAI_API_KEY:', config.OPENAI_API_KEY ? `✅ Set (${config.OPENAI_API_KEY.substring(0, 10)}...)` : '❌ Not set');
+    console.log('  OPENAI_MODEL:', config.OPENAI_MODEL || 'gpt-4o-mini (default)');
+
+    if (!config.OPENAI_API_KEY) {
+        console.error('❌ [STUDY-PATHS] OPENAI_API_KEY is not set!');
+        return res.status(500).json({ error: 'OpenAI API key is not configured' });
     }
 
     const db = new sqlite3.Database(dbPath);
@@ -97,9 +110,12 @@ router.post('/generate', async (req, res) => {
         });
 
         if (materials.length === 0) {
+            console.error('❌ [STUDY-PATHS] No materials found for studySetId:', studySetId);
             db.close();
             return res.status(400).json({ error: 'No materials found for this study set' });
         }
+
+        console.log('📚 [STUDY-PATHS] Found', materials.length, 'materials for studySetId:', studySetId);
 
         // Extract text from all materials
         let combinedText = '';
@@ -119,11 +135,15 @@ router.post('/generate', async (req, res) => {
         }
 
         if (!combinedText.trim()) {
+            console.error('❌ [STUDY-PATHS] Could not extract text from materials');
             db.close();
             return res.status(400).json({ error: 'Could not extract text from materials' });
         }
 
+        console.log('📝 [STUDY-PATHS] Extracted text length:', combinedText.length, 'characters');
+
         // Call OpenAI to generate study path
+        console.log('🤖 [STUDY-PATHS] Calling OpenAI API to generate study path...');
         const prompt = `Phân tích tài liệu sau và tạo lộ trình học tập chi tiết. 
 Tài liệu:
 ${combinedText.substring(0, 15000)}...
@@ -159,9 +179,13 @@ Chỉ trả về JSON, không có text thêm.`;
         });
 
         const responseContent = completion.choices[0].message.content || '{}';
-        console.log('🤖 OpenAI Response (Raw):', responseContent);
+        console.log('✅ [STUDY-PATHS] OpenAI Response received, length:', responseContent.length);
+        console.log('📄 [STUDY-PATHS] OpenAI Response (Raw):', responseContent.substring(0, 500) + '...');
         const studyPathData = JSON.parse(responseContent);
-        console.log('📊 Parsed Study Path Data:', JSON.stringify(studyPathData, null, 2));
+        console.log('📊 [STUDY-PATHS] Parsed Study Path Data:', {
+            modulesCount: studyPathData.modules?.length || 0,
+            modules: studyPathData.modules?.map((m: any) => ({ title: m.title, topicsCount: m.topicsCount })) || []
+        });
 
         if (!studyPathData.modules || !Array.isArray(studyPathData.modules)) {
             db.close();
