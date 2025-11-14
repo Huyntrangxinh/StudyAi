@@ -33,14 +33,16 @@ const upload = multer({
 
 // POST /api/materials/upload - Upload file and create material
 router.post('/upload', (req, res, next) => {
+    console.log('📤 [MATERIALS] Upload request received');
     upload.single('file')(req, res, (err: any) => {
         if (err) {
             if (err.code === 'LIMIT_FILE_SIZE') {
+                console.error('❌ [MATERIALS] File too large:', err.code);
                 return res.status(400).json({
                     error: 'File quá lớn. Kích thước tối đa là 100MB.'
                 });
             }
-            console.error('Multer upload error:', err);
+            console.error('❌ [MATERIALS] Multer upload error:', err);
             return res.status(500).json({
                 error: 'Lỗi khi upload file',
                 details: err.message
@@ -64,13 +66,16 @@ router.post('/upload', (req, res, next) => {
     const now = new Date().toISOString();
     const db = new sqlite3.Database(dbPath);
 
-    console.log('Upload details:', {
+    console.log('📤 [MATERIALS] Upload details:', {
         name,
         type,
         size,
         filePath,
         studySetId,
-        fileSize: req.file ? req.file.size : 'no file'
+        fileSize: req.file ? req.file.size : 'no file',
+        generateNotes: generateNotes === 'true',
+        noteType: noteType || 'summarized',
+        timestamp: now
     });
 
     const sizeInt = parseInt(size);
@@ -132,6 +137,13 @@ router.post('/upload', (req, res, next) => {
                     }
 
                     const insertedId = (this as any)?.lastID;
+                    console.log('✅ [MATERIALS] Material uploaded successfully:', {
+                        id: insertedId,
+                        name,
+                        filePath,
+                        studySetId,
+                        fileHash: fileHash ? `${fileHash.substring(0, 10)}...` : 'null'
+                    });
                     res.json({
                         id: insertedId,
                         name,
@@ -245,11 +257,14 @@ initDb();
 
 // POST /api/materials/upload-multiple - upload up to 20 files
 router.post('/upload-multiple', upload.array('files', 20), (req, res) => {
+    console.log('📤 [MATERIALS] Upload multiple request received');
     const { studySetId } = req.body;
     const files = (req.files as Express.Multer.File[]) || [];
     if (!studySetId || !files.length) {
+        console.error('❌ [MATERIALS] Missing studySetId or files');
         return res.status(400).json({ error: 'studySetId and files are required' });
     }
+    console.log('📤 [MATERIALS] Uploading', files.length, 'files to studySetId:', studySetId);
 
     const now = new Date().toISOString();
     const db = new sqlite3.Database(dbPath);
@@ -258,6 +273,12 @@ router.post('/upload-multiple', upload.array('files', 20), (req, res) => {
 
     const maybeFinish = () => {
         if (completed === files.length) {
+            console.log('✅ [MATERIALS] All files processed:', {
+                total: files.length,
+                successful: results.filter(r => r.id).length,
+                duplicates: results.filter(r => r.duplicate).length,
+                errors: results.filter(r => r.error).length
+            });
             db.close();
             return res.json({ uploaded: results });
         }

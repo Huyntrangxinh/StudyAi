@@ -895,11 +895,13 @@ router.post('/slideshow', async (req, res) => {
                     try {
                         const script = typeof content === 'string' ? content : '';
                         const { videoTitle, style, length, language } = req.body;
+                        // Nếu không có videoTitle, lấy từ prompt hoặc content
+                        const finalVideoTitle = videoTitle?.trim() || (prompt || content || '').trim().substring(0, 200);
                         // Check duplicate by URL or by (title/prompt) recently created
                         const dup = db.prepare('SELECT id FROM videos WHERE user_id = ? AND video_url = ?').get(userId, finalVideoUrl) as any;
                         const recentDup = db.prepare(
                             "SELECT id FROM videos WHERE user_id = ? AND provider = 'slideshow' AND (video_title = ? OR prompt = ?) AND datetime(created_at) > datetime('now','-120 seconds') ORDER BY id DESC LIMIT 1"
-                        ).get(userId, videoTitle || null, (prompt || content || '')) as any;
+                        ).get(userId, finalVideoTitle || null, (prompt || content || '')) as any;
 
                         if (!dup && !recentDup) {
                             // Transcript = content (longText) trong branch A
@@ -916,7 +918,7 @@ router.post('/slideshow', async (req, res) => {
                                 transcript,
                                 finalVideoUrl,
                                 Math.round(durationSec),
-                                videoTitle || null,
+                                finalVideoTitle || null,
                                 style || null,
                                 length || null,
                                 language || 'vi'
@@ -1045,10 +1047,12 @@ router.post('/slideshow', async (req, res) => {
                 try {
                     const script = scenes.map(s => s.narration).join(' ');
                     const { videoTitle, style, length, language } = req.body;
+                    // Nếu không có videoTitle, lấy từ prompt
+                    const finalVideoTitle = videoTitle?.trim() || (prompt || '').trim().substring(0, 200);
                     const dup = db.prepare('SELECT id FROM videos WHERE user_id = ? AND video_url = ?').get(userId, finalVideoUrl) as any;
                     const recentDup = db.prepare(
                         "SELECT id FROM videos WHERE user_id = ? AND provider = 'slideshow' AND (video_title = ? OR prompt = ?) AND datetime(created_at) > datetime('now','-120 seconds') ORDER BY id DESC LIMIT 1"
-                    ).get(userId, videoTitle || null, prompt) as any;
+                    ).get(userId, finalVideoTitle || null, prompt) as any;
 
                     if (!dup && !recentDup) {
                         // Transcript = script (narration từ scenes) trong branch B
@@ -1065,7 +1069,7 @@ router.post('/slideshow', async (req, res) => {
                             transcript,
                             finalVideoUrl,
                             Math.round(durationSec),
-                            videoTitle || null,
+                            finalVideoTitle || null,
                             style || null,
                             length || null,
                             language || 'vi'

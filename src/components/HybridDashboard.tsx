@@ -5165,10 +5165,10 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 </div>
                                 <div>
                                     <h1 className="text-3xl font-bold text-gray-900">
-                                        Chào buổi chiều, {user?.name || 'Người dùng'}!
+                                    Đã đến giờ học rồi ,{user?.name || 'Người dùng'}📚 !
                                     </h1>
                                     <p className="text-lg text-gray-600 mt-1">
-                                        Bạn đang làm việc với bộ học nào hôm nay?
+                                    Hôm nay mình học tiếp gì đây? 🚀
                                     </p>
                                 </div>
                             </div>

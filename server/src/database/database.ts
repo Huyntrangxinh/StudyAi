@@ -63,7 +63,7 @@ class DatabaseService {
 
     private runMigrations() {
         try {
-            // Check if transcript column exists in videos table
+            // Check if columns exist in videos table
             const columns = this.db.prepare("PRAGMA table_info(videos)").all() as any[];
             const columnNames = columns.map(c => c.name);
 
@@ -75,6 +75,26 @@ class DatabaseService {
             if (!columnNames.includes('highlights')) {
                 console.log('Adding highlights column to videos table...');
                 this.db.exec('ALTER TABLE videos ADD COLUMN highlights TEXT');
+            }
+
+            if (!columnNames.includes('video_title')) {
+                console.log('Adding video_title column to videos table...');
+                this.db.exec('ALTER TABLE videos ADD COLUMN video_title TEXT');
+            }
+
+            if (!columnNames.includes('style')) {
+                console.log('Adding style column to videos table...');
+                this.db.exec('ALTER TABLE videos ADD COLUMN style TEXT');
+            }
+
+            if (!columnNames.includes('length')) {
+                console.log('Adding length column to videos table...');
+                this.db.exec('ALTER TABLE videos ADD COLUMN length TEXT');
+            }
+
+            if (!columnNames.includes('language')) {
+                console.log('Adding language column to videos table...');
+                this.db.exec('ALTER TABLE videos ADD COLUMN language TEXT');
             }
         } catch (error: any) {
             console.error('Migration error:', error.message);
@@ -258,6 +278,43 @@ class DatabaseService {
     deleteSummary(fileId: string): boolean {
         const result = this.db.prepare('DELETE FROM summaries WHERE file_id = ?').run(fileId);
         return result.changes > 0;
+    }
+
+    // Email verification code methods
+    saveVerificationCode(email: string, code: string, expiresAt: Date): void {
+        // Delete old codes for this email
+        this.db.prepare('DELETE FROM email_verification_codes WHERE email = ?').run(email);
+
+        // Insert new code
+        this.db.prepare(`
+            INSERT INTO email_verification_codes (email, code, expires_at, used)
+            VALUES (?, ?, ?, 0)
+        `).run(email, code, expiresAt.toISOString());
+    }
+
+    verifyCode(email: string, code: string): boolean {
+        const now = new Date().toISOString();
+
+        // Find valid, unused code
+        const result = this.db.prepare(`
+            SELECT id FROM email_verification_codes
+            WHERE email = ? AND code = ? AND expires_at > ? AND used = 0
+            LIMIT 1
+        `).get(email, code, now) as { id: number } | undefined;
+
+        if (result) {
+            // Mark code as used
+            this.db.prepare('UPDATE email_verification_codes SET used = 1 WHERE id = ?').run(result.id);
+            return true;
+        }
+
+        return false;
+    }
+
+    // Clean up expired codes (can be called periodically)
+    cleanupExpiredCodes(): void {
+        const now = new Date().toISOString();
+        this.db.prepare('DELETE FROM email_verification_codes WHERE expires_at < ?').run(now);
     }
 
     // Utility methods

@@ -531,9 +531,9 @@ router.post('/', async (req, res) => {
 
             const allTexts: string[] = [];
             for (const materialIdRaw of materialIds) {
+                // Convert materialId to number
+                const materialId = typeof materialIdRaw === 'string' ? parseInt(materialIdRaw, 10) : materialIdRaw;
                 try {
-                    // Convert materialId to number
-                    const materialId = typeof materialIdRaw === 'string' ? parseInt(materialIdRaw, 10) : materialIdRaw;
                     if (isNaN(materialId)) {
                         console.warn(`Invalid material ID: ${materialIdRaw}`);
                         continue;
@@ -783,7 +783,7 @@ router.get('/', async (req, res) => {
 
         // Parse JSON content
         const gamesWithContent = games.map((game: any) => {
-            let content = {};
+            let content: any = {};
             try {
                 content = JSON.parse(game.content || '{}');
 
@@ -826,7 +826,7 @@ router.get('/:id', async (req, res) => {
         }
 
         // Parse content JSON
-        let content = {};
+        let content: any = {};
         try {
             content = JSON.parse(game.content || '{}');
 

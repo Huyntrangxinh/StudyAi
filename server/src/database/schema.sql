@@ -310,3 +310,16 @@ CREATE INDEX IF NOT EXISTS idx_study_paths_study_set ON study_paths(study_set_id
 CREATE INDEX IF NOT EXISTS idx_study_path_modules_path ON study_path_modules(study_path_id);
 CREATE INDEX IF NOT EXISTS idx_study_path_module_materials_module ON study_path_module_materials(module_id);
 CREATE INDEX IF NOT EXISTS idx_study_path_module_materials_material ON study_path_module_materials(material_id);
+
+-- Email verification codes table
+CREATE TABLE IF NOT EXISTS email_verification_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    code TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    used INTEGER DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_code ON email_verification_codes(email, code);
+CREATE INDEX IF NOT EXISTS idx_email_code_expires ON email_verification_codes(email, expires_at);

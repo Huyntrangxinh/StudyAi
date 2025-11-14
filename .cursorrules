@@ -145,6 +145,31 @@ const Component = () => {
 };
 ```
 
+## Environment Variables & Configuration
+
+### Environment Files Management
+- **NEVER modify or create `.env` file directly**
+- **ALWAYS add new environment variables to `.env.example` file only**
+- All configuration values must be added manually by the user to their `.env` file
+- When adding new environment variables:
+  1. Add the variable to `.env.example` with a placeholder value (e.g., `YOUR_API_KEY_HERE`)
+  2. Add a comment explaining what the variable is for
+  3. Update code to read from `process.env.VARIABLE_NAME` with a fallback if needed
+  4. **DO NOT** create, modify, or add values to `.env` file
+- Example format in `.env.example`:
+  ```
+  # API Configuration
+  REACT_APP_API_KEY=your-api-key-here
+  REACT_APP_GOOGLE_CLIENT_ID=your-google-client-id-here.apps.googleusercontent.com
+  ```
+
+### Code Implementation
+- Always use `process.env.VARIABLE_NAME` to read environment variables
+- Provide fallback values in code if necessary (e.g., `process.env.VARIABLE_NAME || 'default-value'`)
+- Use appropriate prefixes:
+  - Frontend: `REACT_APP_` prefix for React environment variables
+  - Backend: No prefix needed for server-side variables
+
 ## Code Quality Checklist
 
 Before committing code, ensure:
@@ -158,4 +183,5 @@ Before committing code, ensure:
 - [ ] Code is readable without excessive comments
 - [ ] Functions are small and focused
 - [ ] No unused imports or variables
+- [ ] New environment variables added to `.env.example` only (never `.env`)
 

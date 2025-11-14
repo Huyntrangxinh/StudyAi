@@ -59,20 +59,29 @@ const Login: React.FC = () => {
 
     // Initialize Google Sign-In
     useEffect(() => {
+        const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '32402427703-636ai8dcanhb6ltnf4n2vktcbvrcflsi.apps.googleusercontent.com';
+
         const initializeGoogle = () => {
-            if (window.google?.accounts?.id && googleButtonRef.current) {
-                // Render Google Sign-In button in the hidden container
-                window.google.accounts.id.renderButton(googleButtonRef.current, {
-                    type: 'standard',
-                    theme: 'outline',
-                    size: 'large',
-                    text: 'signin_with',
-                    shape: 'pill',
-                    locale: 'vi',
+            if (window.google?.accounts?.id) {
+                // Initialize Google Sign-In API with client_id
+                window.google.accounts.id.initialize({
+                    client_id: GOOGLE_CLIENT_ID,
                     callback: (response: any) => {
                         handleGoogleSuccess({ credential: response.credential });
                     },
                 });
+
+                // Render Google Sign-In button in the hidden container
+                if (googleButtonRef.current) {
+                    window.google.accounts.id.renderButton(googleButtonRef.current, {
+                        type: 'standard',
+                        theme: 'outline',
+                        size: 'large',
+                        text: 'signin_with',
+                        shape: 'pill',
+                        locale: 'vi',
+                    });
+                }
             }
         };
 

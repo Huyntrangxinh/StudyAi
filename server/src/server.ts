@@ -3,10 +3,11 @@ import multer from "multer";
 import path from "path";
 import cors from "cors";
 import helmet from "helmet";
-import { randomUUID } from "crypto";
+import { randomUUID, randomInt } from "crypto";
 import fs from "fs/promises";
 import dotenv from "dotenv";
 import { OAuth2Client } from "google-auth-library";
+import nodemailer from "nodemailer";
 
 // Load environment variables
 dotenv.config();
@@ -39,6 +40,26 @@ const PORT = process.env.PORT || 3001;
 // Google OAuth Client
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '32402427703-636ai8dcanhb6ltnf4n2vktcbvrcflsi.apps.googleusercontent.com';
 const client = new OAuth2Client(GOOGLE_CLIENT_ID);
+
+// Email transporter configuration
+const emailTransporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: false, // true for 465, false for other ports
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+    },
+});
+
+// Log SMTP configuration (without password)
+console.log('SMTP Configuration:', {
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    user: process.env.SMTP_USER,
+    hasPassword: !!process.env.SMTP_PASS,
+    passwordLength: process.env.SMTP_PASS?.length || 0
+});
 
 // Middleware
 app.use(helmet({
@@ -322,6 +343,307 @@ app.post('/api/auth/google', async (req, res) => {
     } catch (error: any) {
         console.error('Google login error:', error);
         res.status(500).json({ error: 'Google login failed', details: error.message });
+    }
+});
+
+// Send verification code endpoint
+app.post('/api/auth/send-verification-code', async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ error: 'Invalid email format' });
+        }
+
+        // Check if email already exists
+        const existingUser = db.getUserByEmail(email);
+        if (existingUser) {
+            return res.status(400).json({ error: 'Email already registered' });
+        }
+
+        // Generate 6-digit code
+        const code = randomInt(100000, 999999).toString();
+
+        // Save code to database (expires in 10 minutes)
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        db.saveVerificationCode(email, code, expiresAt);
+
+        // Send email
+        try {
+            // Verify transporter configuration
+            if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+                console.error('SMTP configuration missing:', {
+                    hasUser: !!process.env.SMTP_USER,
+                    hasPass: !!process.env.SMTP_PASS
+                });
+                return res.status(500).json({
+                    error: 'Cấu hình SMTP chưa đầy đủ. Vui lòng kiểm tra file .env'
+                });
+            }
+
+            const mailOptions = {
+                from: process.env.SMTP_USER,
+                to: email,
+                subject: 'Mã xác thực đăng ký StudyFetch',
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <h2 style="color: #423070;">Mã xác thực của bạn</h2>
+                        <p>Xin chào,</p>
+                        <p>Cảm ơn bạn đã đăng ký tài khoản StudyFetch. Mã xác thực của bạn là:</p>
+                        <div style="background-color: #f3f4f6; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px;">
+                            <h1 style="color: #423070; font-size: 32px; margin: 0; letter-spacing: 5px;">${code}</h1>
+                        </div>
+                        <p>Mã này có hiệu lực trong <strong>10 phút</strong>.</p>
+                        <p>Nếu bạn không yêu cầu mã này, vui lòng bỏ qua email này.</p>
+                        <p style="color: #6b7280; font-size: 12px; margin-top: 30px;">Trân trọng,<br>Đội ngũ StudyFetch</p>
+                    </div>
+                `,
+            };
+
+            const info = await emailTransporter.sendMail(mailOptions);
+            console.log('Email sent successfully:', info.messageId);
+
+            res.json({
+                success: true,
+                message: 'Mã xác thực đã được gửi đến email của bạn'
+            });
+        } catch (emailError: any) {
+            console.error('Email send error details:', {
+                message: emailError.message,
+                code: emailError.code,
+                command: emailError.command,
+                response: emailError.response,
+                responseCode: emailError.responseCode
+            });
+
+            let errorMessage = 'Không thể gửi email. ';
+            if (emailError.code === 'EAUTH') {
+                errorMessage += 'Lỗi xác thực: Kiểm tra lại App Password.';
+            } else if (emailError.code === 'ECONNECTION') {
+                errorMessage += 'Không thể kết nối đến SMTP server.';
+            } else if (emailError.response) {
+                errorMessage += `Lỗi: ${emailError.response}`;
+            } else {
+                errorMessage += `Chi tiết: ${emailError.message}`;
+            }
+
+            res.status(500).json({ error: errorMessage });
+        }
+    } catch (error: any) {
+        console.error('Send verification code error:', error);
+        res.status(500).json({ error: 'Không thể gửi mã xác thực' });
+    }
+});
+
+// Send reset password code endpoint
+app.post('/api/auth/send-reset-code', async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ error: 'Email là bắt buộc' });
+        }
+
+        // Validate email format
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            return res.status(400).json({ error: 'Email không hợp lệ' });
+        }
+
+        // Check if email exists
+        const existingUser = db.getUserByEmail(email);
+        if (!existingUser) {
+            return res.status(404).json({ error: 'Email không tồn tại trong hệ thống' });
+        }
+
+        // Generate 6-digit code
+        const code = randomInt(100000, 999999).toString();
+
+        // Save code to database (expires in 10 minutes)
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        db.saveVerificationCode(email, code, expiresAt);
+
+        // Send email
+        try {
+            // Verify transporter configuration
+            if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+                console.error('SMTP configuration missing:', {
+                    hasUser: !!process.env.SMTP_USER,
+                    hasPass: !!process.env.SMTP_PASS
+                });
+                return res.status(500).json({
+                    error: 'Cấu hình SMTP chưa đầy đủ. Vui lòng kiểm tra file .env'
+                });
+            }
+
+            const mailOptions = {
+                from: process.env.SMTP_USER,
+                to: email,
+                subject: 'Mã đặt lại mật khẩu StudyFetch',
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <h2 style="color: #423070;">Đặt lại mật khẩu</h2>
+                        <p>Xin chào,</p>
+                        <p>Bạn đã yêu cầu đặt lại mật khẩu cho tài khoản StudyFetch. Mã đặt lại mật khẩu của bạn là:</p>
+                        <div style="background-color: #f3f4f6; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px;">
+                            <h1 style="color: #423070; font-size: 32px; margin: 0; letter-spacing: 5px;">${code}</h1>
+                        </div>
+                        <p>Mã này có hiệu lực trong <strong>10 phút</strong>.</p>
+                        <p>Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này và đảm bảo tài khoản của bạn được bảo mật.</p>
+                        <p style="color: #6b7280; font-size: 12px; margin-top: 30px;">Trân trọng,<br>Đội ngũ StudyFetch</p>
+                    </div>
+                `,
+            };
+
+            const info = await emailTransporter.sendMail(mailOptions);
+            console.log('Reset password email sent successfully:', info.messageId);
+
+            res.json({
+                success: true,
+                message: 'Mã đặt lại mật khẩu đã được gửi đến email của bạn'
+            });
+        } catch (emailError: any) {
+            console.error('Email send error details:', {
+                message: emailError.message,
+                code: emailError.code,
+                command: emailError.command,
+                response: emailError.response,
+                responseCode: emailError.responseCode
+            });
+
+            let errorMessage = 'Không thể gửi email. ';
+            if (emailError.code === 'EAUTH') {
+                errorMessage += 'Lỗi xác thực: Kiểm tra lại App Password.';
+            } else if (emailError.code === 'ECONNECTION') {
+                errorMessage += 'Không thể kết nối đến SMTP server.';
+            } else if (emailError.response) {
+                errorMessage += `Lỗi: ${emailError.response}`;
+            } else {
+                errorMessage += `Chi tiết: ${emailError.message}`;
+            }
+
+            res.status(500).json({ error: errorMessage });
+        }
+    } catch (error: any) {
+        console.error('Send reset code error:', error);
+        res.status(500).json({ error: 'Không thể gửi mã đặt lại mật khẩu' });
+    }
+});
+
+// Verify reset password code endpoint
+app.post('/api/auth/verify-reset-code', async (req, res) => {
+    try {
+        const { email, code } = req.body;
+
+        if (!email || !code) {
+            return res.status(400).json({ error: 'Email và mã code là bắt buộc' });
+        }
+
+        // Verify code
+        const isValid = db.verifyCode(email, code);
+
+        if (!isValid) {
+            return res.status(400).json({ error: 'Mã code không đúng hoặc đã hết hạn' });
+        }
+
+        res.json({
+            success: true,
+            message: 'Mã code hợp lệ'
+        });
+    } catch (error: any) {
+        console.error('Verify reset code error:', error);
+        res.status(500).json({ error: 'Xác thực mã code thất bại' });
+    }
+});
+
+// Reset password endpoint
+app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email và mật khẩu là bắt buộc' });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'Mật khẩu phải có ít nhất 6 ký tự' });
+        }
+
+        // Check if user exists
+        const user = db.getUserByEmail(email);
+        if (!user) {
+            return res.status(404).json({ error: 'Email không tồn tại trong hệ thống' });
+        }
+
+        // Update password
+        db.updateUser(user.id, { password: password });
+
+        res.json({
+            success: true,
+            message: 'Đặt lại mật khẩu thành công'
+        });
+    } catch (error: any) {
+        console.error('Reset password error:', error);
+        res.status(500).json({ error: 'Không thể đặt lại mật khẩu' });
+    }
+});
+
+// Verify code and create account endpoint
+app.post('/api/auth/verify-code', async (req, res) => {
+    try {
+        const { email, code, name, password } = req.body;
+
+        if (!email || !code) {
+            return res.status(400).json({ error: 'Email và mã code là bắt buộc' });
+        }
+
+        if (!name || !password) {
+            return res.status(400).json({ error: 'Tên và mật khẩu là bắt buộc' });
+        }
+
+        // Verify code
+        const isValid = db.verifyCode(email, code);
+
+        if (!isValid) {
+            return res.status(400).json({ error: 'Mã code không đúng hoặc đã hết hạn' });
+        }
+
+        // Check if user already exists
+        const existingUser = db.getUserByEmail(email);
+        if (existingUser) {
+            return res.status(400).json({ error: 'Email đã được đăng ký' });
+        }
+
+        // Create new user
+        const newUser: Omit<User, 'id' | 'created_at' | 'updated_at'> = {
+            email: email,
+            password: password,
+            name: name,
+            role: 'student',
+        };
+
+        const user = db.createUser(newUser);
+
+        res.json({
+            success: true,
+            message: 'Đăng ký thành công',
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                role: user.role,
+                created_at: user.created_at
+            }
+        });
+    } catch (error: any) {
+        console.error('Verify code error:', error);
+        res.status(500).json({ error: 'Xác thực thất bại' });
     }
 });
 

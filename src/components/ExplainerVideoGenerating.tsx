@@ -86,7 +86,8 @@ const ExplainerVideoGenerating: React.FC = () => {
                     });
                     if (!audioResp.ok) {
                         const e = await audioResp.json().catch(() => ({}));
-                        throw new Error(e.error || 'Tạo audio thất bại');
+                        console.error('Audio generation error details:', e);
+                        throw new Error(e.error || e.details || 'Tạo audio thất bại');
                     }
                     const audioData = await audioResp.json();
                     audioUrl = audioData.audioUrl;
