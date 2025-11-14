@@ -54,7 +54,7 @@ router.post('/', async (req, res) => {
 
                     // Insert questions
                     const questionStmt = db.prepare(`
-                        INSERT INTO test_questions (test_id, question_type, question, options, correct_answer, order_index)
+                        INSERT INTO test_questions (test_id, question_type, question, options, correct_answer, position)
                         VALUES (?, ?, ?, ?, ?, ?)
                     `);
 
@@ -120,7 +120,7 @@ router.post('/', async (req, res) => {
                                     return reject(err);
                                 }
 
-                                db.all('SELECT * FROM test_questions WHERE test_id = ? ORDER BY order_index', [testId], (err, testQuestions: any[]) => {
+                                db.all('SELECT * FROM test_questions WHERE test_id = ? ORDER BY position', [testId], (err, testQuestions: any[]) => {
                                     testStmt.finalize();
                                     db.close();
                                     if (err) return reject(err);
@@ -154,7 +154,7 @@ router.get('/study-set/:studySetId', async (req, res) => {
 
     return new Promise<void>((resolve, reject) => {
         db.all(
-            'SELECT id, study_set_id, user_id, COALESCE(name, title) as name, description, status, time_limit, material_ids, created_at, updated_at FROM tests WHERE study_set_id = ? ORDER BY created_at DESC',
+            'SELECT id, study_set_id, user_id, name, description, status, time_limit, material_ids, created_at, updated_at FROM tests WHERE study_set_id = ? ORDER BY created_at DESC',
             [studySetId],
             (err: Error | null, tests: any[]) => {
                 db.close();
@@ -190,7 +190,7 @@ router.get('/:testId', async (req, res) => {
                 return res.status(404).json({ error: 'Test not found' });
             }
 
-            db.all('SELECT * FROM test_questions WHERE test_id = ? ORDER BY order_index', [testId], (err: Error | null, questions: any[]) => {
+            db.all('SELECT * FROM test_questions WHERE test_id = ? ORDER BY position', [testId], (err: Error | null, questions: any[]) => {
                 db.close();
                 if (err) return reject(err);
 
@@ -336,28 +336,18 @@ router.patch('/:testId', async (req, res) => {
     const db = await getDb();
     const finalize = () => db.close();
 
-    // Try updating name column; if it fails (column missing), fallback to title
-    const runUpdate = (sql: string, params: any[]) => new Promise<void>((resolve, reject) => {
-        db.run(sql, params, function (err: Error | null) {
-            if (err) return reject(err);
-            resolve();
-        });
-    });
-
     try {
         if (name !== undefined || description !== undefined) {
-            try {
-                await runUpdate(
+            await new Promise<void>((resolve, reject) => {
+                db.run(
                     'UPDATE tests SET name = COALESCE(?, name), description = COALESCE(?, description), updated_at = datetime(\'now\') WHERE id = ?',
-                    [name ?? null, description ?? null, testId]
+                    [name ?? null, description ?? null, testId],
+                    function (err: Error | null) {
+                        if (err) return reject(err);
+                        resolve();
+                    }
                 );
-            } catch (e) {
-                // Fallback for older schema using title
-                await runUpdate(
-                    'UPDATE tests SET title = COALESCE(?, title), description = COALESCE(?, description), updated_at = datetime(\'now\') WHERE id = ?',
-                    [name ?? null, description ?? null, testId]
-                );
-            }
+            });
         }
 
         db.get('SELECT * FROM tests WHERE id = ?', [testId], (err: Error | null, row: any) => {

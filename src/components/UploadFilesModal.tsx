@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Upload, Trash2, Plus, FileText, BookOpen, Layers, Cloud, GraduationCap } from 'lucide-react';
 import UploadFinishedModal from './UploadFinishedModal';
 
@@ -6,16 +6,18 @@ interface FileInfo {
     name: string;
     size: number;
     type: string;
+    file?: File;
 }
 
 interface UploadFilesModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onUpload: (files: FileInfo[], generateNotes: boolean, noteType?: 'summarized' | 'indepth' | 'comprehensive') => void;
+    onUpload: (files: FileInfo[], generateNotes: boolean, noteType?: 'summarized' | 'indepth' | 'comprehensive') => Promise<void>;
     selectedFiles: FileInfo[];
     studySetId?: string;
     studySetName?: string;
     onViewMaterial?: () => void;
+    onViewStudyPlan?: () => void;
 }
 
 const UploadFilesModal: React.FC<UploadFilesModalProps> = ({
@@ -25,7 +27,8 @@ const UploadFilesModal: React.FC<UploadFilesModalProps> = ({
     selectedFiles,
     studySetId,
     studySetName,
-    onViewMaterial
+    onViewMaterial,
+    onViewStudyPlan
 }) => {
     const [generateNotes, setGenerateNotes] = useState(false);
     const [files, setFiles] = useState<FileInfo[]>([]);
@@ -38,8 +41,30 @@ const UploadFilesModal: React.FC<UploadFilesModalProps> = ({
     const [currentStep, setCurrentStep] = useState<'upload' | 'processing' | 'study_plan'>('upload');
     const [showUploadFinished, setShowUploadFinished] = useState(false);
 
+    const uploadIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const processingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const processingCompletedRef = useRef(false);
+
+    const clearIntervals = () => {
+        if (uploadIntervalRef.current) {
+            clearInterval(uploadIntervalRef.current);
+            uploadIntervalRef.current = null;
+        }
+        if (processingIntervalRef.current) {
+            clearInterval(processingIntervalRef.current);
+            processingIntervalRef.current = null;
+        }
+        processingCompletedRef.current = false;
+    };
+
+    useEffect(() => {
+        return () => {
+            clearIntervals();
+        };
+    }, []);
+
     // Update files when selectedFiles prop changes
-    React.useEffect(() => {
+    useEffect(() => {
         console.log('Modal opened, selectedFiles:', selectedFiles);
         if (isOpen && selectedFiles.length > 0) {
             setFiles(selectedFiles);
@@ -67,7 +92,8 @@ const UploadFilesModal: React.FC<UploadFilesModalProps> = ({
             const newFileInfos: FileInfo[] = newFiles.map(file => ({
                 name: file.name,
                 size: file.size,
-                type: file.type
+                type: file.type,
+                file
             }));
             setFiles([...files, ...newFileInfos]);
         };
@@ -75,39 +101,83 @@ const UploadFilesModal: React.FC<UploadFilesModalProps> = ({
     };
 
     const handleUpload = () => {
+        if (!files.length) {
+            return;
+        }
+
         setIsUploading(true);
         setUploadProgress(0);
         setProcessingProgress(0);
         setCurrentStep('upload');
+        setShowUploadFinished(false);
+        processingCompletedRef.current = false;
 
-        // Simulate upload progress
-        const uploadInterval = setInterval(() => {
-            setUploadProgress(prev => {
-                if (prev >= 100) {
-                    clearInterval(uploadInterval);
-                    setCurrentStep('processing');
-                    // Start processing progress
-                    const processingInterval = setInterval(() => {
-                        setProcessingProgress(prev => {
-                            if (prev >= 100) {
-                                clearInterval(processingInterval);
-                                setCurrentStep('study_plan');
-                                // Complete upload
-                                setTimeout(() => {
-                                    onUpload(files, generateNotes, noteType);
-                                    setIsUploading(false);
-                                    setShowUploadFinished(true);
-                                }, 1000);
-                                return 100;
-                            }
-                            return prev + 2;
-                        });
-                    }, 100);
-                    return 100;
+        if (uploadIntervalRef.current) {
+            clearInterval(uploadIntervalRef.current);
+        }
+        if (processingIntervalRef.current) {
+            clearInterval(processingIntervalRef.current);
+            processingIntervalRef.current = null;
+        }
+
+        const beginProcessingPhase = async () => {
+            setCurrentStep('processing');
+            setProcessingProgress(20); // Bắt đầu từ 20%
+
+            if (processingIntervalRef.current) {
+                clearInterval(processingIntervalRef.current);
+            }
+
+            // Progress bar tăng dần từ 20% -> 30% -> ... -> 95% trong khi đợi
+            processingIntervalRef.current = setInterval(() => {
+                setProcessingProgress(prev => {
+                    if (processingCompletedRef.current) {
+                        return prev;
+                    }
+                    // Tăng dần: 20% -> 30% -> ... -> 95%
+                    const increment = Math.max(1, Math.floor(Math.random() * 3));
+                    const cappedValue = Math.min(prev + increment, 95);
+                    return cappedValue;
+                });
+            }, 800); // Mỗi 800ms tăng một chút
+
+            try {
+                await onUpload(files, generateNotes, noteType);
+                // Chỉ khi roadmap thực sự xong mới lên 100%
+                processingCompletedRef.current = true;
+                if (processingIntervalRef.current) {
+                    clearInterval(processingIntervalRef.current);
+                    processingIntervalRef.current = null;
                 }
-                return prev + 5;
+                setProcessingProgress(100);
+                setCurrentStep('study_plan');
+                setTimeout(() => {
+                    clearIntervals();
+                    setIsUploading(false);
+                    setShowUploadFinished(true);
+                }, 800);
+            } catch (error) {
+                console.error('Error processing upload:', error);
+                // Nếu có lỗi, tiếp tục đợi thay vì hiển thị lỗi
+                // Progress bar sẽ tiếp tục tăng đến 95% và đợi
+                // Không set processingCompletedRef để progress tiếp tục chạy
+            }
+        };
+
+        uploadIntervalRef.current = setInterval(() => {
+            setUploadProgress(prev => {
+                const next = Math.min(prev + 5, 100);
+                if (next >= 100) {
+                    if (uploadIntervalRef.current) {
+                        clearInterval(uploadIntervalRef.current);
+                        uploadIntervalRef.current = null;
+                    }
+                    setCurrentStep('processing');
+                    beginProcessingPhase();
+                }
+                return next;
             });
-        }, 100);
+        }, 150);
     };
 
     const handleClose = () => {
@@ -119,6 +189,7 @@ const UploadFilesModal: React.FC<UploadFilesModalProps> = ({
         setProcessingProgress(0);
         setCurrentStep('upload');
         setShowUploadFinished(false);
+        clearIntervals();
         onClose();
     };
 
@@ -148,10 +219,14 @@ const UploadFilesModal: React.FC<UploadFilesModalProps> = ({
                         </button>
                     </div>
 
-                    {/* Dog Mascot */}
+                    {/* Loading Animation */}
                     <div className="flex justify-center mb-6">
-                        <div className="w-24 h-24 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center">
-                            <span className="text-4xl">🐶</span>
+                        <div className="w-24 h-24 flex items-center justify-center">
+                            <img
+                                src="/truotvan.gif"
+                                alt="Loading animation"
+                                className="w-full h-full object-contain"
+                            />
                         </div>
                     </div>
 
@@ -442,11 +517,14 @@ const UploadFilesModal: React.FC<UploadFilesModalProps> = ({
                 isOpen={showUploadFinished}
                 onClose={handleClose}
                 onViewStudyPlan={() => {
-                    console.log('View Study Plan clicked');
+                    console.log('View Study Plan clicked - navigating to roadmap');
                     handleClose();
+                    if (onViewStudyPlan) {
+                        onViewStudyPlan();
+                    }
                 }}
                 onViewMaterial={() => {
-                    console.log('View Material clicked');
+                    console.log('View Material clicked - navigating to PDF viewer');
                     handleClose();
                     if (onViewMaterial) {
                         onViewMaterial();

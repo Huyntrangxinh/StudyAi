@@ -51,9 +51,9 @@ export function useViewTestHandler(params: UseViewTestHandlerParams) {
                     const testData = await r.json();
                     setCurrentTestId(test.id);
                     const normalized = (Array.isArray(testData.questions) ? testData.questions : [])
-                        .filter((q: any) => q.question_type !== 'trueFalse' && q.type !== 'trueFalse')
                         .map((q: any) => ({
                             ...q,
+                            type: q.question_type || q.type || 'multipleChoice',
                             correctAnswer: (q.question_type === 'multipleChoice' && typeof q.correctAnswer === 'string' && !isNaN(Number(q.correctAnswer))) ? Number(q.correctAnswer) : q.correctAnswer
                         }));
                     setTestQuestions(normalized);
@@ -149,9 +149,9 @@ export function useViewTestHandler(params: UseViewTestHandlerParams) {
                     const testData = await response.json();
                     setCurrentTestId(test.id);
                     const normalized = (Array.isArray(testData.questions) ? testData.questions : [])
-                        .filter((q: any) => q.question_type !== 'trueFalse' && q.type !== 'trueFalse')
                         .map((q: any) => ({
                             ...q,
+                            type: q.question_type || q.type || 'multipleChoice',
                             correctAnswer: (q.question_type === 'multipleChoice' && typeof q.correctAnswer === 'string' && !isNaN(Number(q.correctAnswer))) ? Number(q.correctAnswer) : q.correctAnswer
                         }));
                     setTestQuestions(normalized);

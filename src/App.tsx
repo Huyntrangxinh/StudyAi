@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider } from './contexts/AuthContext';
 import Login from './components/Login';
 import Register from './components/Register';
@@ -14,60 +15,64 @@ import HybridDashboard from './components/HybridDashboard';
 import PDFViewerFixed from './components/PDFViewerFixed';
 import ProtectedRoute from './components/ProtectedRoute';
 
+const GOOGLE_CLIENT_ID = '32402427703-636ai8dcanhb6ltnf4n2vktcbvrcflsi.apps.googleusercontent.com';
+
 function App() {
     return (
-        <AuthProvider>
-            <Router>
-                <div className="min-h-screen bg-gray-50">
-                    <Toaster position="top-right" />
-                    <Routes>
-                        <Route path="/login" element={<Login />} />
-                        <Route path="/register" element={<Register />} />
-                        <Route
-                            path="/dashboard/*"
-                            element={
-                                <ProtectedRoute>
-                                    <HybridDashboard />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/admin"
-                            element={
-                                <ProtectedRoute requireAdmin>
-                                    <AdminPanel />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/users"
-                            element={
-                                <ProtectedRoute requireAdmin>
-                                    <UserList />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/documents"
-                            element={
-                                <ProtectedRoute>
-                                    <DocumentUpload />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/test-upload"
-                            element={
-                                <ProtectedRoute>
-                                    <TestUpload />
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route path="/" element={<Navigate to="/login" replace />} />
-                    </Routes>
-                </div>
-            </Router>
-        </AuthProvider>
+        <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+            <AuthProvider>
+                <Router>
+                    <div className="min-h-screen bg-gray-50">
+                        <Toaster position="top-right" />
+                        <Routes>
+                            <Route path="/login" element={<Login />} />
+                            <Route path="/register" element={<Register />} />
+                            <Route
+                                path="/dashboard/*"
+                                element={
+                                    <ProtectedRoute>
+                                        <HybridDashboard />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/admin"
+                                element={
+                                    <ProtectedRoute requireAdmin>
+                                        <AdminPanel />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/users"
+                                element={
+                                    <ProtectedRoute requireAdmin>
+                                        <UserList />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/documents"
+                                element={
+                                    <ProtectedRoute>
+                                        <DocumentUpload />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route
+                                path="/test-upload"
+                                element={
+                                    <ProtectedRoute>
+                                        <TestUpload />
+                                    </ProtectedRoute>
+                                }
+                            />
+                            <Route path="/" element={<Navigate to="/login" replace />} />
+                        </Routes>
+                    </div>
+                </Router>
+            </AuthProvider>
+        </GoogleOAuthProvider>
     );
 }
 

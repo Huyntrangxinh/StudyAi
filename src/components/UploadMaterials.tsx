@@ -23,10 +23,11 @@ interface UploadMaterialsProps {
     studySetName: string;
     onBack: () => void;
     onViewMaterial?: () => void;
+    onViewStudyPlan?: () => void;
     isCollapsed?: boolean;
 }
 
-const UploadMaterials: React.FC<UploadMaterialsProps> = ({ studySetId, studySetName, onBack, onViewMaterial, isCollapsed = false }) => {
+const UploadMaterials: React.FC<UploadMaterialsProps> = ({ studySetId, studySetName, onBack, onViewMaterial, onViewStudyPlan, isCollapsed = false }) => {
     const [dragActive, setDragActive] = useState(false);
     const [showMoreTypes, setShowMoreTypes] = useState(false);
     const [showYouTubeModal, setShowYouTubeModal] = useState(false);
@@ -118,6 +119,25 @@ const UploadMaterials: React.FC<UploadMaterialsProps> = ({ studySetId, studySetN
         // TODO: Implement YouTube import logic
     };
 
+    const waitForStudyPathReady = async (studySetIdToPoll: string, timeoutMs = 60000, intervalMs = 2000) => {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            try {
+                const statusResp = await fetch(`http://localhost:3001/api/study-paths/${studySetIdToPoll}`);
+                if (statusResp.ok) {
+                    const statusData = await statusResp.json();
+                    if (statusData && Array.isArray(statusData.modules) && statusData.modules.length > 0) {
+                        return statusData;
+                    }
+                }
+            } catch (error) {
+                console.warn('⚠️ Error polling study path status:', error);
+            }
+            await new Promise(resolve => setTimeout(resolve, intervalMs));
+        }
+        throw new Error('Timeout chờ AI tạo roadmap');
+    };
+
     const handleFileUpload = async (files: Array<{ name: string, size: number, type: string, file?: File }>, generateNotes: boolean, noteType?: 'summarized' | 'indepth' | 'comprehensive') => {
         console.log('Uploading files:', files, 'Generate notes:', generateNotes, 'Note type:', noteType);
 
@@ -169,16 +189,23 @@ const UploadMaterials: React.FC<UploadMaterialsProps> = ({ studySetId, studySetN
                 if (studyPathResponse.ok) {
                     const studyPath = await studyPathResponse.json();
                     console.log('✅ Study path generated successfully:', studyPath);
+                    // Poll until modules are ready so UI only leaves loading screen when roadmap is viewable
+                    if (studySetId) {
+                        await waitForStudyPathReady(studySetId.toString());
+                        console.log('✅ Roadmap polling confirmed modules available.');
+                    }
                 } else {
                     const error = await studyPathResponse.json();
                     console.error('❌ Error generating study path:', error);
+                    throw new Error(error?.error || 'Failed to generate study path');
                 }
             } catch (error) {
                 console.error('❌ Error generating study path:', error);
-                // Không throw error để không làm gián đoạn quá trình upload
+                throw error;
             }
         } catch (error) {
             console.error('Error uploading materials:', error);
+            throw error;
         }
     };
 
@@ -372,6 +399,7 @@ const UploadMaterials: React.FC<UploadMaterialsProps> = ({ studySetId, studySetN
                 studySetId={studySetId}
                 studySetName={studySetName}
                 onViewMaterial={onViewMaterial}
+                onViewStudyPlan={onViewStudyPlan}
             />
         </div>
     );

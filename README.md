@@ -1,6 +1,6 @@
 # Study Fetch — Monorepo (Frontend + Server)
 
-Ứng dụng học tập tích hợp AI gồm 2 phần: Frontend (React + TypeScript + CRACO) và Backend (Node.js/Express + TypeScript + SQLite). Tài liệu này hướng dẫn cài đặt và chạy dự án trên máy local.
+Ứng dụng học tập tích hợp AI gồm 3 phần: Frontend (React + TypeScript + CRACO), Backend chính (Node.js/Express + TypeScript + SQLite) và AI backend riêng (Flask + Google Generative AI). Tài liệu này hướng dẫn cài đặt và chạy dự án trên máy local.
 
 ## Yêu cầu hệ thống
 - Node.js >= 18
@@ -14,10 +14,13 @@
 ├── package.json           # Frontend (React) cấu hình và scripts
 ├── public/                # Tập tin tĩnh (đã có pdf.worker.min.js cho react-pdf)
 ├── src/                   # Mã nguồn frontend
-├── server/                # Backend (Express + TypeScript)
+├── server/                # Backend chính (Express + TypeScript)
 │   ├── package.json       # Cấu hình và scripts của server
 │   ├── env.example        # Mẫu biến môi trường (.env)
 │   └── src/               # Mã nguồn server
+├── flask_backend/         # AI backend (Flask)
+│   ├── app.py             # Điểm vào Flask
+│   └── requirements.txt   # Dependencies của Flask service
 └── README.md
 ```
 
@@ -45,18 +48,35 @@ Mở `server/.env` và cập nhật tối thiểu các biến sau:
 
 Lưu ý: Không commit khóa API. Tránh dùng `server/config.js` để lưu khóa thật. Ưu tiên dùng `.env`.
 
+4) Cài dependencies cho Flask AI backend:
+```bash
+cd ../flask_backend
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+Đảm bảo biến môi trường `GEMINI_API_KEY` đã được thiết lập trước khi chạy Flask app.
+
 ## Chạy môi trường phát triển
 
-Mở 2 cửa sổ terminal.
+Mở 3 cửa sổ terminal.
 
-- Cửa sổ 1 — Backend:
+- Cửa sổ 1 — Backend Express:
 ```bash
 cd server
 npm run dev
 ```
 Mặc định server chạy ở `http://localhost:3001`.
 
-- Cửa sổ 2 — Frontend:
+- Cửa sổ 2 — AI backend (Flask):
+```bash
+cd flask_backend
+source .venv/bin/activate
+python app.py
+```
+API Flask chạy ở `http://localhost:5050` (health check: `/api/health`, generate: `/api/generate`).
+
+- Cửa sổ 3 — Frontend:
 ```bash
 cd "../"
 npm start
@@ -83,6 +103,7 @@ Thư mục build nằm ở `build/`. Tùy hạ tầng, bạn có thể deploy st
 - PDF worker: `public/pdf.worker.min.js` đã có sẵn cho `react-pdf`.
 - CSDL: Server sử dụng SQLite (thư mục `server/src/database/` và file db mẫu trong `server/database/`).
 - Uploads: Thư mục `server/uploads/` dùng để lưu file tải lên.
+- AI backend: Flask app cần biến môi trường `GEMINI_API_KEY` hợp lệ; sau khi chạy sẽ nhận yêu cầu từ frontend qua `http://localhost:5050/api/generate`.
 
 ## Scripts chính
 
@@ -95,6 +116,10 @@ Backend (`server/package.json`):
 - `npm run dev`: chạy server TypeScript bằng `tsx` (watch)
 - `npm run build`: biên dịch TypeScript + copy schema
 - `npm start`: chạy file đã build trong `dist/`
+
+AI Backend (`flask_backend`):
+- `python app.py`: chạy Flask với reload (debug=true)
+- Có thể dùng `flask run` nếu đã cấu hình biến `FLASK_APP=app.py`
 
 ## Thư mục nguồn chính
 
@@ -113,6 +138,7 @@ Backend (`server/src/`):
 - Cổng bận: đổi `PORT` trong `server/.env` hoặc dừng tiến trình chiếm cổng.
 - Lỗi CORS: kiểm tra `FRONTEND_URL` trong `server/.env` khớp với URL frontend.
 - Thiếu OPENAI_API_KEY: cập nhật `server/.env` bằng khóa hợp lệ.
+- Flask không chạy: kích hoạt virtualenv, đảm bảo đã cài dependencies và biến `GEMINI_API_KEY` được set.
 
 ---
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Beaker, Cog, Laptop, FileText, Share2, MessageCircle, Link2, Download, Play, Loader2, MoreVertical, X, Search, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Sparkles, Beaker, Cog, Laptop, FileText, Play, Loader2, MoreVertical, X, Search, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useVideoGeneration } from '../hooks/useVideoGeneration';
@@ -415,15 +415,15 @@ const ExplainerVideoPage: React.FC<ExplainerVideoPageProps> = ({ studySetId, onB
     };
 
     return (
-        <div className="flex-1 bg-white min-h-screen p-8">
+        <div className="flex-1 bg-white min-h-screen p-6 pt-16 max-w-6xl mx-auto">
             {/* Header with Tabs */}
-            <div className="mb-8">
-                <div className="flex items-center justify-between mb-6">
+            <div className="mb-6">
+                <div className="flex items-center justify-between mb-4">
                     {/* Tabs */}
                     <div className="flex items-center space-x-1 border-b border-gray-200">
                         <button
                             onClick={() => setActiveTab('create')}
-                            className={`px-6 py-3 font-medium transition-colors relative ${activeTab === 'create'
+                            className={`px-4 py-2 text-sm font-medium transition-colors relative ${activeTab === 'create'
                                 ? 'text-blue-600'
                                 : 'text-gray-600 hover:text-gray-900'
                                 }`}
@@ -435,7 +435,7 @@ const ExplainerVideoPage: React.FC<ExplainerVideoPageProps> = ({ studySetId, onB
                         </button>
                         <button
                             onClick={() => setActiveTab('my-videos')}
-                            className={`px-6 py-3 font-medium transition-colors relative ${activeTab === 'my-videos'
+                            className={`px-4 py-2 text-sm font-medium transition-colors relative ${activeTab === 'my-videos'
                                 ? 'text-blue-600'
                                 : 'text-gray-600 hover:text-gray-900'
                                 }`}
@@ -446,24 +446,6 @@ const ExplainerVideoPage: React.FC<ExplainerVideoPageProps> = ({ studySetId, onB
                             )}
                         </button>
                     </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex items-center space-x-3">
-                        <button className="flex items-center space-x-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                            <Share2 className="w-4 h-4" />
-                            <span>Chia sẻ</span>
-                        </button>
-                        <button className="flex items-center space-x-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                            <MessageCircle className="w-4 h-4" />
-                            <span>Phản hồi</span>
-                        </button>
-                        <button className="p-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                            <Link2 className="w-4 h-4" />
-                        </button>
-                        <button className="p-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                            <Download className="w-4 h-4" />
-                        </button>
-                    </div>
                 </div>
             </div>
 
@@ -471,13 +453,13 @@ const ExplainerVideoPage: React.FC<ExplainerVideoPageProps> = ({ studySetId, onB
             {activeTab === 'create' && (
                 <div className="max-w-4xl mx-auto">
                     {/* Title */}
-                    <h1 className="text-4xl font-bold text-gray-900 text-center mb-8">
+                    <h1 className="text-2xl font-bold text-gray-900 text-center mb-6">
                         Tạo video giải thích
                     </h1>
 
                     {/* Input Section */}
-                    <div className="mb-8">
-                        <div className="flex items-center space-x-3">
+                    <div className="mb-6">
+                        <div className="flex items-center space-x-2">
                             <input
                                 type="text"
                                 value={prompt}
@@ -489,7 +471,7 @@ const ExplainerVideoPage: React.FC<ExplainerVideoPageProps> = ({ studySetId, onB
                                     }
                                 }}
                                 placeholder="Bạn muốn học về điều gì?"
-                                className="flex-1 px-6 py-4 text-lg border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                className="flex-1 px-4 py-2.5 text-sm border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                 disabled={isGenerating}
                             />
                             <button
@@ -505,46 +487,46 @@ const ExplainerVideoPage: React.FC<ExplainerVideoPageProps> = ({ studySetId, onB
                                     setShowVideoOptions(true);
                                 }}
                                 disabled={!prompt.trim() || isCreatingVideo}
-                                className="flex items-center space-x-2 px-6 py-4 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex items-center space-x-2 px-4 py-2.5 text-sm bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                <Sparkles className="w-5 h-5" />
+                                <Sparkles className="w-4 h-4" />
                                 <span>Create Video</span>
                             </button>
                         </div>
 
                         {/* Search Toggles */}
-                        <div className="flex items-center space-x-6 mt-4">
-                            <div className="flex items-center space-x-3">
-                                <span className="text-sm text-gray-700">Tìm ảnh từ Pexels</span>
+                        <div className="flex items-center space-x-4 mt-3">
+                            <div className="flex items-center space-x-2">
+                                <span className="text-xs text-gray-700">Tìm ảnh từ Pexels</span>
                                 <button
                                     onClick={() => setUseWebImages(!useWebImages)}
-                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${useWebImages ? 'bg-blue-600' : 'bg-gray-300'}`}
+                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${useWebImages ? 'bg-blue-600' : 'bg-gray-300'}`}
                                 >
-                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useWebImages ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${useWebImages ? 'translate-x-5' : 'translate-x-1'}`} />
                                 </button>
                             </div>
-                            <div className="flex items-center space-x-3">
-                                <span className="text-sm text-gray-700">Tìm kiếm Web</span>
+                            <div className="flex items-center space-x-2">
+                                <span className="text-xs text-gray-700">Tìm kiếm Web</span>
                                 <button
                                     onClick={() => setWebSearchEnabled(!webSearchEnabled)}
-                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${webSearchEnabled ? 'bg-blue-600' : 'bg-gray-300'
+                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${webSearchEnabled ? 'bg-blue-600' : 'bg-gray-300'
                                         }`}
                                 >
                                     <span
-                                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${webSearchEnabled ? 'translate-x-6' : 'translate-x-1'
+                                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${webSearchEnabled ? 'translate-x-5' : 'translate-x-1'
                                             }`}
                                     />
                                 </button>
                             </div>
-                            <div className="flex items-center space-x-3">
-                                <span className="text-sm text-gray-700">Tìm kiếm Hình ảnh</span>
+                            <div className="flex items-center space-x-2">
+                                <span className="text-xs text-gray-700">Tìm kiếm Hình ảnh</span>
                                 <button
                                     onClick={() => setImageSearchEnabled(!imageSearchEnabled)}
-                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${imageSearchEnabled ? 'bg-blue-600' : 'bg-gray-300'
+                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${imageSearchEnabled ? 'bg-blue-600' : 'bg-gray-300'
                                         }`}
                                 >
                                     <span
-                                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${imageSearchEnabled ? 'translate-x-6' : 'translate-x-1'
+                                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${imageSearchEnabled ? 'translate-x-5' : 'translate-x-1'
                                             }`}
                                     />
                                 </button>
@@ -553,23 +535,23 @@ const ExplainerVideoPage: React.FC<ExplainerVideoPageProps> = ({ studySetId, onB
                     </div>
 
                     {/* Topic Selection */}
-                    <div className="mb-8">
-                        <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                    <div className="mb-6">
+                        <h2 className="text-lg font-semibold text-gray-900 mb-3">
                             Chọn chủ đề để bắt đầu
                         </h2>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                             {topics.map((topic) => {
                                 const Icon = topic.icon;
                                 return (
                                     <button
                                         key={topic.id}
                                         onClick={() => setPrompt(`Giải thích về ${topic.label.toLowerCase()}`)}
-                                        className="flex flex-col items-center justify-center p-6 bg-white border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition-all"
+                                        className="flex flex-col items-center justify-center p-4 bg-white border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:shadow-md transition-all"
                                     >
-                                        <div className={`w-12 h-12 rounded-lg ${topic.color} flex items-center justify-center mb-3`}>
-                                            <Icon className="w-6 h-6" />
+                                        <div className={`w-10 h-10 rounded-lg ${topic.color} flex items-center justify-center mb-2`}>
+                                            <Icon className="w-5 h-5" />
                                         </div>
-                                        <span className="text-sm font-medium text-gray-900">{topic.label}</span>
+                                        <span className="text-xs font-medium text-gray-900">{topic.label}</span>
                                     </button>
                                 );
                             })}
@@ -577,8 +559,8 @@ const ExplainerVideoPage: React.FC<ExplainerVideoPageProps> = ({ studySetId, onB
                     </div>
 
                     {/* Material Upload Option */}
-                    <div className="text-center mb-8">
-                        <span className="text-gray-600">hoặc </span>
+                    <div className="text-center mb-6">
+                        <span className="text-sm text-gray-600">hoặc </span>
                         <button
                             onClick={() => {
                                 if (studySetId) {
@@ -588,7 +570,7 @@ const ExplainerVideoPage: React.FC<ExplainerVideoPageProps> = ({ studySetId, onB
                                     toast.error('Vui lòng chọn study set trước');
                                 }
                             }}
-                            className="text-blue-600 hover:text-blue-700 font-medium underline"
+                            className="text-sm text-blue-600 hover:text-blue-700 font-medium underline"
                         >
                             tạo từ một trong các tài liệu của bạn
                         </button>
@@ -596,21 +578,21 @@ const ExplainerVideoPage: React.FC<ExplainerVideoPageProps> = ({ studySetId, onB
 
                     {/* Current Video Generation Status */}
                     {currentVideo && (currentVideo.status === 'processing' || currentVideo.status === 'pending') && (
-                        <div className="mt-8 bg-blue-50 border border-blue-200 rounded-xl p-6">
-                            <div className="flex items-center space-x-4">
-                                <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+                            <div className="flex items-center space-x-3">
+                                <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
                                 <div className="flex-1">
-                                    <h3 className="font-semibold text-gray-900 mb-1">Video đang được tạo</h3>
-                                    <p className="text-sm text-gray-600">
+                                    <h3 className="text-sm font-semibold text-gray-900 mb-1">Video đang được tạo</h3>
+                                    <p className="text-xs text-gray-600">
                                         {currentVideo.prompt}
                                     </p>
-                                    <p className="text-xs text-gray-500 mt-2">
+                                    <p className="text-xs text-gray-500 mt-1.5">
                                         Vui lòng đợi trong giây lát. Video sẽ xuất hiện trong tab "Video của tôi" khi hoàn tất.
                                     </p>
                                 </div>
                                 <button
                                     onClick={() => setActiveTab('my-videos')}
-                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                                    className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                                 >
                                     Xem video của tôi
                                 </button>

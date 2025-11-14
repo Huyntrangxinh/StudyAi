@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { ArrowLeft, Plus, Search, RotateCcw, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Share, Link, Upload, Bell, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Search, RotateCcw, ChevronLeft, ChevronRight, Eye, EyeOff, FileText, Pencil, Trash2 } from 'lucide-react';
 import CreateFlashcardSet from './CreateFlashcardSet';
 import StudyFlashcardsWrapper from './StudyFlashcardsWrapper';
 
@@ -49,9 +49,10 @@ interface FlashcardsProps {
     onBack: () => void;
     isCollapsed?: boolean;
     initialFlashcardSetId?: number;
+    isDarkMode?: boolean;
 }
 
-const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBack, isCollapsed = false, initialFlashcardSetId }) => {
+const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBack, isCollapsed = false, initialFlashcardSetId, isDarkMode = false }) => {
     const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
     const [materials, setMaterials] = useState<Material[]>([]);
     const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
@@ -506,7 +507,7 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
             {/* Application Header - Luôn hiện */}
             <div className={`bg-white fixed top-0 right-0 z-10 transition-all duration-300 ${isCollapsed ? 'left-16' : 'left-40'}`}>
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="flex items-center justify-between h-16">
+                    <div className="flex items-center h-16">
                         <div className="flex items-center space-x-4">
                             <button
                                 onClick={onBack}
@@ -515,33 +516,6 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
                                 <ArrowLeft className="w-5 h-5" />
                                 <span>Quay lại</span>
                             </button>
-
-
-
-                        </div>
-                        <div className="flex items-center space-x-3">
-                            <button className="px-3 py-2 text-blue-600 hover:bg-blue-50 rounded-lg flex items-center space-x-2">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-                                </svg>
-                                <span className="text-sm">Chia sẻ</span>
-                            </button>
-                            <button className="px-3 py-2 text-gray-600 hover:bg-gray-50 border border-gray-300 rounded-lg flex items-center space-x-2">
-                                <span className="w-4 h-4 bg-gray-400 rounded-full flex items-center justify-center text-white text-xs">i</span>
-                                <span className="text-sm">Phản hồi</span>
-                            </button>
-                            <button className="p-2 text-gray-400 hover:text-gray-600">
-                                <Link className="w-4 h-4" />
-                            </button>
-                            <button className="p-2 text-gray-400 hover:text-gray-600">
-                                <Upload className="w-4 h-4" />
-                            </button>
-                            <div className="relative">
-                                <button className="p-2 text-gray-400 hover:text-gray-600">
-                                    <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-white font-bold">H</div>
-                                </button>
-                                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">2</span>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -613,9 +587,14 @@ const Flashcards: React.FC<FlashcardsProps> = ({ studySetId, studySetName, onBac
                                 <input
                                     type="text"
                                     placeholder="Tìm kiếm..."
-                                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className={`pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${isDarkMode
+                                        ? 'bg-gray-800 border-gray-600 text-white placeholder-gray-500'
+                                        : 'border-gray-300 bg-white text-gray-900'
+                                        }`}
                                 />
-                                <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                                <Search className={`w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`} />
                             </div>
                         </div>
                     </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Share2, MessageCircle, Link2, Download } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
@@ -162,58 +162,40 @@ const ExplainerVideoGenerating: React.FC = () => {
     }, []);
 
     return (
-        <div className="flex-1 bg-white min-h-screen p-8">
+        <div className="flex-1 bg-white min-h-screen p-6 pt-16 max-w-6xl mx-auto">
             {/* Header with Tabs - full width */}
-            <div className="mb-8">
-                <div className="flex items-center justify-between mb-6">
+            <div className="mb-6">
+                <div className="flex items-center justify-between mb-4">
                     {/* Tabs */}
                     <div className="flex items-center space-x-1 border-b border-gray-200">
                         <button
                             onClick={() => navigate('/dashboard/explainers')}
-                            className={`px-6 py-3 font-medium transition-colors relative text-blue-600`}
+                            className={`px-4 py-2 text-sm font-medium transition-colors relative text-blue-600`}
                         >
                             Tạo video giải thích
                             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
                         </button>
                         <button
                             onClick={() => navigate('/dashboard/explainers?tab=my-videos')}
-                            className={`px-6 py-3 font-medium transition-colors relative text-gray-600 hover:text-gray-900`}
+                            className={`px-4 py-2 text-sm font-medium transition-colors relative text-gray-600 hover:text-gray-900`}
                         >
                             Video của tôi
-                        </button>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex items-center space-x-3">
-                        <button className="flex items-center space-x-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                            <Share2 className="w-4 h-4" />
-                            <span>Chia sẻ</span>
-                        </button>
-                        <button className="flex items-center space-x-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                            <MessageCircle className="w-4 h-4" />
-                            <span>Phản hồi</span>
-                        </button>
-                        <button className="p-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                            <Link2 className="w-4 h-4" />
-                        </button>
-                        <button className="p-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                            <Download className="w-4 h-4" />
                         </button>
                     </div>
                 </div>
             </div>
 
-            <div className="max-w-5xl mx-auto">
+            <div className="max-w-4xl mx-auto">
                 {/* Placeholder đúng vị trí khung video 16:9 */}
                 <div className="overflow-hidden">
                     <div className="aspect-video bg-white flex items-center justify-center">
                         <div className="text-center">
-                            <img src="/car.gif" alt="loading" className="mx-auto mb-6 w-48 h-48 md:w-56 md:h-56 object-contain" />
-                            <h2 className="text-3xl font-bold text-gray-900 mb-1">Đang tạo video...</h2>
-                            <p className="text-gray-600 mb-4">AI đang xử lý nội dung và ghép giọng đọc.</p>
-                            <div className="text-sm text-gray-500 mb-1">Thời gian dự kiến còn lại</div>
-                            <div className="text-4xl font-mono tracking-widest text-blue-600">{remaining}</div>
-                            <div className="text-sm text-gray-500 mt-4">Sau khi hoàn tất, chúng tôi sẽ thông báo cho bạn.</div>
+                            <img src="/car.gif" alt="loading" className="mx-auto mb-4 w-36 h-36 md:w-40 md:h-40 object-contain" />
+                            <h2 className="text-2xl font-bold text-gray-900 mb-1">Đang tạo video...</h2>
+                            <p className="text-sm text-gray-600 mb-3">AI đang xử lý nội dung và ghép giọng đọc.</p>
+                            <div className="text-xs text-gray-500 mb-1">Thời gian dự kiến còn lại</div>
+                            <div className="text-3xl font-mono tracking-widest text-blue-600">{remaining}</div>
+                            <div className="text-xs text-gray-500 mt-3">Sau khi hoàn tất, chúng tôi sẽ thông báo cho bạn.</div>
                         </div>
                     </div>
                 </div>

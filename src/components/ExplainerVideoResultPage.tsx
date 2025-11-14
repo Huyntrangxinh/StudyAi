@@ -775,54 +775,36 @@ const ExplainerVideoResultPage: React.FC<ExplainerVideoResultPageProps> = ({ onB
     };
 
     return (
-        <div className="flex-1 bg-white min-h-screen">
+        <div className="flex-1 bg-white min-h-screen p-6 pt-16 max-w-6xl mx-auto">
             {/* Header với tabs - giữ nguyên như ExplainerVideoPage */}
-            <div className="mb-8 border-b border-gray-200">
-                <div className="flex items-center justify-between mb-6 px-8 pt-6">
+            <div className="mb-6 border-b border-gray-200">
+                <div className="flex items-center justify-between mb-4">
                     {/* Tabs */}
                     <div className="flex items-center space-x-1">
                         <button
                             onClick={() => navigate('/dashboard/explainers')}
-                            className="px-6 py-3 font-medium transition-colors relative text-gray-600 hover:text-gray-900"
+                            className="px-4 py-2 text-sm font-medium transition-colors relative text-gray-600 hover:text-gray-900"
                         >
                             Tạo video giải thích
                         </button>
                         <button
                             onClick={() => navigate('/dashboard/explainers?tab=explore')}
-                            className="px-6 py-3 font-medium transition-colors relative text-gray-600 hover:text-gray-900"
+                            className="px-4 py-2 text-sm font-medium transition-colors relative text-gray-600 hover:text-gray-900"
                         >
                             Khám phá video
                         </button>
                         <button
                             onClick={() => navigate('/dashboard/explainers?tab=my-videos')}
-                            className="px-6 py-3 font-medium transition-colors relative text-gray-600 hover:text-gray-900"
+                            className="px-4 py-2 text-sm font-medium transition-colors relative text-gray-600 hover:text-gray-900"
                         >
                             Video của tôi
-                        </button>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex items-center space-x-3">
-                        <button
-                            onClick={handleShare}
-                            className="flex items-center space-x-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                        >
-                            <Share2 className="w-4 h-4" />
-                            <span>Chia sẻ</span>
-                        </button>
-                        <button className="flex items-center space-x-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                            <Upload className="w-4 h-4" />
-                            <span>Phản hồi</span>
-                        </button>
-                        <button className="p-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
-                            <Download className="w-4 h-4" />
                         </button>
                     </div>
                 </div>
             </div>
 
             {/* Main Content */}
-            <div className="max-w-6xl mx-auto px-8 pb-8">
+            <div className="max-w-5xl mx-auto pb-6">
                 {/* Title modal */}
                 {showTitleModal && (
                     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={() => setShowTitleModal(false)}>
@@ -867,7 +849,7 @@ const ExplainerVideoResultPage: React.FC<ExplainerVideoResultPageProps> = ({ onB
                     </div>
                 )}
                 {/* Video Player */}
-                <div className="mb-6">
+                <div className="mb-4">
                     <div className="bg-black rounded-xl overflow-hidden aspect-video">
                         {videoUrl ? (
                             <video
@@ -893,14 +875,14 @@ const ExplainerVideoResultPage: React.FC<ExplainerVideoResultPageProps> = ({ onB
                 </div>
 
                 {/* Video Info */}
-                <div className="mb-6">
+                <div className="mb-4">
                     <div className="flex items-start justify-between">
-                        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                        <h1 className="text-2xl font-bold text-gray-900 mb-1.5">
                             {currentTitle || title}
                         </h1>
                         <div className="relative">
-                            <button onClick={() => setMenuOpen(!menuOpen)} className="p-1.5 rounded hover:bg-gray-100">
-                                <MoreVertical className="w-5 h-5 text-gray-600" />
+                            <button onClick={() => setMenuOpen(!menuOpen)} className="p-1 rounded hover:bg-gray-100">
+                                <MoreVertical className="w-4 h-4 text-gray-600" />
                             </button>
                             {menuOpen && (
                                 <div className="absolute right-0 mt-1 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
@@ -949,7 +931,7 @@ const ExplainerVideoResultPage: React.FC<ExplainerVideoResultPageProps> = ({ onB
                             )}
                         </div>
                     </div>
-                    <div className="flex items-center text-sm text-gray-600 mb-4">
+                    <div className="flex items-center text-xs text-gray-600 mb-3">
                         <span>0 views</span>
                         <span className="mx-2">•</span>
                         <span>Vừa tạo</span>
@@ -957,33 +939,33 @@ const ExplainerVideoResultPage: React.FC<ExplainerVideoResultPageProps> = ({ onB
 
                     {/* Author và Actions */}
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-yellow-400 flex items-center justify-center">
-                                <span className="text-white font-semibold text-sm">{userName.charAt(0).toUpperCase()}</span>
+                        <div className="flex items-center space-x-2">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-yellow-400 flex items-center justify-center">
+                                <span className="text-white font-semibold text-xs">{userName.charAt(0).toUpperCase()}</span>
                             </div>
-                            <span className="text-gray-900 font-medium">{userName}</span>
+                            <span className="text-sm text-gray-900 font-medium">{userName}</span>
                         </div>
 
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-2">
                             <button
                                 onClick={handleShare}
-                                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                className="flex items-center space-x-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                             >
-                                <Upload className="w-4 h-4" />
+                                <Upload className="w-3.5 h-3.5" />
                                 <span>Share</span>
                             </button>
                             <button
                                 onClick={() => setLikes(likes + 1)}
-                                className="flex items-center space-x-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                                className="flex items-center space-x-1.5 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                             >
-                                <ThumbsUp className="w-4 h-4" />
+                                <ThumbsUp className="w-3.5 h-3.5" />
                                 <span>{likes}</span>
                             </button>
                             <button
                                 onClick={() => setDislikes(dislikes + 1)}
-                                className="flex items-center space-x-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                                className="flex items-center space-x-1.5 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                             >
-                                <ThumbsDown className="w-4 h-4" />
+                                <ThumbsDown className="w-3.5 h-3.5" />
                                 <span>{dislikes}</span>
                             </button>
                         </div>

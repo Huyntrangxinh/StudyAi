@@ -17,6 +17,7 @@ export interface User {
 interface AuthContextType {
     user: User | null;
     login: (email: string, password: string) => Promise<boolean>;
+    loginWithGoogle: (credential: string) => Promise<boolean>;
     register: (email: string, password: string, name: string) => Promise<boolean>;
     logout: () => void;
     loading: boolean;
@@ -89,6 +90,53 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         } catch (error) {
             console.error('Login error:', error);
             toast.error('Đăng nhập thất bại!');
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const loginWithGoogle = async (credential: string): Promise<boolean> => {
+        try {
+            setLoading(true);
+
+            const response = await fetch('http://localhost:3001/api/auth/google', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ credential }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || 'Google login failed');
+            }
+
+            const data = await response.json();
+            const apiUser = data.user;
+
+            if (!apiUser) {
+                toast.error('Đăng nhập Google thất bại!');
+                return false;
+            }
+
+            // Convert API user to frontend user format
+            const frontendUser: User = {
+                id: apiUser.id,
+                email: apiUser.email,
+                name: apiUser.name,
+                role: apiUser.role,
+                isActive: true,
+                createdAt: apiUser.created_at || new Date().toISOString(),
+                studentId: apiUser.student_id,
+            };
+
+            setUser(frontendUser);
+            localStorage.setItem('user', JSON.stringify(frontendUser));
+            toast.success('Đăng nhập Google thành công!');
+            return true;
+        } catch (error: any) {
+            console.error('Google login error:', error);
+            toast.error(error.message || 'Đăng nhập Google thất bại!');
             return false;
         } finally {
             setLoading(false);
@@ -230,6 +278,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const value: AuthContextType = {
         user,
         login,
+        loginWithGoogle,
         register,
         logout,
         loading,

@@ -10,7 +10,6 @@ import {
     Video,
     CreditCard,
     CheckSquare,
-    HelpCircle,
     Gamepad2,
     FileText,
     Play,
@@ -48,7 +47,18 @@ import {
     Send,
     RotateCcw,
     Eye,
-    Trash2
+    Trash2,
+    Info,
+    Monitor,
+    MessageSquare,
+    Gift,
+    HelpCircle,
+    ShoppingCart,
+    Rocket,
+    Laptop,
+    FileEdit,
+    Award,
+    Grid
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useViewTestHandler } from '../hooks/useViewTestHandler';
@@ -56,6 +66,7 @@ import DashboardContent from './DashboardContent';
 import StudySetCard from './StudySetCard';
 import StudySetDetail from './StudySetDetail';
 import PDFViewerFixed from './PDFViewerFixed';
+import ChatView from './ChatView';
 import Flashcards from './Flashcards';
 import ExplainerVideoPage from './ExplainerVideoPage';
 import ExplainerVideoGenerating from './ExplainerVideoGenerating';
@@ -70,6 +81,8 @@ import UploadMaterials from './UploadMaterials';
 import SubRoadmapViewer from './SubRoadmapViewer';
 import toast from 'react-hot-toast';
 
+type SettingsTab = 'settings' | 'subscription' | 'privacy' | 'support';
+
 // Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
@@ -79,7 +92,14 @@ const HybridDashboard: React.FC = () => {
     const location = useLocation();
     const [activeSection, setActiveSection] = useState('home');
     const [isCollapsed, setIsCollapsed] = useState(false);
-    const [isDarkMode, setIsDarkMode] = useState(false);
+    const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+        if (typeof window !== 'undefined') {
+            const stored = window.localStorage.getItem('dashboard-dark-mode');
+            if (stored === 'true') return true;
+            if (stored === 'false') return false;
+        }
+        return false;
+    });
     const [studySets, setStudySets] = useState<Array<{ id: string, name: string, description: string, createdAt: string }>>([]);
     const [studySetScrollIndex, setStudySetScrollIndex] = useState(0);
     const studySetScrollRef = useRef<HTMLDivElement>(null);
@@ -104,6 +124,7 @@ const HybridDashboard: React.FC = () => {
     const [showGamePlay, setShowGamePlay] = useState(false);
     const [currentGameId, setCurrentGameId] = useState<number | null>(null);
     const [showPractice, setShowPractice] = useState(false);
+    const [showChatView, setShowChatView] = useState(false);
     const [practiceTab, setPracticeTab] = useState<'tests' | 'quizfetch'>('tests');
     const [showCreateTest, setShowCreateTest] = useState(false);
     const [testCreationMode, setTestCreationMode] = useState<'materials' | 'flashcards' | null>(null);
@@ -117,9 +138,16 @@ const HybridDashboard: React.FC = () => {
     const [selectedFlashcardSetIds, setSelectedFlashcardSetIds] = useState<Set<string>>(new Set());
     const [searchTermFlashcards, setSearchTermFlashcards] = useState<string>('');
     const [isLoadingFlashcards, setIsLoadingFlashcards] = useState<boolean>(false);
-    const [homeStats, setHomeStats] = useState<{ materialsCount: number; testsCount: number; flashcardsCount: number; explainersCount: number }>({ materialsCount: 0, testsCount: 0, flashcardsCount: 0, explainersCount: 0 });
+    const [homeStats, setHomeStats] = useState<{ materialsCount: number; testsCount: number; flashcardsCount: number; explainersCount: number; arcadeCount: number; audioCount: number }>({ materialsCount: 0, testsCount: 0, flashcardsCount: 0, explainersCount: 0, arcadeCount: 0, audioCount: 0 });
     const [streakInfo, setStreakInfo] = useState<{ current: number; best: number }>({ current: 0, best: 0 });
     const [isLoadingStreak, setIsLoadingStreak] = useState<boolean>(false);
+    const [homeStudyPath, setHomeStudyPath] = useState<any>(null);
+    const [showProfileDropdown, setShowProfileDropdown] = useState<boolean>(false);
+    const profileDropdownRef = useRef<HTMLDivElement>(null);
+    const [showGameProfile, setShowGameProfile] = useState<boolean>(false);
+    const [gameProfileTab, setGameProfileTab] = useState<'level-up' | 'leaderboards'>('level-up');
+    const [showSettingsView, setShowSettingsView] = useState<boolean>(false);
+    const [settingsTab, setSettingsTab] = useState<SettingsTab>('settings');
     const [recentMaterials, setRecentMaterials] = useState<Array<{ id: string; name: string; created_at: string }>>([]);
     const [savedTests, setSavedTests] = useState<Array<{ id: number; name: string; description?: string; created_at: string; study_set_id: number }>>([]);
     const [isLoadingTests, setIsLoadingTests] = useState(false);
@@ -176,6 +204,22 @@ const HybridDashboard: React.FC = () => {
     const [referenceAnswers, setReferenceAnswers] = useState<Map<number, string>>(new Map());
     const [loadingReferenceAnswer, setLoadingReferenceAnswer] = useState<Set<number>>(new Set());
 
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            window.localStorage.setItem('dashboard-dark-mode', isDarkMode ? 'true' : 'false');
+        }
+        const root = document.documentElement;
+        if (isDarkMode) {
+            root.classList.add('dark-mode');
+        } else {
+            root.classList.remove('dark-mode');
+        }
+
+        return () => {
+            root.classList.remove('dark-mode');
+        };
+    }, [isDarkMode]);
+
     // Handle start learning
     const handleStartLearning = () => {
         // Reset all view states
@@ -194,8 +238,10 @@ const HybridDashboard: React.FC = () => {
             loadStudySets().then(() => {
                 if (selectedStudySet?.id) {
                     loadHomeStats(selectedStudySet.id);
+                    loadHomeStudyPath(selectedStudySet.id);
                 } else if (studySets.length > 0 && studySets[0]?.id) {
                     loadHomeStats(studySets[0].id);
+                    loadHomeStudyPath(studySets[0].id);
                     setSelectedStudySet(studySets[0]);
                 }
             });
@@ -231,6 +277,23 @@ const HybridDashboard: React.FC = () => {
         setShowMaterials(true);
         setShowStudySetDetail(false);
     };
+
+    // Close profile dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target as Node)) {
+                setShowProfileDropdown(false);
+            }
+        };
+
+        if (showProfileDropdown) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showProfileDropdown]);
 
     // Handle open material from citation - Open in modal and load world text
     const handleOpenCitation = async (materialId: string | undefined, page: number) => {
@@ -366,8 +429,10 @@ const HybridDashboard: React.FC = () => {
             loadStudySets().then(() => {
                 if (selectedStudySet?.id) {
                     loadHomeStats(selectedStudySet.id);
+                    loadHomeStudyPath(selectedStudySet.id);
                 } else if (studySets.length > 0 && studySets[0]?.id) {
                     loadHomeStats(studySets[0].id);
+                    loadHomeStudyPath(studySets[0].id);
                 }
             });
         }
@@ -862,9 +927,33 @@ const HybridDashboard: React.FC = () => {
     };
 
     // Load home stats (materials, tests, flashcards, videos counts)
+    const loadHomeStudyPath = async (studySetId: string | number | null) => {
+        if (!studySetId) {
+            setHomeStudyPath(null);
+            return;
+        }
+
+        try {
+            const response = await fetch(`http://localhost:3001/api/study-paths/${studySetId}`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data && Array.isArray(data.modules) && data.modules.length > 0) {
+                    setHomeStudyPath(data);
+                } else {
+                    setHomeStudyPath(null);
+                }
+            } else {
+                setHomeStudyPath(null);
+            }
+        } catch (error) {
+            console.error('Error loading home study path:', error);
+            setHomeStudyPath(null);
+        }
+    };
+
     const loadHomeStats = async (studySetId: string | number | null) => {
         if (!studySetId) {
-            setHomeStats({ materialsCount: 0, testsCount: 0, flashcardsCount: 0, explainersCount: 0 });
+            setHomeStats({ materialsCount: 0, testsCount: 0, flashcardsCount: 0, explainersCount: 0, arcadeCount: 0, audioCount: 0 });
             setRecentMaterials([]);
             return;
         }
@@ -911,10 +1000,34 @@ const HybridDashboard: React.FC = () => {
                 }
             }
 
-            setHomeStats({ materialsCount, testsCount, flashcardsCount, explainersCount });
+            // Load arcade games count
+            let arcadeCount = 0;
+            try {
+                const gamesRes = await fetch(`http://localhost:3001/api/games?studySetId=${studySetId}`);
+                if (gamesRes.ok) {
+                    const gamesData = await gamesRes.json();
+                    arcadeCount = Array.isArray(gamesData) ? gamesData.length : 0;
+                }
+            } catch (gamesError) {
+                console.error('Error loading games count:', gamesError);
+            }
+
+            // Load audio recap count (placeholder)
+            let audioCount = 0;
+            try {
+                const audioRes = await fetch(`http://localhost:3001/api/materials/${studySetId}`);
+                if (audioRes.ok) {
+                    const audio = await audioRes.json();
+                    audioCount = Array.isArray(audio) ? audio.filter((item: any) => item.type === 'audio').length : 0;
+                }
+            } catch (audioError) {
+                console.error('Error loading audio count:', audioError);
+            }
+
+            setHomeStats({ materialsCount, testsCount, flashcardsCount, explainersCount, arcadeCount, audioCount });
         } catch (error) {
             console.error('Error loading home stats:', error);
-            setHomeStats({ materialsCount: 0, testsCount: 0, flashcardsCount: 0, explainersCount: 0 });
+            setHomeStats({ materialsCount: 0, testsCount: 0, flashcardsCount: 0, explainersCount: 0, arcadeCount: 0, audioCount: 0 });
             setRecentMaterials([]);
         }
     };
@@ -1134,6 +1247,15 @@ const HybridDashboard: React.FC = () => {
             loadSavedTests();
         }
     }, [showPractice, selectedStudySet?.id]);
+
+    // Load home study path when selectedStudySet changes
+    React.useEffect(() => {
+        if (selectedStudySet?.id) {
+            loadHomeStudyPath(selectedStudySet.id);
+        } else {
+            loadHomeStudyPath(null);
+        }
+    }, [selectedStudySet?.id]);
 
     // Handle game play URL routing
     React.useEffect(() => {
@@ -1447,18 +1569,23 @@ const HybridDashboard: React.FC = () => {
         const ready = (location.state as any)?.ready === true;
         if (path === '/dashboard/practice' || path.startsWith('/dashboard/practice')) {
             console.log('Route match: practice -> setShowPractice(true)', { path });
+            setShowArcade(false);
             setShowPractice(true);
         } else if (path === '/dashboard/create-test' || path.startsWith('/dashboard/create-test')) {
             console.log('Route match: create-test -> setShowCreateTest(true)', { path });
+            setShowArcade(false);
             setShowCreateTest(true);
         } else if (path === '/dashboard/material-selection' || path.startsWith('/dashboard/material-selection')) {
             console.log('Route match: material-selection -> setShowMaterialSelection(true)', { path });
+            setShowArcade(false);
             setShowMaterialSelection(true);
         } else if (path === '/dashboard/flashcard-selection' || path.startsWith('/dashboard/flashcard-selection')) {
             console.log('Route match: flashcard-selection -> setShowFlashcardSelection(true)', { path });
+            setShowArcade(false);
             setShowFlashcardSelection(true);
         } else if (path === '/dashboard/test-type-selection' || path.startsWith('/dashboard/test-type-selection')) {
             console.log('Route match: test-type-selection -> setShowTestTypeSelection(true)', { path });
+            setShowArcade(false);
             setShowTestTypeSelection(true);
         } else if (path === '/dashboard/test' || path.startsWith('/dashboard/test')) {
             // Read testId from URL query params
@@ -1488,11 +1615,16 @@ const HybridDashboard: React.FC = () => {
                         .then(testData => {
                             setCurrentTestId(testIdNum);
                             const normalized = (Array.isArray(testData.questions) ? testData.questions : [])
-                                .filter((q: any) => q.question_type !== 'trueFalse' && q.type !== 'trueFalse')
                                 .map((q: any) => ({
                                     ...q,
+                                    type: q.question_type || q.type || 'multipleChoice',
                                     correctAnswer: (q.question_type === 'multipleChoice' && typeof q.correctAnswer === 'string' && !isNaN(Number(q.correctAnswer))) ? Number(q.correctAnswer) : q.correctAnswer
                                 }));
+                            console.log('📝 [TEST] Loaded questions from API:', {
+                                total: normalized.length,
+                                types: normalized.map((q: any) => q.type),
+                                questionTypes: normalized.map((q: any) => q.question_type)
+                            });
                             setTestQuestions(normalized);
                             setCurrentQuestionIndex(0);
                             setSelectedAnswers(new Map());
@@ -1500,6 +1632,7 @@ const HybridDashboard: React.FC = () => {
                             setElapsedTime(0);
                             setViewAllQuestions(false);
                             setShowReviewTest(false);
+                            setShowArcade(false);
                             setShowTestView(true);
                         })
                         .catch(error => {
@@ -1516,8 +1649,18 @@ const HybridDashboard: React.FC = () => {
             const testIdFromState = (location.state as any)?.currentTestId;
 
             if (testQuestionsFromState && Array.isArray(testQuestionsFromState) && testQuestionsFromState.length > 0) {
+                // Map type from question_type if needed
+                const normalizedQuestions = testQuestionsFromState.map((q: any) => ({
+                    ...q,
+                    type: q.type || q.question_type || 'multipleChoice'
+                }));
+                console.log('📝 [TEST] Setting questions from state:', {
+                    total: normalizedQuestions.length,
+                    types: normalizedQuestions.map((q: any) => q.type),
+                    questionTypes: normalizedQuestions.map((q: any) => q.question_type)
+                });
                 // Set test questions from state
-                setTestQuestions(testQuestionsFromState);
+                setTestQuestions(normalizedQuestions);
                 if (testIdFromState) {
                     setCurrentTestId(testIdFromState);
                 }
@@ -1527,6 +1670,7 @@ const HybridDashboard: React.FC = () => {
                 setElapsedTime(0);
                 setViewAllQuestions(false);
                 setShowReviewTest(false);
+                setShowArcade(false);
                 setShowTestView(true);
                 return;
             }
@@ -1534,6 +1678,7 @@ const HybridDashboard: React.FC = () => {
             // Chỉ hiển thị test view nếu có test questions
             if (ready || testQuestions.length > 0) {
                 console.log('Route match: test -> showTestView', { path, questions: testQuestions.length, ready, testId: testIdFromUrl, currentTestId });
+                setShowArcade(false);
                 setShowTestView(true);
             } else {
                 // Nếu không có questions, quay về practice (sử dụng setTimeout để tránh vòng lặp)
@@ -1544,6 +1689,7 @@ const HybridDashboard: React.FC = () => {
             // Chỉ hiển thị review view nếu có test questions và score
             if (ready || (testQuestions.length > 0 && testScore.total > 0)) {
                 console.log('Route match: review-test -> showReviewTest', { path, questions: testQuestions.length, total: testScore.total, ready });
+                setShowArcade(false);
                 setShowReviewTest(true);
             } else {
                 // Nếu không có data, quay về practice (sử dụng setTimeout để tránh vòng lặp)
@@ -2157,9 +2303,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 { id: 'tests', label: 'Tests & QuizFetch', icon: CheckSquare },
                 { id: 'tutor', label: 'Gia sư của tôi', icon: HelpCircle },
                 { id: 'arcade', label: 'Trò chơi', icon: Gamepad2 },
-                { id: 'essay', label: 'Chấm điểm bài luận', icon: FileText },
                 { id: 'explainers', label: 'Giải thích', icon: Play },
-                { id: 'audio', label: 'Tóm tắt âm thanh', icon: Volume2 },
                 { id: 'notes', label: 'Ghi chú & Tài liệu', icon: Notebook }
             ];
 
@@ -2229,6 +2373,38 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             'hard-hat': <FileText className="w-4 h-4" />
         };
         return iconMap[iconName || 'book'] || <FileText className="w-4 h-4" />;
+    };
+
+    // Get study set icon display (same logic as StudySetCard)
+    const getStudySetIconDisplay = (studySet: { id: string, icon?: string }) => {
+        const ICON_MAP: { [key: string]: React.ReactNode } = {
+            'book': <FileText className="w-4 h-4" />,
+            'calculator': <FileText className="w-4 h-4" />,
+            'globe': <FileText className="w-4 h-4" />,
+            'hard-hat': <FileText className="w-4 h-4" />
+        };
+
+        if (studySet.icon && ICON_MAP[studySet.icon]) {
+            // If icon is a named icon, show it with colored background
+            const iconColor = getRandomIconColor(studySet.id);
+            return (
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: iconColor }}>
+                    <div className="text-white">
+                        {ICON_MAP[studySet.icon]}
+                    </div>
+                </div>
+            );
+        } else {
+            // Default: show dots pattern (like original design)
+            return (
+                <div className="flex flex-wrap w-4 h-4">
+                    <div className="w-1 h-1 bg-blue-600 rounded-full m-0.5"></div>
+                    <div className="w-1 h-1 bg-yellow-500 rounded-full m-0.5"></div>
+                    <div className="w-1 h-1 bg-green-500 rounded-full m-0.5"></div>
+                    <div className="w-1 h-1 bg-blue-500 rounded-full m-0.5"></div>
+                </div>
+            );
+        }
     };
 
     const getIconColor = (itemId: string) => {
@@ -2310,6 +2486,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             setShowPractice(false);
             setShowExplainerVideo(false);
             setShowArcade(false);
+            setShowChatView(false);
+            setShowGameProfile(false);
+            setShowSettingsView(false);
 
             // Đặc biệt cho "Trang chủ": đảm bảo về dashboard chính
             if (itemId === 'home') {
@@ -2331,6 +2510,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 setShowArcade(false);
                 setShowGamePlay(false);
                 setShowSubRoadmap(false);
+                setShowGameProfile(false);
+                setShowSettingsView(false);
+                setShowChatView(false);
                 navigate('/dashboard');
                 setTestQuestions([]);
                 setCurrentQuestionIndex(0);
@@ -2370,7 +2552,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                         } else {
                             // No study sets found
                             setSelectedStudySet(null);
-                            setHomeStats({ materialsCount: 0, testsCount: 0, flashcardsCount: 0, explainersCount: 0 });
+                            setHomeStats({ materialsCount: 0, testsCount: 0, flashcardsCount: 0, explainersCount: 0, arcadeCount: 0, audioCount: 0 });
                         }
                     });
                 }
@@ -2382,6 +2564,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             if (selectedStudySet) {
                 setActiveSection(''); // Reset active section
                 setShowFlashcards(true);
+                setShowChatView(false);
+                setShowGameProfile(false);
+                setShowSettingsView(false);
             } else {
                 toast.error('Vui lòng chọn một bộ học trước khi xem thẻ ghi nhớ', {
                     duration: 3000,
@@ -2395,6 +2580,10 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             setShowMaterialViewer(false);
             setShowStudySetDetail(false);
             setShowPractice(true);
+            setShowArcade(false);
+            setShowChatView(false);
+            setShowGameProfile(false);
+            setShowSettingsView(false);
             // Load tests when Practice view is shown
             if (selectedStudySet?.id) {
                 loadSavedTests();
@@ -2409,8 +2598,25 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             setShowStudySetDetail(false);
             setShowPractice(false);
             setShowArcade(false);
+            setShowChatView(false);
+            setShowGameProfile(false);
+            setShowSettingsView(false);
             setShowExplainerVideo(true);
             navigate('/dashboard/explainers');
+        } else if (itemId === 'chat') {
+            // Xử lý click vào "Trò chuyện"
+            console.log('Navigating to chat view');
+            setActiveSection('chat'); // Set active section để highlight menu
+            setShowFlashcards(false);
+            setShowMaterialViewer(false);
+            setShowStudySetDetail(false);
+            setShowPractice(false);
+            setShowExplainerVideo(false);
+            setShowArcade(false);
+            setShowChatView(true);
+            setShowGameProfile(false);
+            setShowSettingsView(false);
+            navigate('/dashboard/chat');
         } else if (itemId === 'arcade') {
             // Xử lý click vào "Trò chơi"
             console.log('Navigating to arcade page');
@@ -2421,6 +2627,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             setShowPractice(false);
             setShowExplainerVideo(false);
             setShowArcade(true);
+            setShowChatView(false);
+            setShowGameProfile(false);
+            setShowSettingsView(false);
             navigate('/dashboard/arcade');
         } else if (itemId === 'sets') {
             // Xử lý click vào "Bộ học của tôi"
@@ -2431,6 +2640,8 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             setShowPractice(false);
             setShowExplainerVideo(false);
             setShowArcade(false);
+            setShowGameProfile(false);
+            setShowSettingsView(false);
             // Navigate to studyset route
             navigate('/dashboard/studyset');
             // Reload study sets when viewing
@@ -2489,14 +2700,14 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
         const currentStudySetName = selectedStudySet?.name || (studySets.length > 0 ? studySets[0].name : 'Bộ học');
 
         return (
-            <div className="flex-1 p-8 bg-white min-h-screen">
+            <div className="flex-1 p-6 pt-16 bg-white min-h-screen max-w-6xl mx-auto">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center justify-between mb-6">
                     <div>
-                        <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Chọn tài liệu</h1>
-                        <p className="text-gray-500 mt-2">Chọn tài liệu bạn muốn tạo bài kiểm tra.</p>
+                        <h1 className="text-2xl font-bold text-gray-900 mb-1.5">Chọn tài liệu</h1>
+                        <p className="text-sm text-gray-500">Chọn tài liệu bạn muốn tạo bài kiểm tra.</p>
                     </div>
-                    <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-2">
                         <button
                             onClick={() => {
                                 setShowMaterialSelection(false);
@@ -2505,7 +2716,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 setSearchTerm('');
                                 navigate('/dashboard/create-test');
                             }}
-                            className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            className="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
                         >
                             Quay lại
                         </button>
@@ -2519,7 +2730,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 }
                             }}
                             disabled={selectedMaterialIds.size === 0}
-                            className="px-5 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Tiếp tục
                         </button>
@@ -2527,28 +2738,28 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 </div>
 
                 {/* Search */}
-                <div className="mb-6 flex justify-end">
+                <div className="mb-4 flex justify-end">
                     <input
                         type="text"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder="Tìm kiếm tài liệu"
-                        className="w-full md:w-96 px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full md:w-80 px-3 py-1.5 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                 </div>
 
                 {/* Materials Grid */}
-                <div className="mt-6">
+                <div className="mt-4">
                     {isLoadingMaterials ? (
-                        <div className="py-16 text-center text-gray-500">Đang tải tài liệu...</div>
+                        <div className="py-12 text-center text-sm text-gray-500">Đang tải tài liệu...</div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                             {/* Upload New Material tile */}
-                            <div className="border-2 border-dashed border-gray-200 rounded-xl bg-white p-4 hover:border-gray-300 cursor-pointer flex items-center">
-                                <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center mr-3">
-                                    <Plus className="w-6 h-6 text-gray-400" />
+                            <div className="border-2 border-dashed border-gray-200 rounded-xl bg-white p-3 hover:border-gray-300 cursor-pointer flex items-center">
+                                <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center mr-2">
+                                    <Plus className="w-5 h-5 text-gray-400" />
                                 </div>
-                                <div className="font-medium text-gray-800">Tải lên tài liệu mới</div>
+                                <div className="text-sm font-medium text-gray-800">Tải lên tài liệu mới</div>
                             </div>
 
                             {/* Materials */}
@@ -2569,15 +2780,15 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                                 }
                                                 setSelectedMaterialIds(next);
                                             }}
-                                            className={`text-left border rounded-xl bg-white p-4 shadow-sm hover:shadow transition flex items-center justify-between ${selected ? 'ring-2 ring-blue-500 border-blue-200' : 'border-gray-200'
+                                            className={`text-left border rounded-xl bg-white p-3 shadow-sm hover:shadow transition flex items-center justify-between ${selected ? 'ring-2 ring-blue-500 border-blue-200' : 'border-gray-200'
                                                 }`}
                                         >
-                                            <div className="flex items-center space-x-3">
-                                                <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-                                                    <img src={(process.env.PUBLIC_URL || '') + '/card.png'} alt="" className="w-5 h-5 object-contain" />
+                                            <div className="flex items-center space-x-2">
+                                                <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                                                    <img src={(process.env.PUBLIC_URL || '') + '/card.png'} alt="" className="w-4 h-4 object-contain" />
                                                 </div>
                                                 <div>
-                                                    <div className="font-medium text-gray-900 truncate max-w-[260px]" title={m.name}>
+                                                    <div className="text-sm font-medium text-gray-900 truncate max-w-[200px]" title={m.name}>
                                                         {m.name}
                                                     </div>
                                                     {m.size && (
@@ -2588,11 +2799,11 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                                 </div>
                                             </div>
                                             <div
-                                                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selected ? 'border-blue-600 bg-blue-600' : 'border-gray-300 bg-white'
+                                                className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${selected ? 'border-blue-600 bg-blue-600' : 'border-gray-300 bg-white'
                                                     }`}
                                             >
                                                 {selected && (
-                                                    <div className="w-2 h-2 rounded-full bg-white"></div>
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
                                                 )}
                                             </div>
                                         </button>
@@ -2600,7 +2811,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 })}
 
                             {materialsInSet.length === 0 && !isLoadingMaterials && (
-                                <div className="col-span-full text-center text-gray-500 py-16">
+                                <div className="col-span-full text-center text-sm text-gray-500 py-12">
                                     Không có tài liệu trong bộ học này.
                                 </div>
                             )}
@@ -2609,9 +2820,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 </div>
 
                 {/* Advanced section placeholder */}
-                <div className="mt-8">
-                    <button className="flex items-center space-x-2 text-blue-600 hover:text-blue-700 font-medium">
-                        <ChevronRight className="w-5 h-5" />
+                <div className="mt-6">
+                    <button className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700 font-medium">
+                        <ChevronRight className="w-4 h-4" />
                         <span>Nâng cao</span>
                     </button>
                 </div>
@@ -2624,14 +2835,14 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
         const currentStudySetName = selectedStudySet?.name || (studySets.length > 0 ? studySets[0].name : 'Bộ học');
 
         return (
-            <div className="flex-1 p-8 bg-white min-h-screen">
+            <div className="flex-1 p-6 pt-16 bg-white min-h-screen max-w-6xl mx-auto">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center justify-between mb-6">
                     <div>
-                        <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Chọn flashcard</h1>
-                        <p className="text-gray-500 mt-2">Chọn flashcard bạn muốn tạo bài kiểm tra.</p>
+                        <h1 className="text-2xl font-bold text-gray-900 mb-1.5">Chọn flashcard</h1>
+                        <p className="text-sm text-gray-500">Chọn flashcard bạn muốn tạo bài kiểm tra.</p>
                     </div>
-                    <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-2">
                         <button
                             onClick={() => {
                                 setShowFlashcardSelection(false);
@@ -2640,7 +2851,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 setSearchTermFlashcards('');
                                 navigate('/dashboard/create-test');
                             }}
-                            className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            className="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
                         >
                             Quay lại
                         </button>
@@ -2654,7 +2865,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 }
                             }}
                             disabled={selectedFlashcardSetIds.size === 0}
-                            className="px-5 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Tiếp tục
                         </button>
@@ -2662,28 +2873,28 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 </div>
 
                 {/* Search */}
-                <div className="mb-6 flex justify-end">
+                <div className="mb-4 flex justify-end">
                     <input
                         type="text"
                         value={searchTermFlashcards}
                         onChange={(e) => setSearchTermFlashcards(e.target.value)}
                         placeholder="Tìm kiếm flashcard"
-                        className="w-full md:w-96 px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full md:w-80 px-3 py-1.5 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                 </div>
 
                 {/* Flashcard Sets Grid */}
-                <div className="mt-6">
+                <div className="mt-4">
                     {isLoadingFlashcards ? (
-                        <div className="py-16 text-center text-gray-500">Đang tải flashcard...</div>
+                        <div className="py-12 text-center text-sm text-gray-500">Đang tải flashcard...</div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                             {/* Upload New Flashcard tile */}
-                            <div className="border-2 border-dashed border-gray-200 rounded-xl bg-white p-4 hover:border-gray-300 cursor-pointer flex items-center">
-                                <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center mr-3">
-                                    <Plus className="w-6 h-6 text-gray-400" />
+                            <div className="border-2 border-dashed border-gray-200 rounded-xl bg-white p-3 hover:border-gray-300 cursor-pointer flex items-center">
+                                <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center mr-2">
+                                    <Plus className="w-5 h-5 text-gray-400" />
                                 </div>
-                                <div className="font-medium text-gray-800">Tải lên flashcard mới</div>
+                                <div className="text-sm font-medium text-gray-800">Tải lên flashcard mới</div>
                             </div>
 
                             {/* Flashcard Sets */}
@@ -2704,15 +2915,15 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                                 }
                                                 setSelectedFlashcardSetIds(next);
                                             }}
-                                            className={`text-left border rounded-xl bg-white p-4 shadow-sm hover:shadow transition flex items-center justify-between ${selected ? 'ring-2 ring-blue-500 border-blue-200' : 'border-gray-200'
+                                            className={`text-left border rounded-xl bg-white p-3 shadow-sm hover:shadow transition flex items-center justify-between ${selected ? 'ring-2 ring-blue-500 border-blue-200' : 'border-gray-200'
                                                 }`}
                                         >
-                                            <div className="flex items-center space-x-3">
-                                                <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                                                    <BookOpen className="w-5 h-5 text-green-600" />
+                                            <div className="flex items-center space-x-2">
+                                                <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
+                                                    <BookOpen className="w-4 h-4 text-green-600" />
                                                 </div>
                                                 <div>
-                                                    <div className="font-medium text-gray-900 truncate max-w-[260px]" title={fs.name}>
+                                                    <div className="text-sm font-medium text-gray-900 truncate max-w-[200px]" title={fs.name}>
                                                         {fs.name}
                                                     </div>
                                                     {fs.created_at && (
@@ -2723,11 +2934,11 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                                 </div>
                                             </div>
                                             <div
-                                                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selected ? 'border-blue-600 bg-blue-600' : 'border-gray-300 bg-white'
+                                                className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${selected ? 'border-blue-600 bg-blue-600' : 'border-gray-300 bg-white'
                                                     }`}
                                             >
                                                 {selected && (
-                                                    <div className="w-2 h-2 rounded-full bg-white"></div>
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
                                                 )}
                                             </div>
                                         </button>
@@ -2735,7 +2946,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 })}
 
                             {flashcardSetsInSet.length === 0 && !isLoadingFlashcards && (
-                                <div className="col-span-full text-center text-gray-500 py-16">
+                                <div className="col-span-full text-center text-sm text-gray-500 py-12">
                                     Không có flashcard trong bộ học này.
                                 </div>
                             )}
@@ -2744,9 +2955,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 </div>
 
                 {/* Advanced section placeholder */}
-                <div className="mt-8">
-                    <button className="flex items-center space-x-2 text-blue-600 hover:text-blue-700 font-medium">
-                        <ChevronRight className="w-5 h-5" />
+                <div className="mt-6">
+                    <button className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700 font-medium">
+                        <ChevronRight className="w-4 h-4" />
                         <span>Nâng cao</span>
                     </button>
                 </div>
@@ -2759,26 +2970,26 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
         const totalSelected = testTypeCounts.multipleChoice + testTypeCounts.shortAnswer + testTypeCounts.freeResponse + testTypeCounts.trueFalse + testTypeCounts.fillBlank;
 
         return (
-            <div className="flex-1 p-8 bg-white min-h-screen">
+            <div className="flex-1 p-6 pt-16 bg-white min-h-screen max-w-6xl mx-auto">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center justify-between mb-6">
                     <div>
-                        <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Chọn loại câu hỏi</h1>
-                        <p className="text-gray-500 mt-2">Chọn loại và số lượng câu hỏi cho bài kiểm tra của bạn</p>
+                        <h1 className="text-2xl font-bold text-gray-900 mb-1.5">Chọn loại câu hỏi</h1>
+                        <p className="text-sm text-gray-500">Chọn loại và số lượng câu hỏi cho bài kiểm tra của bạn</p>
                     </div>
-                    <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-2">
                         <button
                             onClick={() => {
                                 setShowTestTypeSelection(false);
                                 setShowMaterialSelection(true);
                                 navigate('/dashboard/material-selection');
                             }}
-                            className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            className="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
                         >
                             Quay lại
                         </button>
                         <button
-                            className={`px-5 py-2 rounded-lg transition-colors ${totalSelected > 0 ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-200 text-white cursor-not-allowed'}`}
+                            className={`px-4 py-2 text-sm rounded-lg transition-colors ${totalSelected > 0 ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-200 text-white cursor-not-allowed'}`}
                             disabled={totalSelected === 0 || isGeneratingTest}
                             onClick={async () => {
                                 if (totalSelected > 0 && !isGeneratingTest) {
@@ -2797,21 +3008,21 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 </div>
 
                 {/* Test Type Selection Grid */}
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Multiple Choice */}
                     <div
                         onClick={() => setSelectedTestType('multipleChoice')}
-                        className={`bg-white border rounded-xl p-4 flex items-center justify-between cursor-pointer ${selectedTestType === 'multipleChoice' ? 'border-blue-400 ring-1 ring-blue-300' : 'border-gray-200'}`}
+                        className={`bg-white border rounded-xl p-3 flex items-center justify-between cursor-pointer ${selectedTestType === 'multipleChoice' ? 'border-blue-400 ring-1 ring-blue-300' : 'border-gray-200'}`}
                     >
-                        <div className="flex items-center space-x-3 text-gray-800">
-                            <ListChecks className="w-6 h-6" />
-                            <div className="font-medium">Trắc nghiệm</div>
+                        <div className="flex items-center space-x-2 text-gray-800">
+                            <ListChecks className="w-5 h-5" />
+                            <div className="text-sm font-medium">Trắc nghiệm</div>
                         </div>
                         <input
                             type="number"
                             min={0}
                             max={50}
-                            className="w-20 px-3 py-2 border rounded-lg text-right"
+                            className="w-16 px-2 py-1.5 text-sm border rounded-lg text-right"
                             value={testTypeCounts.multipleChoice}
                             onChange={(e) => setTestTypeCounts({ ...testTypeCounts, multipleChoice: clampCount(Number(e.target.value)) })}
                             onBlur={(e) => setTestTypeCounts({ ...testTypeCounts, multipleChoice: clampCount(Number(e.target.value)) })}
@@ -2822,17 +3033,17 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                     {/* Short Answer */}
                     <div
                         onClick={() => setSelectedTestType('shortAnswer')}
-                        className={`bg-white border rounded-xl p-4 flex items-center justify-between cursor-pointer ${selectedTestType === 'shortAnswer' ? 'border-blue-400 ring-1 ring-blue-300' : 'border-gray-200'}`}
+                        className={`bg-white border rounded-xl p-3 flex items-center justify-between cursor-pointer ${selectedTestType === 'shortAnswer' ? 'border-blue-400 ring-1 ring-blue-300' : 'border-gray-200'}`}
                     >
-                        <div className="flex items-center space-x-3 text-gray-800">
-                            <FileText className="w-6 h-6" />
-                            <div className="font-medium">Câu trả lời ngắn</div>
+                        <div className="flex items-center space-x-2 text-gray-800">
+                            <FileText className="w-5 h-5" />
+                            <div className="text-sm font-medium">Câu trả lời ngắn</div>
                         </div>
                         <input
                             type="number"
                             min={0}
                             max={50}
-                            className="w-20 px-3 py-2 border rounded-lg text-right"
+                            className="w-16 px-2 py-1.5 text-sm border rounded-lg text-right"
                             value={testTypeCounts.shortAnswer}
                             onChange={(e) => setTestTypeCounts({ ...testTypeCounts, shortAnswer: clampCount(Number(e.target.value)) })}
                             onBlur={(e) => setTestTypeCounts({ ...testTypeCounts, shortAnswer: clampCount(Number(e.target.value)) })}
@@ -2843,17 +3054,17 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                     {/* Free Response (FRQ) */}
                     <div
                         onClick={() => setSelectedTestType('freeResponse')}
-                        className={`bg-white border rounded-xl p-4 flex items-center justify-between cursor-pointer ${selectedTestType === 'freeResponse' ? 'border-blue-400 ring-1 ring-blue-300' : 'border-gray-200'}`}
+                        className={`bg-white border rounded-xl p-3 flex items-center justify-between cursor-pointer ${selectedTestType === 'freeResponse' ? 'border-blue-400 ring-1 ring-blue-300' : 'border-gray-200'}`}
                     >
-                        <div className="flex items-center space-x-3 text-gray-800">
-                            <Pencil className="w-6 h-6" />
-                            <div className="font-medium">Tự luận (FRQ)</div>
+                        <div className="flex items-center space-x-2 text-gray-800">
+                            <Pencil className="w-5 h-5" />
+                            <div className="text-sm font-medium">Tự luận (FRQ)</div>
                         </div>
                         <input
                             type="number"
                             min={0}
                             max={50}
-                            className="w-20 px-3 py-2 border rounded-lg text-right"
+                            className="w-16 px-2 py-1.5 text-sm border rounded-lg text-right"
                             value={testTypeCounts.freeResponse}
                             onChange={(e) => setTestTypeCounts({ ...testTypeCounts, freeResponse: clampCount(Number(e.target.value)) })}
                             onBlur={(e) => setTestTypeCounts({ ...testTypeCounts, freeResponse: clampCount(Number(e.target.value)) })}
@@ -2866,17 +3077,17 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                     {/* Fill in the Blank */}
                     <div
                         onClick={() => setSelectedTestType('fillBlank')}
-                        className={`bg-white border rounded-xl p-4 flex items-center justify-between cursor-pointer ${selectedTestType === 'fillBlank' ? 'border-blue-400 ring-1 ring-blue-300' : 'border-gray-200'}`}
+                        className={`bg-white border rounded-xl p-3 flex items-center justify-between cursor-pointer ${selectedTestType === 'fillBlank' ? 'border-blue-400 ring-1 ring-blue-300' : 'border-gray-200'}`}
                     >
-                        <div className="flex items-center space-x-3 text-gray-800">
-                            <PenTool className="w-6 h-6" />
-                            <div className="font-medium">Điền vào chỗ trống</div>
+                        <div className="flex items-center space-x-2 text-gray-800">
+                            <PenTool className="w-5 h-5" />
+                            <div className="text-sm font-medium">Điền vào chỗ trống</div>
                         </div>
                         <input
                             type="number"
                             min={0}
                             max={50}
-                            className="w-20 px-3 py-2 border rounded-lg text-right"
+                            className="w-16 px-2 py-1.5 text-sm border rounded-lg text-right"
                             value={testTypeCounts.fillBlank}
                             onChange={(e) => setTestTypeCounts({ ...testTypeCounts, fillBlank: clampCount(Number(e.target.value)) })}
                             onBlur={(e) => setTestTypeCounts({ ...testTypeCounts, fillBlank: clampCount(Number(e.target.value)) })}
@@ -2886,51 +3097,51 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 </div>
 
                 {/* Example Preview */}
-                <div className="mt-8 bg-gray-50 border border-gray-200 rounded-xl p-6">
-                    <div className="text-sm font-semibold text-gray-700 mb-3">Xem trước ví dụ:</div>
+                <div className="mt-6 bg-gray-50 border border-gray-200 rounded-xl p-4">
+                    <div className="text-sm font-semibold text-gray-700 mb-2">Xem trước ví dụ:</div>
                     {selectedTestType === 'multipleChoice' && (
-                        <div className="bg-white border rounded-lg p-4">
-                            <div className="text-sm font-medium text-gray-800 mb-3">Cơ quan nào là "nhà máy năng lượng" của tế bào?</div>
-                            <div className="space-y-2">
+                        <div className="bg-white border rounded-lg p-3">
+                            <div className="text-sm font-medium text-gray-800 mb-2">Cơ quan nào là "nhà máy năng lượng" của tế bào?</div>
+                            <div className="space-y-1.5">
                                 {[
                                     { key: 'A', label: 'Nhân tế bào' },
                                     { key: 'B', label: 'Ty thể' },
                                     { key: 'C', label: 'Ribosome' },
                                     { key: 'D', label: 'Lục lạp' },
                                 ].map((opt) => (
-                                    <label key={opt.key} className="flex items-center justify-between border rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-50">
-                                        <div className="flex items-center space-x-3">
-                                            <span className="inline-flex items-center justify-center w-6 h-6 text-xs font-semibold rounded-full border text-gray-700">{opt.key}</span>
-                                            <span className="text-sm text-gray-800">{opt.label}</span>
+                                    <label key={opt.key} className="flex items-center justify-between border rounded-lg px-2.5 py-1.5 cursor-pointer hover:bg-gray-50">
+                                        <div className="flex items-center space-x-2">
+                                            <span className="inline-flex items-center justify-center w-5 h-5 text-xs font-semibold rounded-full border text-gray-700">{opt.key}</span>
+                                            <span className="text-xs text-gray-800">{opt.label}</span>
                                         </div>
-                                        <span className="w-4 h-4 rounded-full border border-gray-300"></span>
+                                        <span className="w-3.5 h-3.5 rounded-full border border-gray-300"></span>
                                     </label>
                                 ))}
                             </div>
                         </div>
                     )}
                     {selectedTestType === 'shortAnswer' && (
-                        <div className="bg-white border rounded-lg p-4">
-                            <div className="text-sm font-medium text-gray-800 mb-2">Câu hỏi: Nước sôi ở nhiệt độ bao nhiêu độ C?</div>
-                            <div className="mt-2 text-sm text-gray-600">Trả lời ngắn gọn (1-2 câu): <span className="text-gray-400 italic">100 độ C</span></div>
+                        <div className="bg-white border rounded-lg p-3">
+                            <div className="text-sm font-medium text-gray-800 mb-1.5">Câu hỏi: Nước sôi ở nhiệt độ bao nhiêu độ C?</div>
+                            <div className="mt-1.5 text-xs text-gray-600">Trả lời ngắn gọn (1-2 câu): <span className="text-gray-400 italic">100 độ C</span></div>
                         </div>
                     )}
                     {selectedTestType === 'freeResponse' && (
-                        <div className="bg-white border rounded-lg p-4">
+                        <div className="bg-white border rounded-lg p-3">
                             <div className="text-sm text-gray-800"><strong>Câu hỏi:</strong> Hãy giải thích quá trình quang hợp và vai trò của nó đối với sự sống trên Trái Đất.</div>
-                            <div className="mt-2 text-xs text-gray-500">Bài làm sẽ được đánh giá dựa trên độ chính xác và tính toàn diện của câu trả lời.</div>
+                            <div className="mt-1.5 text-xs text-gray-500">Bài làm sẽ được đánh giá dựa trên độ chính xác và tính toàn diện của câu trả lời.</div>
                         </div>
                     )}
                     {/* Preview Đúng/Sai đã xóa */}
                     {selectedTestType === 'fillBlank' && (
-                        <div className="bg-white border rounded-lg p-4">
+                        <div className="bg-white border rounded-lg p-3">
                             <div className="text-sm text-gray-800">Điền từ còn thiếu: Water boils at <strong>_____</strong> °C.</div>
-                            <div className="mt-2 text-xs text-gray-500">Đáp án: 100</div>
+                            <div className="mt-1.5 text-xs text-gray-500">Đáp án: 100</div>
                         </div>
                     )}
                 </div>
 
-                <div className="mt-3 text-xs text-gray-500">Mỗi loại tối đa 50 câu hỏi. Bạn có thể chọn nhiều loại cùng lúc.</div>
+                <div className="mt-2 text-xs text-gray-500">Mỗi loại tối đa 50 câu hỏi. Bạn có thể chọn nhiều loại cùng lúc.</div>
             </div>
         );
     };
@@ -3009,8 +3220,8 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                     </>
                                 ) : (
                                     <>
-                                        <h2 className="text-2xl font-bold text-gray-900 mb-2">Câu hỏi trắc nghiệm:</h2>
-                                        <p className="text-gray-600">Chọn đáp án đúng nhất từ các lựa chọn bên dưới.</p>
+                                        <h2 className="text-xl font-bold text-gray-900 mb-2">Câu hỏi trắc nghiệm:</h2>
+                                        <p className="text-sm text-gray-600">Chọn đáp án đúng nhất từ các lựa chọn bên dưới.</p>
                                     </>
                                 )}
                             </div>
@@ -3018,8 +3229,8 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                     )}
 
                     {/* Question Number and Text */}
-                    <div className="mb-6">
-                        <div className="text-sm text-gray-500 mb-2">Câu {questionIndex + 1}</div>
+                    <div className="mb-5">
+                        <div className="text-xs text-gray-500 mb-2">Câu {questionIndex + 1}</div>
                         {isFillBlankType ? (
                             <div className="text-xl text-gray-800 leading-relaxed">
                                 {(() => {
@@ -3082,7 +3293,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 />
                             </div>
                         ) : (
-                            <p className="text-xl text-gray-800 leading-relaxed">{question.question}</p>
+                            <p className="text-lg text-gray-800 leading-relaxed">{question.question}</p>
                         )}
                     </div>
 
@@ -3192,7 +3403,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 </div>
 
                 {/* Question Content */}
-                <div className={`max-w-4xl mx-auto px-6 py-12 flex-1 ${viewAllQuestions ? 'overflow-y-auto scrollbar-hover' : ''}`}>
+                <div className={`max-w-3xl mx-auto px-6 py-8 flex-1 ${viewAllQuestions ? 'overflow-y-auto scrollbar-hover' : ''}`}>
                     {viewAllQuestions ? (
                         // View All Questions Mode
                         <>
@@ -3789,20 +4000,20 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
 
     const renderCreateTestView = () => {
         return (
-            <div className="flex-1 p-8 bg-white min-h-screen">
+            <div className="flex-1 p-6 pt-16 bg-white min-h-screen max-w-6xl mx-auto">
                 {/* Header with buttons */}
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center justify-between mb-6">
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-900 mb-2">Tạo bài kiểm tra</h1>
-                        <p className="text-gray-600">Tạo bài kiểm tra thử từ bộ học của bạn và sẵn sàng cho bài kiểm tra.</p>
+                        <h1 className="text-2xl font-bold text-gray-900 mb-1.5">Tạo bài kiểm tra</h1>
+                        <p className="text-sm text-gray-600">Tạo bài kiểm tra thử từ bộ học của bạn và sẵn sàng cho bài kiểm tra.</p>
                     </div>
-                    <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-2">
                         <button
                             onClick={() => {
                                 setShowCreateTest(false);
                                 setTestCreationMode(null);
                             }}
-                            className="px-6 py-2 border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 transition-colors font-medium"
+                            className="px-4 py-2 text-sm border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 transition-colors font-medium"
                         >
                             Hủy
                         </button>
@@ -3821,7 +4032,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 }
                             }}
                             disabled={!testCreationMode}
-                            className={`px-6 py-2 rounded-lg font-medium transition-colors ${testCreationMode
+                            className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors ${testCreationMode
                                 ? 'bg-blue-600 text-white hover:bg-blue-700'
                                 : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                 }`}
@@ -3833,60 +4044,60 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
 
                 {/* Main Content */}
                 <div className="max-w-4xl">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-6">Bạn muốn tạo bài kiểm tra như thế nào?</h2>
+                    <h2 className="text-lg font-semibold text-gray-900 mb-4">Bạn muốn tạo bài kiểm tra như thế nào?</h2>
 
                     {/* Test Creation Options */}
-                    <div className="grid grid-cols-2 gap-6 mb-8">
+                    <div className="grid grid-cols-2 gap-4 mb-6">
                         {/* From Materials Card */}
                         <div
                             onClick={() => setTestCreationMode('materials')}
-                            className={`border-2 rounded-xl p-6 cursor-pointer transition-all ${testCreationMode === 'materials'
+                            className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${testCreationMode === 'materials'
                                 ? 'border-blue-500 bg-blue-50 shadow-lg'
                                 : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-md'
                                 }`}
                         >
-                            <div className="flex items-start justify-between mb-4">
+                            <div className="flex items-start justify-between mb-3">
                                 <div className="relative">
-                                    <div className="w-16 h-16 bg-blue-100 rounded-lg flex items-center justify-center">
-                                        <FileText className="w-8 h-8 text-blue-600" />
+                                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                                        <FileText className="w-6 h-6 text-blue-600" />
                                     </div>
                                     {/* Checkmarks and pencil overlay */}
-                                    <div className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-                                        <CheckCircle2 className="w-4 h-4 text-white" />
+                                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                                        <CheckCircle2 className="w-3 h-3 text-white" />
                                     </div>
-                                    <div className="absolute -bottom-1 -left-1 w-5 h-5 bg-orange-500 rounded-full flex items-center justify-center">
-                                        <Pencil className="w-3 h-3 text-white" />
+                                    <div className="absolute -bottom-1 -left-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+                                        <Pencil className="w-2.5 h-2.5 text-white" />
                                     </div>
                                 </div>
                             </div>
-                            <h3 className="text-xl font-bold text-gray-900 mb-2">Từ tài liệu</h3>
-                            <p className="text-gray-600">Tạo bài kiểm tra từ tài liệu trong Bộ học của bạn.</p>
+                            <h3 className="text-lg font-bold text-gray-900 mb-1.5">Từ tài liệu</h3>
+                            <p className="text-sm text-gray-600">Tạo bài kiểm tra từ tài liệu trong Bộ học của bạn.</p>
                         </div>
 
                         {/* From Flashcards Card */}
                         <div
                             onClick={() => setTestCreationMode('flashcards')}
-                            className={`border-2 rounded-xl p-6 cursor-pointer transition-all ${testCreationMode === 'flashcards'
+                            className={`border-2 rounded-xl p-4 cursor-pointer transition-all ${testCreationMode === 'flashcards'
                                 ? 'border-blue-500 bg-blue-50 shadow-lg'
                                 : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-md'
                                 }`}
                         >
-                            <div className="flex items-start justify-between mb-4">
+                            <div className="flex items-start justify-between mb-3">
                                 <div className="relative">
-                                    <div className="w-16 h-16 bg-green-100 rounded-lg flex items-center justify-center">
-                                        <BookOpen className="w-8 h-8 text-green-600" />
+                                    <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                                        <BookOpen className="w-6 h-6 text-green-600" />
                                     </div>
                                     {/* Overlapping cards effect */}
-                                    <div className="absolute -top-1 -right-1 w-6 h-6 bg-yellow-400 rounded-lg flex items-center justify-center transform rotate-12">
-                                        <BookOpen className="w-4 h-4 text-yellow-800" />
+                                    <div className="absolute -top-1 -right-1 w-5 h-5 bg-yellow-400 rounded-lg flex items-center justify-center transform rotate-12">
+                                        <BookOpen className="w-3 h-3 text-yellow-800" />
                                     </div>
-                                    <div className="absolute -bottom-1 -left-1 w-5 h-5 bg-orange-400 rounded-lg flex items-center justify-center transform -rotate-12">
-                                        <BookOpen className="w-3 h-3 text-orange-800" />
+                                    <div className="absolute -bottom-1 -left-1 w-4 h-4 bg-orange-400 rounded-lg flex items-center justify-center transform -rotate-12">
+                                        <BookOpen className="w-2.5 h-2.5 text-orange-800" />
                                     </div>
                                 </div>
                             </div>
-                            <h3 className="text-xl font-bold text-gray-900 mb-2">Từ flashcard</h3>
-                            <p className="text-gray-600">Tạo bài kiểm tra từ flashcard trong Bộ học của bạn.</p>
+                            <h3 className="text-lg font-bold text-gray-900 mb-1.5">Từ flashcard</h3>
+                            <p className="text-sm text-gray-600">Tạo bài kiểm tra từ flashcard trong Bộ học của bạn.</p>
                         </div>
                     </div>
 
@@ -3902,51 +4113,51 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
         const practiceMaterials = studySets.length > 0 ? studySets : [];
 
         return (
-            <div className="flex-1 p-8 bg-white min-h-screen">
+            <div className="flex-1 p-6 bg-white min-h-screen max-w-6xl mx-auto">
                 {/* Header */}
-                <div className="mb-8">
-                    <h1 className="text-3xl font-bold text-gray-900 mb-2">Thực hành</h1>
-                    <p className="text-gray-600">Sẵn sàng cho bài kiểm tra của bạn, đã đến lúc luyện tập!</p>
+                <div className="mb-6">
+                    <h1 className="text-2xl font-bold text-gray-900 mb-1.5">Thực hành</h1>
+                    <p className="text-sm text-gray-600">Sẵn sàng cho bài kiểm tra của bạn, đã đến lúc luyện tập!</p>
                 </div>
 
                 {/* Choose an Option to Start Studying */}
-                <div className="mb-8">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-4">Chọn một tùy chọn để bắt đầu học</h2>
-                    <div className="grid grid-cols-2 gap-6 mb-8">
+                <div className="mb-6">
+                    <h2 className="text-lg font-semibold text-gray-900 mb-3">Chọn một tùy chọn để bắt đầu học</h2>
+                    <div className="grid grid-cols-2 gap-4 mb-6">
                         {/* Take a Practice Test Card */}
                         <div
                             onClick={() => {
                                 setShowCreateTest(true);
                                 navigate('/dashboard/create-test');
                             }}
-                            className="bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-200 rounded-xl p-6 cursor-pointer hover:shadow-lg transition-shadow"
+                            className="bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-200 rounded-xl p-4 cursor-pointer hover:shadow-lg transition-shadow"
                         >
-                            <div className="flex items-start justify-between mb-4">
-                                <div className="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center">
-                                    <Pencil className="w-6 h-6 text-white" />
+                            <div className="flex items-start justify-between mb-3">
+                                <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center">
+                                    <Pencil className="w-5 h-5 text-white" />
                                 </div>
                             </div>
-                            <h3 className="text-xl font-bold text-gray-900 mb-2">Làm bài kiểm tra thử</h3>
-                            <p className="text-gray-700">Tạo bài kiểm tra thử từ bộ học của bạn và sẵn sàng cho bài kiểm tra.</p>
+                            <h3 className="text-lg font-bold text-gray-900 mb-1.5">Làm bài kiểm tra thử</h3>
+                            <p className="text-sm text-gray-700">Tạo bài kiểm tra thử từ bộ học của bạn và sẵn sàng cho bài kiểm tra.</p>
                         </div>
 
                         {/* QuizFetch Card */}
-                        <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 rounded-xl p-6 cursor-pointer hover:shadow-lg transition-shadow">
-                            <div className="flex items-start justify-between mb-4">
-                                <div className="w-12 h-12 bg-blue-500 rounded-lg flex items-center justify-center">
-                                    <ClipboardList className="w-6 h-6 text-white" />
+                        <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 rounded-xl p-4 cursor-pointer hover:shadow-lg transition-shadow">
+                            <div className="flex items-start justify-between mb-3">
+                                <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+                                    <ClipboardList className="w-5 h-5 text-white" />
                                 </div>
                             </div>
-                            <h3 className="text-xl font-bold text-gray-900 mb-2">QuizFetch</h3>
-                            <p className="text-gray-700">Tạo quiz từ tài liệu của bạn và học khi trả lời câu hỏi.</p>
+                            <h3 className="text-lg font-bold text-gray-900 mb-1.5">QuizFetch</h3>
+                            <p className="text-sm text-gray-700">Tạo quiz từ tài liệu của bạn và học khi trả lời câu hỏi.</p>
                         </div>
                     </div>
 
                     {/* Tabs */}
-                    <div className="flex border-b border-gray-300 mb-6">
+                    <div className="flex border-b border-gray-300 mb-4">
                         <button
                             onClick={() => setPracticeTab('tests')}
-                            className={`px-6 py-3 font-medium transition-colors ${practiceTab === 'tests'
+                            className={`px-4 py-2 text-sm font-medium transition-colors ${practiceTab === 'tests'
                                 ? 'text-blue-600 border-b-2 border-blue-600'
                                 : 'text-gray-600 hover:text-gray-900'
                                 }`}
@@ -3955,7 +4166,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                         </button>
                         <button
                             onClick={() => setPracticeTab('quizfetch')}
-                            className={`px-6 py-3 font-medium transition-colors ${practiceTab === 'quizfetch'
+                            className={`px-4 py-2 text-sm font-medium transition-colors ${practiceTab === 'quizfetch'
                                 ? 'text-blue-600 border-b-2 border-blue-600'
                                 : 'text-gray-600 hover:text-gray-900'
                                 }`}
@@ -3965,12 +4176,12 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                     </div>
 
                     {/* Viewing Tests for Section */}
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center space-x-4">
-                            <span className="text-gray-700 font-medium">Đang xem bài kiểm tra cho</span>
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-3">
+                            <span className="text-sm text-gray-700 font-medium">Đang xem bài kiểm tra cho</span>
                             {practiceMaterials.length > 0 ? (
                                 <select
-                                    className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     value={selectedStudySet?.id || ''}
                                     onChange={(e) => {
                                         const next = studySets.find((s: any) => String(s.id) === String(e.target.value));
@@ -3988,33 +4199,33 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                     ))}
                                 </select>
                             ) : (
-                                <select className="px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <select className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
                                     <option>Chưa có bộ học nào</option>
                                 </select>
                             )}
-                            <button className="px-4 py-2 text-blue-600 hover:text-blue-700 font-medium">
+                            <button className="px-3 py-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium">
                                 Xem tất cả
                             </button>
                         </div>
-                        <div className="flex items-center space-x-2 border border-gray-300 rounded-lg px-4 py-2 bg-white">
-                            <Search className="w-4 h-4 text-gray-500" />
+                        <div className="flex items-center space-x-2 border border-gray-300 rounded-lg px-3 py-1.5 bg-white">
+                            <Search className="w-3.5 h-3.5 text-gray-500" />
                             <input
                                 type="text"
                                 placeholder="Tìm kiếm..."
-                                className="outline-none text-gray-900 bg-transparent w-48"
+                                className="outline-none text-sm text-gray-900 bg-transparent w-40"
                             />
                         </div>
                     </div>
 
                     {/* Tests Grid - Similar to Flashcards */}
                     {isLoadingTests ? (
-                        <div className="bg-white rounded-xl p-12 border-2 border-dashed border-gray-300 text-center">
-                            <p className="text-gray-600">Đang tải...</p>
+                        <div className="bg-white rounded-xl p-8 border-2 border-dashed border-gray-300 text-center">
+                            <p className="text-sm text-gray-600">Đang tải...</p>
                         </div>
                     ) : savedTests.length > 0 ? (
-                        <div className="mb-10">
-                            <h2 className="text-xl font-semibold text-gray-900 mb-3">Danh sách bài kiểm tra</h2>
-                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        <div className="mb-6">
+                            <h2 className="text-lg font-semibold text-gray-900 mb-3">Danh sách bài kiểm tra</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                                 {savedTests.map((test) => {
                                     // Parse material count from description or material_ids
                                     let questionCount = 0;
@@ -4139,10 +4350,416 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
         );
     };
 
+    const renderGameProfile = () => {
+        const currentXP = 30;
+        const maxXP = 87;
+        const level = 4;
+        const bones = 312;
+        const username = user?.email?.split('@')[0] || 'huyềntrang1695119';
+
+        return (
+            <div className={`flex-1 transition-all duration-300 min-h-screen bg-white`}>
+                <div className="max-w-7xl mx-auto p-8">
+                    {/* Back Button */}
+                    <button
+                        onClick={() => setShowGameProfile(false)}
+                        className="mb-8 flex items-center text-gray-700 hover:text-gray-900 transition-colors font-medium"
+                    >
+                        <ArrowLeft className="w-5 h-5 mr-2" />
+                        <span className="text-lg">Back</span>
+                    </button>
+
+                    {/* BONES Section - Top Center */}
+                    <div className="text-center mb-8">
+                        <div className="flex items-center justify-center gap-2 mb-4">
+                            <span className="text-3xl">🦴</span>
+                            <span className="text-2xl font-bold text-gray-900">BONES: {bones}</span>
+                        </div>
+                        <button className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors">
+                            <ShoppingCart className="w-5 h-5" />
+                            Bone Shop
+                        </button>
+                    </div>
+
+                    <div className="flex gap-8">
+                        {/* Left Side - User Profile Card */}
+                        <div className="flex-1">
+                            {/* User Profile Card */}
+                            <div className="mb-8">
+                                <div className="flex items-start gap-4">
+                                    {/* Avatar */}
+                                    <div className="relative">
+                                        <div className="w-24 h-24 rounded-full flex items-center justify-center text-white font-bold text-4xl" style={{ backgroundColor: '#BF360C' }}>
+                                            {user?.name?.charAt(0).toUpperCase() || 'H'}
+                                        </div>
+                                        <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 bg-white border-2 text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap" style={{ borderColor: '#1f1f1f', color: '#1f1f1f' }}>
+                                            Level {level}
+                                        </div>
+                                    </div>
+
+                                    {/* User Info */}
+                                    <div className="flex-1 pt-1">
+                                        <h2 className="text-2xl font-bold text-gray-900 mb-1">{user?.name || 'Huyền Trang'}</h2>
+                                        <p className="text-gray-500 mb-4 text-base">@{username}</p>
+                                        <div className="mb-4">
+                                            <div className="w-80 bg-gray-200 rounded-full h-2 mb-0.5">
+                                                <div
+                                                    className="bg-green-500 h-2 rounded-full transition-all"
+                                                    style={{ width: `${(currentXP / maxXP) * 100}%` }}
+                                                ></div>
+                                            </div>
+                                            <div className="flex items-center justify-between text-xs">
+                                                <span className="text-gray-700 font-medium">Level {level}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm text-gray-700 mb-4">
+                                            <img
+                                                src={`${process.env.PUBLIC_URL || ''}/fire.gif`}
+                                                alt="Streak"
+                                                className="w-4 h-4 object-contain"
+                                            />
+                                            <span className="font-medium">Current Streak: {streakInfo.current} Day(s)</span>
+                                        </div>
+                                        <div className="mb-4">
+                                            <p className="text-gray-600 text-sm leading-relaxed">
+                                                <span className="font-semibold text-gray-800">Collect Bones:</span><br />
+                                                Every time you level up, you receive Spark.E Bones!
+                                            </p>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-semibold text-white transition-colors">
+                                                <Settings className="w-3.5 h-3.5" />
+                                                My Collection
+                                            </button>
+                                            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-semibold text-white transition-colors">
+                                                <Play className="w-3.5 h-3.5" />
+                                                Tutorials
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* How To Level Up & Leaderboards */}
+                            <div className="bg-white border border-gray-200 rounded-2xl p-4 w-full">
+                                <div className="flex border-b border-gray-200 mb-4">
+                                    <button
+                                        onClick={() => setGameProfileTab('level-up')}
+                                        className={`px-4 py-2 text-sm font-semibold transition-colors ${gameProfileTab === 'level-up'
+                                            ? 'text-blue-600 border-b-2 border-blue-600'
+                                            : 'text-gray-500 hover:text-gray-700'
+                                            }`}
+                                    >
+                                        How To Level Up
+                                    </button>
+                                    <button
+                                        onClick={() => setGameProfileTab('leaderboards')}
+                                        className={`ml-4 px-4 py-2 text-sm font-semibold transition-colors ${gameProfileTab === 'leaderboards'
+                                            ? 'text-blue-600 border-b-2 border-blue-600'
+                                            : 'text-gray-500 hover:text-gray-700'
+                                            }`}
+                                    >
+                                        Leaderboards
+                                    </button>
+                                </div>
+
+                                {gameProfileTab === 'level-up' && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                                        {[
+                                            {
+                                                title: 'Chat with Spark.E',
+                                                xp: '5 XP',
+                                                note: 'Max: 250 XP/day',
+                                                icon: `${process.env.PUBLIC_URL || ''}/SPARKE.gif`
+                                            },
+                                            {
+                                                title: 'Edit a Document using Spark.E AI',
+                                                xp: '5 XP',
+                                                note: 'Max: 500 XP/day',
+                                                icon: null,
+                                                glyph: <FileEdit className="w-8 h-8 text-blue-500" />
+                                            },
+                                            {
+                                                title: 'Use Spark.E Visuals',
+                                                xp: '3 XP',
+                                                note: 'Max: 150 XP/day',
+                                                icon: `${process.env.PUBLIC_URL || ''}/SPARKE.gif`
+                                            },
+                                            {
+                                                title: 'Share a Study Set',
+                                                xp: '50 XP',
+                                                note: 'Max: 400 XP/day',
+                                                icon: `${process.env.PUBLIC_URL || ''}/SPARKE.gif`
+                                            },
+                                            {
+                                                title: 'Complete a Test',
+                                                xp: '10 XP',
+                                                note: 'Max: 50 XP/day',
+                                                icon: null,
+                                                glyph: <Laptop className="w-8 h-8 text-blue-500" />
+                                            },
+                                            {
+                                                title: 'Perfect Score on a Test',
+                                                xp: '25 XP',
+                                                note: 'Max: 125 XP/day',
+                                                icon: null,
+                                                glyph: <Award className="w-8 h-8 text-blue-500" />
+                                            },
+                                            {
+                                                title: 'Complete a Match Game',
+                                                xp: '10 XP',
+                                                note: 'Max: 50 XP/day',
+                                                icon: null,
+                                                glyph: <Grid className="w-8 h-8 text-blue-500" />
+                                            },
+                                            {
+                                                title: 'Perfect Score on a Match Game',
+                                                xp: '25 XP',
+                                                note: 'Max: 125 XP/day',
+                                                icon: null,
+                                                glyph: <Rocket className="w-8 h-8 text-blue-500" />
+                                            }
+                                        ].map((card) => (
+                                            <div
+                                                key={card.title}
+                                                className="flex items-center gap-3 px-4 py-4 rounded-2xl border border-gray-200 hover:border-blue-200 hover:shadow-md transition-all bg-white"
+                                            >
+                                                <div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                                    {card.icon ? (
+                                                        <img src={card.icon} alt={card.title} className="w-10 h-10 object-contain" />
+                                                    ) : (
+                                                        card.glyph
+                                                    )}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <h4 className="text-sm font-semibold text-gray-900">{card.title}</h4>
+                                                    <p className="text-xs text-gray-500 truncate">
+                                                        <span className="font-semibold text-blue-600">{card.xp}</span> ({card.note})
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {gameProfileTab === 'leaderboards' && (
+                                    <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-6 text-center text-sm text-gray-500">
+                                        Leaderboards coming soon...
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Right Side - Daily Objectives */}
+                        <div className="w-[26rem]">
+                            {/* Daily Objectives */}
+                            <div className="bg-white border border-gray-200 rounded-2xl p-3">
+                                <h3 className="text-lg font-bold text-gray-900 mb-3">Daily Objectives</h3>
+                                <div className="space-y-2.5 mb-3">
+                                    <div className="bg-gray-50 rounded-lg px-2.5 py-2">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <FileEdit className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                                            <span className="text-xs text-gray-800 font-medium whitespace-nowrap">Edit a Document using Spark.E AI</span>
+                                        </div>
+                                        <div className="pl-5">
+                                            <div className="w-full bg-gray-200 rounded-full h-[3px] mb-0.5">
+                                                <div className="bg-blue-600 h-[3px] rounded-full" style={{ width: '0%' }}></div>
+                                            </div>
+                                            <p className="text-[10px] text-gray-500">0 / 3</p>
+                                        </div>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-2.5 py-2">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <Laptop className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                                            <span className="text-xs text-gray-800 font-medium whitespace-nowrap">Complete a Test</span>
+                                        </div>
+                                        <div className="pl-5">
+                                            <div className="w-full bg-gray-200 rounded-full h-[3px] mb-0.5">
+                                                <div className="bg-blue-600 h-[3px] rounded-full" style={{ width: '0%' }}></div>
+                                            </div>
+                                            <p className="text-[10px] text-gray-500">0 / 3</p>
+                                        </div>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-2.5 py-2">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <Rocket className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                                            <span className="text-xs text-gray-800 font-medium whitespace-nowrap">Perfect Score on a Match Game</span>
+                                        </div>
+                                        <div className="pl-5">
+                                            <div className="w-full bg-gray-200 rounded-full h-[3px] mb-0.5">
+                                                <div className="bg-blue-600 h-[3px] rounded-full" style={{ width: '0%' }}></div>
+                                            </div>
+                                            <p className="text-[10px] text-gray-500">0 / 1</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-gray-500 text-center pt-2.5 border-t border-gray-200">Resets in 20h 24m 25s</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderSettingsView = () => {
+        const email = user?.email || 'user@example.com';
+        const name = user?.name || (user as any)?.username || 'Spark User';
+        const username = (user as any)?.username || email.split('@')[0] || 'sparkuser';
+        const settingsTabs: Array<{ id: SettingsTab; label: string }> = [
+            { id: 'settings', label: 'Cài đặt' },
+            { id: 'subscription', label: 'Gói đăng ký' },
+            { id: 'privacy', label: 'Quyền riêng tư & Dữ liệu' },
+            { id: 'support', label: 'Hỗ trợ' }
+        ];
+
+        return (
+            <div className="flex-1 transition-all duration-300 min-h-screen bg-white">
+                <div className="max-w-5xl mx-auto p-8 space-y-6">
+                    <button
+                        onClick={() => {
+                            setShowSettingsView(false);
+                            setShowGameProfile(false);
+                            setSettingsTab('settings');
+                        }}
+                        className="flex items-center text-gray-700 hover:text-gray-900 transition-colors font-medium text-lg"
+                    >
+                        <ArrowLeft className="w-5 h-5 mr-2" />
+                        <span>Quay lại</span>
+                    </button>
+
+                    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm w-full">
+                        <div className="border-b border-gray-200 px-6 pt-6">
+                            <div className="flex flex-wrap items-center">
+                                {settingsTabs.map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setSettingsTab(tab.id)}
+                                        className={`mr-6 pb-3 text-sm font-semibold transition-colors ${settingsTab === tab.id
+                                            ? 'text-blue-600 border-b-2 border-blue-600'
+                                            : 'text-gray-500 hover:text-gray-700'
+                                            }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="p-6 space-y-8">
+                            {settingsTab === 'settings' && (
+                                <>
+
+                                    <div className="flex flex-wrap items-start gap-6">
+                                        <div className="flex flex-col items-center">
+                                            <div className="w-32 h-32 rounded-2xl bg-[#BF360C] text-white flex items-center justify-center text-4xl font-bold">
+                                                {name.charAt(0).toUpperCase()}
+                                            </div>
+                                            <p className="text-xs text-gray-500 mt-2">Kích thước đề xuất: 200x200</p>
+                                        </div>
+                                        <div className="flex-1 min-w-[250px] bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-3">
+                                            <h3 className="text-sm font-semibold text-gray-900">Đăng nhập ứng dụng di động</h3>
+                                            <p className="text-sm text-gray-600">
+                                                Nhấn nút bên dưới để tạo mã QR và đăng nhập vào ứng dụng di động.
+                                            </p>
+                                            <button className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors">
+                                                Tạo mã đăng nhập QR
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-semibold text-gray-500 uppercase">Email</label>
+                                            <input
+                                                readOnly
+                                                value={email}
+                                                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700"
+                                            />
+                                            <p className="text-xs text-gray-400">Email không thể thay đổi</p>
+                                        </div>
+                                        <div></div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-semibold text-gray-500 uppercase">Họ và tên</label>
+                                            <input
+                                                defaultValue={name}
+                                                className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-semibold text-gray-500 uppercase">Tên người dùng</label>
+                                            <input
+                                                defaultValue={username}
+                                                className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-semibold text-gray-500 uppercase">Ngôn ngữ</label>
+                                            <select className="w-full rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600">
+                                                <option>Tiếng Việt 🇻🇳</option>
+                                                <option>English 🇺🇸🇬🇧</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-3">
+                                        <div>
+                                            <span className="text-xs font-semibold text-gray-500 uppercase">Loại tài khoản</span>
+                                            <p className="text-sm text-gray-900">Học viên</p>
+                                        </div>
+                                        <div>
+                                            <h4 className="text-sm font-semibold text-gray-900">StudyFetch dành cho giáo viên</h4>
+                                            <p className="text-sm text-gray-600">
+                                                Truy cập bộ công cụ và tài nguyên được thiết kế riêng cho giáo viên.
+                                            </p>
+                                        </div>
+                                        <button className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors">
+                                            Kích hoạt tài khoản giáo viên
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+
+                            {settingsTab !== 'settings' && (
+                                <div className="bg-gray-50 border border-dashed border-gray-300 rounded-2xl p-10 text-center text-sm text-gray-500">
+                                    {settingsTab === 'subscription' && 'Tính năng quản lý gói đăng ký sẽ sớm được cập nhật.'}
+                                    {settingsTab === 'privacy' && 'Bạn sẽ sớm có thể quản lý quyền riêng tư và dữ liệu tại đây.'}
+                                    {settingsTab === 'support' && 'Tài nguyên hỗ trợ sẽ sớm có mặt.'}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const renderMainContent = () => {
         // If admin section, use old DashboardContent logic
         if (user?.role === 'admin' && ['admin', 'add-teacher', 'add-student', 'upload-file', 'ai-learning', 'progress', 'assignments'].includes(activeSection)) {
             return <DashboardContent activeSection={activeSection} />;
+        }
+
+        // Show Settings view if requested
+        if (showSettingsView) {
+            return renderSettingsView();
+        }
+
+        // Show Game Profile if requested
+        if (showGameProfile) {
+            return renderGameProfile();
+        }
+
+        // Show Chat View if requested
+        if (showChatView) {
+            return (
+                <ChatView
+                    key={`chat-${selectedStudySet?.id || 'new'}`} // Force remount when study set changes
+                    studySetId={selectedStudySet?.id}
+                    studySetName={selectedStudySet?.name}
+                    isCollapsed={isCollapsed}
+                    isDarkMode={isDarkMode}
+                />
+            );
         }
 
         // Show Loading view if generating test
@@ -4239,6 +4856,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                         setActiveSection('home');
                     }}
                     isCollapsed={isCollapsed}
+                    isDarkMode={isDarkMode}
                 />
             );
         }
@@ -4251,6 +4869,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                     moduleId={selectedModule.id}
                     moduleTitle={selectedModule.title}
                     studySetId={selectedStudySet.id}
+                    isDarkMode={isDarkMode}
                     onBack={() => {
                         // Clear sub-module ID when leaving sub-roadmap
                         setCurrentSubModuleId(null);
@@ -4287,6 +4906,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                         }}
                         isCollapsed={isCollapsed}
                         initialFlashcardSetId={selectedFlashcardSetId}
+                        isDarkMode={isDarkMode}
                     />
                 );
             }
@@ -4305,11 +4925,62 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                         }
                     }}
                     isCollapsed={isCollapsed}
+                    isDarkMode={isDarkMode}
                 />
             );
         }
 
-        // Show Study Set Detail if selected (check AFTER Flashcards)
+        // Show Upload Materials page if requested (check BEFORE Study Set Detail)
+        if (showUploadMaterials && selectedStudySet) {
+            return (
+                <UploadMaterials
+                    studySetId={selectedStudySet.id}
+                    studySetName={selectedStudySet.name}
+                    onBack={() => {
+                        setShowUploadMaterials(false);
+                        setShowStudySetDetail(true);
+                    }}
+                    onViewMaterial={async () => {
+                        // Điều hướng đến PDF viewer với material mới nhất
+                        setShowUploadMaterials(false);
+                        try {
+                            // Lấy material mới nhất vừa upload
+                            const materialsResponse = await fetch(`http://localhost:3001/api/materials/${selectedStudySet.id}`);
+                            if (materialsResponse.ok) {
+                                const materials = await materialsResponse.json();
+                                if (materials && materials.length > 0) {
+                                    // Lấy material mới nhất (đầu tiên trong danh sách)
+                                    const latestMaterial = materials[0];
+                                    // Convert material ID to string để match với citationMaterialId type
+                                    setCitationMaterialId(String(latestMaterial.id));
+                                    setCameFromMaterials(false);
+                                    setShowMaterialViewer(true);
+                                    console.log('✅ Navigating to PDF viewer with material:', latestMaterial.id, latestMaterial.name);
+                                } else {
+                                    // Nếu không có material, quay về StudySetDetail
+                                    console.warn('⚠️ No materials found, redirecting to StudySetDetail');
+                                    setShowStudySetDetail(true);
+                                }
+                            } else {
+                                console.error('❌ Failed to fetch materials:', materialsResponse.status);
+                                setShowStudySetDetail(true);
+                            }
+                        } catch (error) {
+                            console.error('❌ Error fetching materials:', error);
+                            setShowStudySetDetail(true);
+                        }
+                    }}
+                    onViewStudyPlan={() => {
+                        // Điều hướng đến roadmap (StudySetDetail)
+                        setShowUploadMaterials(false);
+                        setShowStudySetDetail(true);
+                    }}
+                    isCollapsed={isCollapsed}
+                />
+            );
+        }
+
+        // Show Study Set Detail if selected (check AFTER Flashcards and Upload Materials)
         if (showStudySetDetail && selectedStudySet) {
             return (
                 <StudySetDetail
@@ -4349,6 +5020,13 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                     }}
                     onViewMaterial={handleViewMaterial}
                     onViewFlashcards={handleViewFlashcards}
+                    onViewGames={() => {
+                        handleNavigation('arcade');
+                    }}
+                    onUploadMaterial={() => {
+                        setShowUploadMaterials(true);
+                        setShowStudySetDetail(false);
+                    }}
                     isCollapsed={isCollapsed}
                 />
             );
@@ -4359,6 +5037,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             return (
                 <MyStudySets
                     userId={user?.id || '0'}
+                    isDarkMode={isDarkMode}
                     onSelectStudySet={(set: { id: string; name: string; description?: string; createdAt: string; icon?: string }) => {
                         setSelectedStudySet({
                             id: set.id,
@@ -4390,25 +5069,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                     studySetName={selectedStudySet.name}
                     onBack={() => setShowFlashcards(false)}
                     isCollapsed={isCollapsed}
-                />
-            );
-        }
-
-        // Show Upload Materials page if requested
-        if (showUploadMaterials && selectedStudySet) {
-            return (
-                <UploadMaterials
-                    studySetId={selectedStudySet.id}
-                    studySetName={selectedStudySet.name}
-                    onBack={() => {
-                        setShowUploadMaterials(false);
-                        setShowMaterials(true);
-                    }}
-                    onViewMaterial={() => {
-                        setShowUploadMaterials(false);
-                        setShowMaterials(true);
-                    }}
-                    isCollapsed={isCollapsed}
+                    isDarkMode={isDarkMode}
                 />
             );
         }
@@ -4457,8 +5118,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                             setShowMaterials(true);
                             setCameFromMaterials(false);
                         } else {
+                            // If came from UploadFinishedModal, go back to StudySetDetail (roadmap)
                             // Otherwise go to home
-                            setActiveSection('home');
+                            setShowStudySetDetail(true);
                             // Reload data when going back
                             if (user?.id) {
                                 loadStudySets().then(() => {
@@ -4480,101 +5142,88 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
         // Otherwise, show StudyFetch content
         return (
             <div className="flex-1 p-8">
-                {/* Header */}
-                <div className="mb-8">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center space-x-4">
-                            <div className="w-16 h-16 flex items-center justify-center">
-                                <img
-                                    src="/SPARKE.gif"
-                                    alt="Avatar"
-                                    className="w-full h-full object-contain"
-                                    onError={(e) => {
-                                        // Fallback to emoji if image fails to load
-                                        e.currentTarget.style.display = 'none';
-                                        const nextElement = e.currentTarget.nextElementSibling as HTMLElement;
-                                        if (nextElement) {
-                                            nextElement.style.display = 'block';
-                                        }
-                                    }}
-                                />
-                                <span className="text-2xl" style={{ display: 'none' }}>🤖</span>
-                            </div>
-                            <div>
-                                <h1 className="text-3xl font-bold text-gray-900">
-                                    Chào buổi chiều, {user?.name || 'Người dùng'}!
-                                </h1>
-                                <p className="text-lg text-gray-600 mt-1">
-                                    Bạn đang làm việc với bộ học nào hôm nay?
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Top Action Buttons */}
-                        <div className="flex items-center space-x-3">
-                            <button className="flex items-center space-x-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 transition-colors">
-                                <span>Nâng cấp</span>
-                                <ChevronDown className="w-4 h-4 rotate-180" />
-                            </button>
-                            <button className="flex items-center space-x-2 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm border border-gray-300 hover:bg-gray-50 transition-colors">
-                                <span>Phản hồi</span>
-                                <span className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">i</span>
-                            </button>
-                            <div className="relative">
-                                <button className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
-                                    <div className="w-6 h-6 rounded-full bg-red-500 flex items-center justify-center relative">
-                                        {/* Diamond shape */}
-                                        <div className="w-3 h-3 bg-green-400 transform rotate-45 relative">
-                                            {/* Purple triangles pointing inward */}
-                                            <div className="absolute -top-1 -left-1 w-0 h-0 border-l-2 border-r-2 border-b-2 border-transparent border-b-purple-600"></div>
-                                            <div className="absolute -top-1 -right-1 w-0 h-0 border-l-2 border-r-2 border-b-2 border-transparent border-b-purple-600"></div>
-                                            <div className="absolute -bottom-1 -left-1 w-0 h-0 border-l-2 border-r-2 border-t-2 border-transparent border-t-purple-600"></div>
-                                            <div className="absolute -bottom-1 -right-1 w-0 h-0 border-l-2 border-r-2 border-t-2 border-transparent border-t-purple-600"></div>
-                                        </div>
-                                        {/* Notification badge */}
-                                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-white border-2 border-purple-600 rounded-full flex items-center justify-center">
-                                            <span className="text-purple-600 text-xs font-bold">1</span>
-                                        </div>
-                                    </div>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Study Set Buttons */}
-                    <div className="relative mb-6 flex items-center">
-                        {/* Left Arrow Button */}
-                        {studySets.length > 5 && studySetScrollIndex > 0 && (
-                            <button
-                                onClick={() => {
-                                    setStudySetScrollIndex(Math.max(0, studySetScrollIndex - 1));
-                                }}
-                                className="flex-shrink-0 w-10 h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-50 transition-colors z-10"
-                            >
-                                <ChevronLeft className="w-5 h-5 text-gray-600" />
-                            </button>
-                        )}
-
-                        {/* Scrollable Container - Full Width */}
-                        <div
-                            ref={studySetScrollRef}
-                            className="flex items-center justify-between flex-1 gap-4"
-                        >
-                            {studySets.length > 0 ? (
-                                studySets.slice(studySetScrollIndex, studySetScrollIndex + 5).map((set) => (
-                                    <button
-                                        key={set.id}
-                                        onClick={() => {
-                                            setSelectedStudySet(set);
-                                            // Add study set to navigation (only one at a time)
-                                            addStudySetToNavigation({ id: set.id, name: set.name, icon: (set as any).icon });
+                <div className="max-w-7xl mx-auto">
+                    {/* Header */}
+                    <div className="mb-8">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center space-x-4">
+                                <div className="w-16 h-16 flex items-center justify-center">
+                                    <img
+                                        src="/SPARKE.gif"
+                                        alt="Avatar"
+                                        className="w-full h-full object-contain"
+                                        onError={(e) => {
+                                            // Fallback to emoji if image fails to load
+                                            e.currentTarget.style.display = 'none';
+                                            const nextElement = e.currentTarget.nextElementSibling as HTMLElement;
+                                            if (nextElement) {
+                                                nextElement.style.display = 'block';
+                                            }
                                         }}
-                                        className={`flex-1 flex items-center space-x-3 px-6 py-4 rounded-lg transition-colors shadow-sm ${selectedStudySet?.id === set.id
-                                            ? 'bg-blue-100 border-2 border-blue-400 text-gray-900'
-                                            : 'bg-white border-2 border-gray-200 text-gray-900 hover:border-blue-300 hover:bg-gray-50'
-                                            }`}
-                                    >
-                                        <div className="w-8 h-8 bg-orange-200 rounded-lg flex items-center justify-center">
+                                    />
+                                    <span className="text-2xl" style={{ display: 'none' }}>🤖</span>
+                                </div>
+                                <div>
+                                    <h1 className="text-3xl font-bold text-gray-900">
+                                        Chào buổi chiều, {user?.name || 'Người dùng'}!
+                                    </h1>
+                                    <p className="text-lg text-gray-600 mt-1">
+                                        Bạn đang làm việc với bộ học nào hôm nay?
+                                    </p>
+                                </div>
+                            </div>
+
+                        </div>
+
+                        {/* Study Set Buttons */}
+                        <div className="relative mb-6 flex items-center">
+                            {/* Left Arrow Button */}
+                            {studySets.length > 5 && studySetScrollIndex > 0 && (
+                                <button
+                                    onClick={() => {
+                                        setStudySetScrollIndex(Math.max(0, studySetScrollIndex - 1));
+                                    }}
+                                    className="flex-shrink-0 w-10 h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-50 transition-colors z-10"
+                                >
+                                    <ChevronLeft className="w-5 h-5 text-gray-600" />
+                                </button>
+                            )}
+
+                            {/* Scrollable Container - Full Width */}
+                            <div
+                                ref={studySetScrollRef}
+                                className="flex items-center justify-between flex-1 gap-4"
+                            >
+                                {studySets.length > 0 ? (
+                                    studySets.slice(studySetScrollIndex, studySetScrollIndex + 5).map((set) => (
+                                        <button
+                                            key={set.id}
+                                            onClick={() => {
+                                                setSelectedStudySet(set);
+                                                // Add study set to navigation (only one at a time)
+                                                addStudySetToNavigation({ id: set.id, name: set.name, icon: (set as any).icon });
+                                            }}
+                                            className={`flex-1 flex items-center space-x-3 px-6 py-4 rounded-lg transition-all shadow-sm border ${selectedStudySet?.id === set.id
+                                                ? isDarkMode
+                                                    ? 'bg-[#0B1B33] border-blue-500 text-slate-100 shadow-[0_0_0_2px_rgba(59,130,246,0.35)]'
+                                                    : 'bg-blue-100 border-blue-400 text-gray-900'
+                                                : isDarkMode
+                                                    ? 'bg-slate-900/40 border-slate-700 text-slate-100 hover:bg-slate-800 hover:border-blue-400'
+                                                    : 'bg-white border-gray-200 text-gray-900 hover:border-blue-300 hover:bg-gray-50'
+                                                }`}
+                                        >
+                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${selectedStudySet?.id === set.id
+                                                ? isDarkMode ? 'bg-blue-900/40' : 'bg-orange-200'
+                                                : isDarkMode ? 'bg-slate-800' : 'bg-orange-200'
+                                                }`}>
+                                                {getStudySetIconDisplay(set as any)}
+                                            </div>
+                                            <span className={`font-semibold whitespace-nowrap ${isDarkMode ? 'text-slate-100' : 'text-gray-900'}`}>{set.name}</span>
+                                        </button>
+                                    ))
+                                ) : (
+                                    <button className={`flex-1 flex items-center space-x-3 px-6 py-4 rounded-lg transition-colors shadow-sm border ${isDarkMode ? 'bg-[#0B1B33] border-blue-500 text-slate-100' : 'bg-blue-50 border-blue-300 text-gray-900'}`}>
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isDarkMode ? 'bg-blue-900/40' : 'bg-orange-200'}`}>
                                             <div className="flex flex-wrap w-4 h-4">
                                                 <div className="w-1 h-1 bg-blue-600 rounded-full m-0.5"></div>
                                                 <div className="w-1 h-1 bg-yellow-500 rounded-full m-0.5"></div>
@@ -4582,162 +5231,162 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                                 <div className="w-1 h-1 bg-blue-500 rounded-full m-0.5"></div>
                                             </div>
                                         </div>
-                                        <span className="font-semibold text-gray-900 whitespace-nowrap">{set.name}</span>
+                                        <span className={`font-semibold ${isDarkMode ? 'text-slate-100' : 'text-gray-900'}`}>Bộ học đầu tiên của tôi</span>
                                     </button>
-                                ))
-                            ) : (
-                                <button className="flex-1 flex items-center space-x-3 bg-blue-50 border-2 border-blue-300 text-gray-900 px-6 py-4 rounded-lg hover:border-blue-400 transition-colors shadow-sm">
-                                    <div className="w-8 h-8 bg-orange-200 rounded-lg flex items-center justify-center">
-                                        <div className="flex flex-wrap w-4 h-4">
-                                            <div className="w-1 h-1 bg-blue-600 rounded-full m-0.5"></div>
-                                            <div className="w-1 h-1 bg-yellow-500 rounded-full m-0.5"></div>
-                                            <div className="w-1 h-1 bg-green-500 rounded-full m-0.5"></div>
-                                            <div className="w-1 h-1 bg-blue-500 rounded-full m-0.5"></div>
-                                        </div>
+                                )}
+                                <button
+                                    onClick={() => setShowAddSetModal(true)}
+                                    className={`flex-1 flex items-center justify-center space-x-3 px-6 py-4 rounded-lg transition-colors shadow-sm border-2 border-dashed ${isDarkMode
+                                        ? 'bg-slate-900/40 border-slate-700 text-slate-200 hover:border-slate-500'
+                                        : 'bg-gray-50 border-gray-300 text-gray-600 hover:border-gray-400'
+                                        }`}
+                                >
+                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-gray-200'}`}>
+                                        <span className={`${isDarkMode ? 'text-slate-200' : 'text-gray-600'} text-lg font-bold`}>+</span>
                                     </div>
-                                    <span className="font-semibold text-gray-900">Bộ học đầu tiên của tôi</span>
+                                    <span className={`font-semibold whitespace-nowrap text-sm ${isDarkMode ? 'text-slate-200' : 'text-gray-600'}`}>Thêm bộ học</span>
+                                </button>
+                            </div>
+
+                            {/* Right Arrow Button */}
+                            {studySets.length > 5 && studySetScrollIndex + 5 < studySets.length && (
+                                <button
+                                    onClick={() => {
+                                        const maxIndex = Math.max(0, studySets.length - 5);
+                                        setStudySetScrollIndex(Math.min(maxIndex, studySetScrollIndex + 1));
+                                    }}
+                                    className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-colors z-10 ${isDarkMode ? 'bg-slate-800 text-slate-200 hover:bg-slate-700' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                                >
+                                    <ChevronRight className="w-5 h-5" />
                                 </button>
                             )}
-                            <button
-                                onClick={() => setShowAddSetModal(true)}
-                                className="flex-1 flex items-center justify-center space-x-3 bg-gray-50 border-2 border-dashed border-gray-300 text-gray-600 px-6 py-4 rounded-lg hover:border-gray-400 transition-colors shadow-sm"
-                            >
-                                <div className="w-8 h-8 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
-                                    <span className="text-gray-600 text-lg font-bold">+</span>
-                                </div>
-                                <span className="font-semibold text-gray-600 whitespace-nowrap text-sm">Thêm bộ học</span>
-                            </button>
                         </div>
 
-                        {/* Right Arrow Button */}
-                        {studySets.length > 5 && studySetScrollIndex + 5 < studySets.length && (
-                            <button
-                                onClick={() => {
-                                    const maxIndex = Math.max(0, studySets.length - 5);
-                                    setStudySetScrollIndex(Math.min(maxIndex, studySetScrollIndex + 1));
+                    </div>
+
+                    {/* Divider Line */}
+                    <div className="w-full h-px bg-gray-300 my-6"></div>
+
+                    {/* Main Content Area - 2 columns */}
+                    <div className="flex gap-6">
+                        {/* Left Column - Study Set Card */}
+                        <div className="flex-1">
+                            <StudySetCard
+                                studySetName={selectedStudySet?.name || "Bộ học đầu tiên của tôi"}
+                                studySetId={selectedStudySet?.id}
+                                materialsCount={homeStats.materialsCount}
+                                testsCount={homeStats.testsCount}
+                                flashcardsCount={homeStats.flashcardsCount}
+                                explainersCount={homeStats.explainersCount}
+                                arcadeCount={homeStats.arcadeCount}
+                                audioCount={homeStats.audioCount}
+                                onStartLearning={handleStartLearning}
+                                onFeatureClick={(featureId) => {
+                                    console.log('onFeatureClick called with featureId:', featureId);
+                                    handleNavigation(featureId);
                                 }}
-                                className="flex-shrink-0 w-10 h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-50 transition-colors z-10"
-                            >
-                                <ChevronRight className="w-5 h-5 text-gray-600" />
-                            </button>
-                        )}
-                    </div>
-
-                </div>
-
-                {/* Divider Line */}
-                <div className="w-full h-px bg-gray-300 my-6"></div>
-
-                {/* Main Content Area - 2 columns */}
-                <div className="flex gap-6">
-                    {/* Left Column - Study Set Card */}
-                    <div className="flex-1">
-                        <StudySetCard
-                            studySetName={selectedStudySet?.name || "Bộ học đầu tiên của tôi"}
-                            studySetId={selectedStudySet?.id}
-                            materialsCount={homeStats.materialsCount}
-                            testsCount={homeStats.testsCount}
-                            flashcardsCount={homeStats.flashcardsCount}
-                            explainersCount={homeStats.explainersCount}
-                            onStartLearning={handleStartLearning}
-                            onFeatureClick={(featureId) => {
-                                console.log('onFeatureClick called with featureId:', featureId);
-                                handleNavigation(featureId);
-                            }}
-                        />
-                    </div>
-
-                    {/* Right Column - 3 Cards */}
-                    <div className="w-80 space-y-6">
-                        {/* Streak Card */}
-                        <div className="bg-white rounded-xl p-6 shadow-sm">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center space-x-3">
-                                    <img
-                                        src="/fire.gif"
-                                        alt="Streak"
-                                        className="w-10 h-10 rounded-full object-cover shadow-sm"
-                                    />
-                                    <div>
-                                        <div className="text-xl font-bold text-gray-900">
-                                            {isLoadingStreak ? 'Đang cập nhật...' : `${streakInfo.current} ngày streak!`}
-                                        </div>
-                                        <p className="text-xs text-gray-500">
-                                            Kỷ lục: {streakInfo.best} ngày
-                                        </p>
-                                    </div>
-                                </div>
-                                <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">
-                                    Xem bảng xếp hạng
-                                </button>
-                            </div>
+                                studyPath={homeStudyPath}
+                                onViewAll={() => {
+                                    if (selectedStudySet) {
+                                        setShowStudySetDetail(true);
+                                    }
+                                }}
+                                icon={(selectedStudySet as any)?.icon}
+                            />
                         </div>
 
-                        {/* Materials Card */}
-                        <div className="bg-white rounded-xl p-6 shadow-sm">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-lg font-semibold text-gray-900">Tài liệu</h3>
-                                <button className="flex items-center space-x-1 bg-blue-600 text-white px-3 py-1 rounded-lg text-sm hover:bg-blue-700 transition-colors">
-                                    <Upload className="w-4 h-4" />
-                                    <span>Tải lên</span>
-                                </button>
-                            </div>
-                            <div className="space-y-3">
-                                {recentMaterials.length > 0 ? (
-                                    recentMaterials.map((material) => {
-                                        const date = material.created_at
-                                            ? new Date(material.created_at).toLocaleDateString('vi-VN', {
-                                                day: 'numeric',
-                                                month: 'short',
-                                                year: 'numeric'
-                                            })
-                                            : 'Không xác định';
-                                        return (
-                                            <div key={material.id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                                                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                                                    <FileText className="w-4 h-4 text-blue-600" />
-                                                </div>
-                                                <div className="flex-1">
-                                                    <p className="font-medium text-gray-900">{material.name || 'Tài liệu không tên'}</p>
-                                                    <p className="text-sm text-gray-500">{date}</p>
-                                                </div>
+                        {/* Right Column - 3 Cards */}
+                        <div className="w-80 space-y-6">
+                            {/* Streak Card */}
+                            <div className="bg-white rounded-xl p-6 shadow-sm">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center space-x-3">
+                                        <img
+                                            src="/fire.gif"
+                                            alt="Streak"
+                                            className="w-10 h-10 rounded-full object-cover shadow-sm"
+                                        />
+                                        <div>
+                                            <div className="text-xl font-bold text-gray-900">
+                                                {isLoadingStreak ? 'Đang cập nhật...' : `${streakInfo.current} ngày streak!`}
                                             </div>
-                                        );
-                                    })
-                                ) : (
-                                    <div className="text-center text-gray-500 py-4">
-                                        <p className="text-sm">Chưa có tài liệu nào</p>
+                                            <p className="text-xs text-gray-500">
+                                                Kỷ lục: {streakInfo.best} ngày
+                                            </p>
+                                        </div>
                                     </div>
-                                )}
-                                {recentMaterials.length > 0 && (
-                                    <div className="text-right">
-                                        <button
-                                            onClick={() => {
-                                                if (selectedStudySet) {
-                                                    setShowStudySetDetail(true);
-                                                    setActiveSection('home');
-                                                }
-                                            }}
-                                            className="text-blue-600 hover:text-blue-700 text-sm"
-                                        >
-                                            Xem tất cả
-                                        </button>
-                                    </div>
-                                )}
+                                    <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">
+                                        Xem bảng xếp hạng
+                                    </button>
+                                </div>
                             </div>
-                        </div>
 
-                        {/* Upcoming Card */}
-                        <div className="bg-white rounded-xl p-6 shadow-sm">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-lg font-semibold text-gray-900">Sắp tới</h3>
-                                <button className="text-gray-600 hover:text-gray-800">
-                                    <ChevronDown className="w-4 h-4" />
-                                </button>
+                            {/* Materials Card */}
+                            <div className="bg-white rounded-xl p-6 shadow-sm">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-lg font-semibold text-gray-900">Tài liệu</h3>
+                                    <button className="flex items-center space-x-1 bg-blue-600 text-white px-3 py-1 rounded-lg text-sm hover:bg-blue-700 transition-colors">
+                                        <Upload className="w-4 h-4" />
+                                        <span>Tải lên</span>
+                                    </button>
+                                </div>
+                                <div className="space-y-3">
+                                    {recentMaterials.length > 0 ? (
+                                        recentMaterials.map((material) => {
+                                            const date = material.created_at
+                                                ? new Date(material.created_at).toLocaleDateString('vi-VN', {
+                                                    day: 'numeric',
+                                                    month: 'short',
+                                                    year: 'numeric'
+                                                })
+                                                : 'Không xác định';
+                                            return (
+                                                <div key={material.id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                                                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                                                        <FileText className="w-4 h-4 text-blue-600" />
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <p className="font-medium text-gray-900">{material.name || 'Tài liệu không tên'}</p>
+                                                        <p className="text-sm text-gray-500">{date}</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        <div className="text-center text-gray-500 py-4">
+                                            <p className="text-sm">Chưa có tài liệu nào</p>
+                                        </div>
+                                    )}
+                                    {recentMaterials.length > 0 && (
+                                        <div className="text-right">
+                                            <button
+                                                onClick={() => {
+                                                    if (selectedStudySet) {
+                                                        setShowStudySetDetail(true);
+                                                        setActiveSection('home');
+                                                    }
+                                                }}
+                                                className="text-blue-600 hover:text-blue-700 text-sm"
+                                            >
+                                                Xem tất cả
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            <div className="text-center text-gray-600">
-                                <p className="mb-2">Không có sự kiện sắp tới</p>
-                                <button className="text-blue-600 hover:text-blue-700 text-sm">Xem tất cả</button>
+
+                            {/* Upcoming Card */}
+                            <div className="bg-white rounded-xl p-6 shadow-sm">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-lg font-semibold text-gray-900">Sắp tới</h3>
+                                    <button className="text-gray-600 hover:text-gray-800">
+                                        <ChevronDown className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <div className="text-center text-gray-600">
+                                    <p className="mb-2">Không có sự kiện sắp tới</p>
+                                    <button className="text-blue-600 hover:text-blue-700 text-sm">Xem tất cả</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -4747,13 +5396,102 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
     };
 
     return (
-        <div className={`min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`}>
+        <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-white text-gray-900'}`}>
+            {/* Top Right Header - Fixed (Feedback & Profile) - Hidden in Test view */}
+            {!showTestView && !showReviewTest && (
+                <div className="fixed top-0 right-4 z-50 flex items-center space-x-3 pt-2">
+                    <button
+                        className={`flex items-center space-x-2 px-4 py-2 rounded-full text-sm transition-colors border ${isDarkMode
+                            ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
+                            : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'
+                            }`}
+                    >
+                        <Info className="w-4 h-4" />
+                        <span>Feedback</span>
+                    </button>
+                    <div className="relative" ref={profileDropdownRef}>
+                        <div
+                            onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                            className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm cursor-pointer transition-colors"
+                            style={{ backgroundColor: '#BF360C' }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#A0300A'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#BF360C'}
+                        >
+                            {user?.name?.charAt(0).toUpperCase() || 'H'}
+                        </div>
+
+                        {/* Profile Dropdown Menu */}
+                        {showProfileDropdown && (
+                            <div className={`absolute top-full right-0 mt-2 w-56 rounded-lg shadow-xl border z-50 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-700'}`}>
+                                <div className="py-1">
+                                    <button
+                                        onClick={() => {
+                                            setShowGameProfile(true);
+                                            setShowSettingsView(false);
+                                            setShowProfileDropdown(false);
+                                        }}
+                                        className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                                    >
+                                        <Monitor className="w-4 h-4" />
+                                        <span>Your Profile</span>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setShowSettingsView(true);
+                                            setSettingsTab('settings');
+                                            setShowGameProfile(false);
+                                            setShowProfileDropdown(false);
+                                        }}
+                                        className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                                    >
+                                        <Settings className="w-4 h-4" />
+                                        <span>Settings</span>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setIsDarkMode(!isDarkMode);
+                                            setShowProfileDropdown(false);
+                                        }}
+                                        className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                                    >
+                                        <Moon className="w-4 h-4" />
+                                        <span>Dark Mode</span>
+                                    </button>
+                                    <button className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-50'}`}>
+                                        <Pencil className="w-4 h-4" />
+                                        <span>Give Us Feedback</span>
+                                    </button>
+                                    <button className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-50'}`}>
+                                        <Gift className="w-4 h-4" />
+                                        <span>Friends Get 50% off</span>
+                                    </button>
+                                    <button className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-slate-100 hover:bg-slate-700' : 'text-gray-700 hover:bg-gray-50'}`}>
+                                        <HelpCircle className="w-4 h-4" />
+                                        <span>Support</span>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setShowProfileDropdown(false);
+                                            logout();
+                                        }}
+                                        className={`w-full flex items-center space-x-3 px-4 py-2.5 text-sm transition-colors ${isDarkMode ? 'text-red-400 hover:bg-red-900/30' : 'text-red-600 hover:bg-red-50'}`}
+                                    >
+                                        <LogOut className="w-4 h-4" />
+                                        <span>Đăng xuất</span>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Left Sidebar - Fixed */}
-            <div className={`fixed left-0 top-0 h-screen z-30 ${isCollapsed ? 'w-16' : 'w-48'} ${isDarkMode ? 'bg-gray-800' : 'bg-white'} shadow-lg flex flex-col transition-all duration-300`}>
+            <div className={`fixed left-0 top-0 h-screen z-30 ${isCollapsed ? 'w-16' : 'w-48'} ${isDarkMode ? 'bg-gray-800 border-r border-gray-700' : 'bg-white border-r border-gray-200'} shadow-lg flex flex-col transition-all duration-300`}>
                 {/* Logo */}
                 <div className="p-3 border-b">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-2 flex-1">
                             <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden">
                                 <img
                                     src="/SPARKE.gif"
@@ -4762,26 +5500,28 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 />
                             </div>
                             {!isCollapsed && (
-                                <span className={`font-bold text-xl ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>STUDY FETCH</span>
+                                <>
+                                    <span className={`font-bold text-lg ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>STUDY FETCH</span>
+                                    <div className="flex items-center space-x-1.5 ml-1">
+                                        <img
+                                            src={`${process.env.PUBLIC_URL || ''}/fire.gif`}
+                                            alt="Streak"
+                                            className="w-5 h-5 object-contain"
+                                        />
+                                        <span className={`text-base font-semibold ${isDarkMode ? 'text-gray-300' : 'text-gray-900'}`}>
+                                            {isLoadingStreak ? '...' : streakInfo.current}
+                                        </span>
+                                    </div>
+                                </>
                             )}
                         </div>
                         {/* Removed Dark Mode Button */}
                     </div>
                 </div>
 
-                {/* Search and Flame */}
-                <div className="p-2 border-b">
-                    <div className="flex items-center space-x-3">
-                        <div className="flex items-center space-x-2 text-gray-600">
-                            <Flame className="w-4 h-4" />
-                            {!isCollapsed && <span className="text-sm">0</span>}
-                        </div>
-                    </div>
-                </div>
-
                 {/* Navigation */}
-                <nav className="flex-1 p-2 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-                    <ul className="space-y-1">
+                <nav className="flex-1 p-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+                    <ul className="space-y-0.5">
                         {navigationItems.map((item) => {
                             const Icon = item.icon;
                             // Logic active state: chỉ một nút active tại một thời điểm
@@ -4791,11 +5531,12 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 // Home active khi: không có view nào đang mở (dashboard chính)
                                 // và không phải đang ở test/review test/practice
                                 // và không phải đang ở studyset hay subroadmap
+                                // và không phải đang ở chat
                                 isActive = !showFlashcards && !showMaterialViewer && !showStudySetDetail && !showSubRoadmap &&
                                     !showReviewTest && !showTestView && !showCreateTest &&
                                     !showMaterialSelection && !showFlashcardSelection && !showTestTypeSelection && !showPractice &&
                                     !showExplainerVideo && !showExplainerVideoResult && !showExplainerVideoGenerating &&
-                                    !showArcade && activeSection !== 'sets';
+                                    !showArcade && !showChatView && activeSection !== 'sets' && activeSection !== 'chat';
                             } else if (item.id === 'sets') {
                                 // Sets active khi: activeSection là 'sets'
                                 isActive = activeSection === 'sets';
@@ -4813,6 +5554,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                             } else if (item.id === 'arcade') {
                                 // Arcade active khi: đang xem arcade page
                                 isActive = showArcade;
+                            } else if (item.id === 'chat') {
+                                // Chat active khi: đang xem chat view
+                                isActive = showChatView || activeSection === 'chat';
                             } else if (item.id.startsWith('study-set-')) {
                                 // Study set active khi: đang xem StudySetDetail của study set đó
                                 const studySetId = item.id.replace('study-set-', '');
@@ -4833,13 +5577,13 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 <li key={item.id}>
                                     <button
                                         onClick={(e) => handleNavigationClick(item.id, e)}
-                                        className={`w-full flex items-center space-x-2 px-1.5 py-1 rounded-md text-left transition-all duration-200 text-sm transform hover:scale-105 active:scale-95 ${isActive
+                                        className={`w-full flex items-center space-x-2 px-2 py-1.5 rounded-md text-left transition-all duration-200 text-sm transform hover:scale-105 active:scale-95 ${isActive
                                             ? isDarkMode
-                                                ? 'bg-blue-900 text-blue-400'
+                                                ? 'bg-blue-800 text-blue-100'
                                                 : 'bg-blue-50'
                                             : isAdmin
-                                                ? isDarkMode ? 'text-orange-400 hover:bg-orange-900' : 'text-orange-600 hover:bg-orange-50'
-                                                : isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'
+                                                ? isDarkMode ? 'text-orange-300 hover:bg-orange-900/40' : 'text-orange-600 hover:bg-orange-50'
+                                                : isDarkMode ? 'text-slate-200 hover:bg-slate-700/70' : 'text-gray-700 hover:bg-gray-50'
                                             }`}
                                         title={isCollapsed ? item.label : undefined}
                                         style={isActive && studySetIconColor ? {
@@ -4874,36 +5618,29 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                         {!isCollapsed && <span>Tải lên</span>}
                     </button>
                 </div>
-
-                {/* Logout Button */}
-                <div className="p-1">
-                    <button
-                        onClick={() => {
-                            logout();
-                        }}
-                        className="w-full flex items-center justify-center space-x-2 bg-red-100 text-red-600 px-3 py-1.5 rounded-md hover:bg-red-200 transition-colors text-sm"
-                    >
-                        <LogOut className={`${isCollapsed ? 'w-4 h-4' : 'w-4 h-4'}`} />
-                        {!isCollapsed && <span>Đăng xuất</span>}
-                    </button>
-                </div>
-
-                {/* Collapse Button */}
-                <div className="p-1">
-                    <button
-                        onClick={() => setIsCollapsed(!isCollapsed)}
-                        className="w-full flex items-center justify-center space-x-2 bg-gray-100 text-gray-600 px-3 py-1.5 rounded-md hover:bg-gray-200 transition-colors text-sm"
-                    >
-                        <ChevronDown className={`w-4 h-4 ${isCollapsed ? 'rotate-90' : '-rotate-90'}`} />
-                        {!isCollapsed && <span>Thu gọn</span>}
-                    </button>
-                </div>
             </div>
+
+            {/* Collapse Button - Positioned at sidebar border */}
+            <button
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                className="fixed z-40 w-8 h-8 rounded-full border border-gray-200 bg-white text-gray-600 flex items-center justify-center hover:bg-gray-50 hover:border-gray-300 transition-all duration-300 shadow-sm"
+                style={{
+                    left: isCollapsed ? '4rem' : '12rem',
+                    top: '50%',
+                    transform: 'translate(-50%, -50%)',
+                }}
+            >
+                {isCollapsed ? (
+                    <ChevronRight className="w-3.5 h-3.5" />
+                ) : (
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                )}
+            </button>
 
             {/* Main Content - Adjust padding to account for fixed sidebar */}
             <div
                 className={`transition-all duration-300 ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`}
-                style={{ paddingLeft: isCollapsed ? '4rem' : '12rem' }}
+                style={{ marginLeft: isCollapsed ? '4rem' : '12rem' }}
             >
                 {renderMainContent()}
             </div>
@@ -4911,7 +5648,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             {/* Add Study Set Modal */}
             {showAddSetModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl p-8 w-full max-w-md mx-4 shadow-2xl">
+                    <div className={`rounded-xl p-8 w-full max-w-md mx-4 shadow-2xl ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                         {/* Header */}
                         <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center space-x-3">
@@ -4919,8 +5656,8 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                     <Plus className="w-5 h-5 text-white" />
                                 </div>
                                 <div>
-                                    <h3 className="text-xl font-bold text-gray-900">Tạo Bộ Học</h3>
-                                    <p className="text-sm text-gray-600">Tạo một bộ học mới để tổ chức tài liệu của bạn.</p>
+                                    <h3 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Tạo Bộ Học</h3>
+                                    <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Tạo một bộ học mới để tổ chức tài liệu của bạn.</p>
                                 </div>
                             </div>
                             <button
@@ -4929,7 +5666,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                     setNewSetName('');
                                     setNewSetDescription('');
                                 }}
-                                className="text-gray-400 hover:text-gray-600 transition-colors"
+                                className={`transition-colors ${isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-400 hover:text-gray-600'}`}
                             >
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -4941,7 +5678,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                         <div className="space-y-6">
                             {/* Study Set Name */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                                     Tên Bộ Học <span className="text-red-500">*</span>
                                 </label>
                                 <input
@@ -4949,14 +5686,17 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                     value={newSetName}
                                     onChange={(e) => setNewSetName(e.target.value)}
                                     placeholder="Ví dụ: Sinh học Chương 5"
-                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+                                    className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base ${isDarkMode
+                                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500'
+                                        : 'border-gray-300 bg-white text-gray-900'
+                                        }`}
                                     autoFocus
                                 />
                             </div>
 
                             {/* Description */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                                     Mô tả (Tùy chọn)
                                 </label>
                                 <textarea
@@ -4964,19 +5704,22 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                     onChange={(e) => setNewSetDescription(e.target.value)}
                                     placeholder="Thêm mô tả để giúp bạn nhớ bộ học này về cái gì..."
                                     rows={3}
-                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base resize-none"
+                                    className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base resize-none ${isDarkMode
+                                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500'
+                                        : 'border-gray-300 bg-white text-gray-900'
+                                        }`}
                                 />
                             </div>
 
                             {/* What happens next section */}
-                            <div className="bg-blue-50 rounded-lg p-4">
+                            <div className={`rounded-lg p-4 ${isDarkMode ? 'bg-blue-900/30' : 'bg-blue-50'}`}>
                                 <div className="flex items-start space-x-3">
-                                    <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                                        <FileText className="w-4 h-4 text-blue-600" />
+                                    <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${isDarkMode ? 'bg-blue-800' : 'bg-blue-100'}`}>
+                                        <FileText className={`w-4 h-4 ${isDarkMode ? 'text-blue-300' : 'text-blue-600'}`} />
                                     </div>
                                     <div>
-                                        <h4 className="text-sm font-medium text-gray-900 mb-1">Điều gì sẽ xảy ra tiếp theo?</h4>
-                                        <p className="text-sm text-gray-600">
+                                        <h4 className={`text-sm font-medium mb-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Điều gì sẽ xảy ra tiếp theo?</h4>
+                                        <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                                             Sau khi tạo bộ học, bạn sẽ có thể thêm tài liệu như tài liệu, video và liên kết.
                                             StudyFetch AI sẽ tạo ra các công cụ học tập cá nhân hóa từ nội dung của bạn.
                                         </p>
@@ -4993,7 +5736,10 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                     setNewSetName('');
                                     setNewSetDescription('');
                                 }}
-                                className="px-6 py-3 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+                                className={`px-6 py-3 rounded-lg transition-colors font-medium ${isDarkMode
+                                    ? 'text-gray-200 bg-gray-700 hover:bg-gray-600'
+                                    : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+                                    }`}
                             >
                                 Hủy
                             </button>
@@ -5088,4 +5834,3 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
 
 export default HybridDashboard;
 export { };
-

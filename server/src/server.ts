@@ -6,6 +6,7 @@ import helmet from "helmet";
 import { randomUUID } from "crypto";
 import fs from "fs/promises";
 import dotenv from "dotenv";
+import { OAuth2Client } from "google-auth-library";
 
 // Load environment variables
 dotenv.config();
@@ -19,6 +20,7 @@ import studySetsRouter from "./routes/studySets";
 import flashcardSetsRouter from "./routes/flashcardSets";
 import foldersRouter from "./routes/folders";
 import aiRouter from "./routes/ai";
+import aiStudyFlashcardRouter from "./routes/aiStudyFlashcard";
 import chatHistoryRouter from "./routes/chatHistory";
 import flashcardsRouter from "./routes/flashcards";
 import testsRouter from "./routes/tests";
@@ -33,6 +35,10 @@ import streakRouter from "./routes/streaks";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Google OAuth Client
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '32402427703-636ai8dcanhb6ltnf4n2vktcbvrcflsi.apps.googleusercontent.com';
+const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // Middleware
 app.use(helmet({
@@ -67,6 +73,7 @@ app.use('/api/tests', testsRouter);
 app.use('/api/flashcard-sets', flashcardSetsRouter);
 app.use('/api/folders', foldersRouter);
 app.use('/api/ai', aiRouter);
+app.use('/api/ai', aiStudyFlashcardRouter);
 app.use('/api/chat-history', chatHistoryRouter);
 app.use('/api/flashcards', flashcardsRouter);
 // Enable videos router for GET endpoint (to fetch slideshow videos from database)
@@ -259,6 +266,62 @@ app.post('/api/login', async (req, res) => {
     } catch (error: any) {
         console.error('Login error:', error);
         res.status(500).json({ error: 'Login failed' });
+    }
+});
+
+// Google OAuth login endpoint
+app.post('/api/auth/google', async (req, res) => {
+    try {
+        const { credential } = req.body; // Google ID token từ frontend
+
+        if (!credential) {
+            return res.status(400).json({ error: 'Missing credential' });
+        }
+
+        // Verify Google token
+        const ticket = await client.verifyIdToken({
+            idToken: credential,
+            audience: GOOGLE_CLIENT_ID,
+        });
+
+        const payload = ticket.getPayload();
+        if (!payload) {
+            return res.status(401).json({ error: 'Invalid token' });
+        }
+
+        const { email, name, sub: googleId, picture } = payload;
+
+        if (!email) {
+            return res.status(400).json({ error: 'Email not provided by Google' });
+        }
+
+        // Tìm user theo email
+        let user = db.getUserByEmail(email);
+
+        if (!user) {
+            // Tạo user mới nếu chưa tồn tại
+            const newUser: Omit<User, 'id' | 'created_at' | 'updated_at'> = {
+                email: email,
+                password: '', // Không cần password cho Google login
+                name: name || 'Google User',
+                role: 'student',
+            };
+            user = db.createUser(newUser);
+        }
+
+        res.json({
+            message: 'Login successful',
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                role: user.role,
+                created_at: user.created_at
+            }
+        });
+    } catch (error: any) {
+        console.error('Google login error:', error);
+        res.status(500).json({ error: 'Google login failed', details: error.message });
     }
 });
 

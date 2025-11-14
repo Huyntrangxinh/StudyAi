@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, Link, Upload, BookOpen, PenTool, ListChecks } from 'lucide-react';
+import { ArrowLeft, BookOpen, PenTool, ListChecks } from 'lucide-react';
 import { FlashcardHeader } from './FlashcardHeader';
 import { TypeCounts, SelectedType, Material } from '../../types/flashcard';
 import { clampCount } from '../../utils/flashcardHelpers';
