@@ -24,10 +24,31 @@ const storage = multer.diskStorage({
     }
 });
 
-const upload = multer({ storage: storage });
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: 100 * 1024 * 1024, // 100MB limit
+    }
+});
 
 // POST /api/materials/upload - Upload file and create material
-router.post('/upload', upload.single('file'), (req, res) => {
+router.post('/upload', (req, res, next) => {
+    upload.single('file')(req, res, (err: any) => {
+        if (err) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(400).json({
+                    error: 'File quá lớn. Kích thước tối đa là 100MB.'
+                });
+            }
+            console.error('Multer upload error:', err);
+            return res.status(500).json({
+                error: 'Lỗi khi upload file',
+                details: err.message
+            });
+        }
+        next();
+    });
+}, (req, res) => {
     const { name, type, size, studySetId, generateNotes, noteType } = req.body;
 
     if (!name || !type || !size || !studySetId) {
@@ -55,51 +76,87 @@ router.post('/upload', upload.single('file'), (req, res) => {
     const sizeInt = parseInt(size);
 
     // Compute file hash for content-based dedup per study set
-    let fileHash: string | null = null;
-    if (filePath) {
-        try {
-            const full = path.join(__dirname, '../../uploads', filePath);
-            const buf = fs.readFileSync(full);
-            fileHash = crypto.createHash('sha256').update(buf).digest('hex');
-        } catch (e) {
-            console.error('Hash compute error:', e);
-        }
-    }
+    // Use streaming for large files to avoid memory issues
+    const computeFileHash = (filePath: string): Promise<string | null> => {
+        return new Promise((resolve) => {
+            try {
+                const full = path.join(__dirname, '../../uploads', filePath);
+                const hash = crypto.createHash('sha256');
+                const stream = fs.createReadStream(full);
 
-    // Insert; allow same names, but avoid identical content in same study set
-    db.run(
-        'INSERT INTO materials (name, type, size, file_path, study_set_id, generate_notes, note_type, created_at, updated_at, file_hash, file_size) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [name, type, sizeInt, filePath, studySetId, generateNotes === 'true', noteType || 'summarized', now, now, fileHash, sizeInt],
-        function (this: any, err) {
-            if (err) {
-                const e = err as NodeJS.ErrnoException;
-                console.error('Error creating material:', e);
-                console.error('Error message:', e.message);
-                console.error('Error code:', e.code);
-                db.close();
-                if (String(e.message).includes('idx_materials_unique_hash')) {
-                    return res.status(409).json({ error: 'File already exists in this study set (same content)' });
-                }
-                return res.status(500).json({ error: 'Internal server error' });
+                stream.on('data', (chunk) => {
+                    hash.update(chunk);
+                });
+
+                stream.on('end', () => {
+                    resolve(hash.digest('hex'));
+                });
+
+                stream.on('error', (err) => {
+                    console.error('Error reading file for hash:', err);
+                    resolve(null);
+                });
+            } catch (e) {
+                console.error('Hash compute error:', e);
+                resolve(null);
+            }
+        });
+    };
+
+    // Process upload: compute hash then insert
+    (async () => {
+        try {
+            let fileHash: string | null = null;
+            if (filePath) {
+                fileHash = await computeFileHash(filePath);
             }
 
-            const insertedId = (this as any)?.lastID;
-            res.json({
-                id: insertedId,
-                name,
-                type,
-                size,
-                file_path: filePath,
-                studySetId,
-                generateNotes: generateNotes === 'true',
-                noteType: noteType || 'summarized',
-                status: 'uploaded',
-                createdAt: now,
-                updatedAt: now
-            });
+            // Insert; allow same names, but avoid identical content in same study set
+            db.run(
+                'INSERT INTO materials (name, type, size, file_path, study_set_id, generate_notes, note_type, created_at, updated_at, file_hash, file_size) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [name, type, sizeInt, filePath, studySetId, generateNotes === 'true', noteType || 'summarized', now, now, fileHash, sizeInt],
+                function (this: any, err) {
+                    if (err) {
+                        const e = err as NodeJS.ErrnoException;
+                        console.error('Error creating material:', e);
+                        console.error('Error message:', e.message);
+                        console.error('Error code:', e.code);
+                        db.close();
+                        if (String(e.message).includes('idx_materials_unique_hash')) {
+                            return res.status(409).json({ error: 'File already exists in this study set (same content)' });
+                        }
+                        return res.status(500).json({
+                            error: 'Internal server error',
+                            details: e.message
+                        });
+                    }
+
+                    const insertedId = (this as any)?.lastID;
+                    res.json({
+                        id: insertedId,
+                        name,
+                        type,
+                        size,
+                        file_path: filePath,
+                        studySetId,
+                        generateNotes: generateNotes === 'true',
+                        noteType: noteType || 'summarized',
+                        status: 'uploaded',
+                        createdAt: now,
+                        updatedAt: now
+                    });
+                    db.close();
+                }
+            );
+        } catch (error: any) {
+            console.error('Upload processing error:', error);
             db.close();
+            return res.status(500).json({
+                error: 'Failed to process upload',
+                details: error?.message || 'Unknown error'
+            });
         }
-    );
+    })();
 });
 
 // Create materials table if it doesn't exist

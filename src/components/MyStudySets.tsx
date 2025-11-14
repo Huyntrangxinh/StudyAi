@@ -9,13 +9,15 @@ interface MyStudySetsProps {
     onSelectStudySet?: (studySet: StudySet) => void;
     onCreateStudySet?: () => void;
     onCreateFolder?: () => void;
+    isDarkMode?: boolean;
 }
 
 const MyStudySets: React.FC<MyStudySetsProps> = ({
     userId,
     onSelectStudySet,
     onCreateStudySet,
-    onCreateFolder
+    onCreateFolder,
+    isDarkMode = false
 }) => {
     const [studySets, setStudySets] = useState<StudySet[]>([]);
     const [filteredStudySets, setFilteredStudySets] = useState<StudySet[]>([]);
@@ -195,24 +197,27 @@ const MyStudySets: React.FC<MyStudySetsProps> = ({
     };
 
     return (
-        <div className="flex-1 p-8 bg-gray-50 min-h-screen">
+        <div className={`flex-1 p-6 min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
             {/* Header */}
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-5 flex items-center justify-between pt-12">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 mb-1">My Study Sets</h1>
-                    <p className="text-sm text-gray-600">Manage and access all your study materials in one place</p>
+                    <h1 className={`text-xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>My Study Sets</h1>
+                    <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Manage and access all your study materials in one place</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                     <button
                         onClick={onCreateFolder}
-                        className="flex items-center gap-2 px-4 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${isDarkMode
+                            ? 'text-gray-200 bg-gray-800 border border-gray-700 hover:bg-gray-700'
+                            : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                            }`}
                     >
                         <FolderPlus className="w-4 h-4" />
                         <span className="text-sm font-medium">Create Folder</span>
                     </button>
                     <button
                         onClick={onCreateStudySet}
-                        className="flex items-center gap-2 px-4 py-2.5 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                        className="flex items-center gap-2 px-3 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                     >
                         <Plus className="w-4 h-4" />
                         <span className="text-sm font-medium">Create Study Set</span>
@@ -221,15 +226,18 @@ const MyStudySets: React.FC<MyStudySetsProps> = ({
             </div>
 
             {/* Search Bar */}
-            <div className="mb-6">
-                <div className="relative max-w-4xl">
-                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <div className="mb-5">
+                <div className="relative w-full">
+                    <Search className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-4 h-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`} />
                     <input
                         type="text"
                         placeholder="Search study sets..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className={`w-full pl-10 pr-4 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${isDarkMode
+                            ? 'bg-gray-800 border border-gray-700 text-white placeholder-gray-500'
+                            : 'bg-white border border-gray-200 text-gray-900'
+                            }`}
                     />
                 </div>
             </div>
@@ -237,13 +245,13 @@ const MyStudySets: React.FC<MyStudySetsProps> = ({
             {/* Study Sets List */}
             {isLoading ? (
                 <div className="flex items-center justify-center py-12">
-                    <div className="text-gray-500">Loading study sets...</div>
+                    <div className={isDarkMode ? 'text-gray-400' : 'text-gray-500'}>Loading study sets...</div>
                 </div>
             ) : filteredStudySets.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <FileText className="w-16 h-16 text-gray-300 mb-4" />
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No study sets found</h3>
-                    <p className="text-gray-500 mb-4">
+                    <FileText className={`w-16 h-16 mb-4 ${isDarkMode ? 'text-gray-700' : 'text-gray-300'}`} />
+                    <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>No study sets found</h3>
+                    <p className={isDarkMode ? 'text-gray-400 mb-4' : 'text-gray-500 mb-4'}>
                         {searchTerm ? 'Try a different search term' : 'Create your first study set to get started'}
                     </p>
                     {!searchTerm && (
@@ -256,13 +264,14 @@ const MyStudySets: React.FC<MyStudySetsProps> = ({
                     )}
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                     {filteredStudySets.map((set) => (
                         <MyStudySetsCard
                             key={set.id}
                             studySet={set}
                             isMenuOpen={openMenuId === set.id}
                             isProcessing={isProcessing}
+                            isDarkMode={isDarkMode}
                             onSelect={() => onSelectStudySet?.(set)}
                             onToggleMenu={(e: React.MouseEvent<HTMLButtonElement>) => {
                                 e.stopPropagation();
@@ -282,6 +291,7 @@ const MyStudySets: React.FC<MyStudySetsProps> = ({
                 value={renameValue}
                 error={renameError}
                 isSubmitting={isProcessing}
+                isDarkMode={isDarkMode}
                 onChange={setRenameValue}
                 onCancel={handleRenameCancel}
                 onSubmit={handleRenameSubmit}

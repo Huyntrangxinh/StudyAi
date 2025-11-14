@@ -6,6 +6,7 @@ interface MyStudySetsCardProps {
     studySet: StudySet;
     isMenuOpen: boolean;
     isProcessing: boolean;
+    isDarkMode?: boolean;
     onSelect: () => void;
     onToggleMenu: (event: React.MouseEvent<HTMLButtonElement>) => void;
     onRenameClick: () => void;
@@ -49,6 +50,7 @@ const MyStudySetsCard: React.FC<MyStudySetsCardProps> = ({
     studySet,
     isMenuOpen,
     isProcessing,
+    isDarkMode = false,
     onSelect,
     onToggleMenu,
     onRenameClick,
@@ -57,20 +59,25 @@ const MyStudySetsCard: React.FC<MyStudySetsCardProps> = ({
 }) => {
     const icon = ICON_MAP[studySet.icon || 'book'] || ICON_MAP.book;
     const iconColor = ICON_COLORS[parseInt(studySet.id) % ICON_COLORS.length];
-    const backgroundColor = studySet.color
-        ? (() => {
-            const hex = studySet.color.replace('#', '');
-            const r = parseInt(hex.substring(0, 2), 16);
-            const g = parseInt(hex.substring(2, 4), 16);
-            const b = parseInt(hex.substring(4, 6), 16);
-            return `rgb(${Math.min(255, r + 200)}, ${Math.min(255, g + 200)}, ${Math.min(255, b + 200)})`;
-        })()
-        : TIMELINE_COLORS[parseInt(studySet.id) % TIMELINE_COLORS.length];
+
+    // Use dark gray background in dark mode, otherwise use the original color logic
+    const backgroundColor = isDarkMode
+        ? '#1f2937' // gray-800
+        : (studySet.color
+            ? (() => {
+                const hex = studySet.color.replace('#', '');
+                const r = parseInt(hex.substring(0, 2), 16);
+                const g = parseInt(hex.substring(2, 4), 16);
+                const b = parseInt(hex.substring(4, 6), 16);
+                return `rgb(${Math.min(255, r + 200)}, ${Math.min(255, g + 200)}, ${Math.min(255, b + 200)})`;
+            })()
+            : TIMELINE_COLORS[parseInt(studySet.id) % TIMELINE_COLORS.length]);
 
     return (
         <div
             onClick={onSelect}
-            className="relative flex flex-col p-3.5 rounded-xl border border-gray-200 hover:shadow-md transition-all cursor-pointer"
+            className={`relative flex flex-col p-3.5 rounded-xl border hover:shadow-md transition-all cursor-pointer ${isDarkMode ? 'border-gray-700' : 'border-gray-200'
+                }`}
             style={{ backgroundColor }}
         >
             <div className="absolute top-2.5 right-2.5">
@@ -79,21 +86,30 @@ const MyStudySetsCard: React.FC<MyStudySetsCardProps> = ({
                         event.stopPropagation();
                         onToggleMenu(event);
                     }}
-                    className="p-1 text-gray-400 hover:text-gray-600 hover:bg-white/50 rounded transition-colors"
+                    className={`p-1 rounded transition-colors ${isDarkMode
+                            ? 'text-gray-500 hover:text-gray-300 hover:bg-gray-700/50'
+                            : 'text-gray-400 hover:text-gray-600 hover:bg-white/50'
+                        }`}
                 >
                     <MoreVertical className="w-4 h-4" />
                 </button>
                 {isMenuOpen && (
                     <div
                         onClick={(e) => e.stopPropagation()}
-                        className="absolute right-0 mt-2 w-36 rounded-lg border border-gray-200 bg-white shadow-lg z-10"
+                        className={`absolute right-0 mt-2 w-36 rounded-lg border shadow-lg z-10 ${isDarkMode
+                                ? 'border-gray-700 bg-gray-800'
+                                : 'border-gray-200 bg-white'
+                            }`}
                     >
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
                                 onRenameClick();
                             }}
-                            className="w-full px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                            className={`w-full px-3 py-2 text-sm text-left disabled:opacity-60 ${isDarkMode
+                                    ? 'text-gray-200 hover:bg-gray-700'
+                                    : 'text-gray-700 hover:bg-gray-50'
+                                }`}
                             disabled={isProcessing}
                         >
                             Đổi tên
@@ -103,7 +119,10 @@ const MyStudySetsCard: React.FC<MyStudySetsCardProps> = ({
                                 e.stopPropagation();
                                 onDeleteClick();
                             }}
-                            className="w-full px-3 py-2 text-sm text-left text-red-600 hover:bg-red-50 disabled:opacity-60"
+                            className={`w-full px-3 py-2 text-sm text-left disabled:opacity-60 ${isDarkMode
+                                    ? 'text-red-400 hover:bg-gray-700'
+                                    : 'text-red-600 hover:bg-red-50'
+                                }`}
                             disabled={isProcessing}
                         >
                             Xóa
@@ -121,17 +140,17 @@ const MyStudySetsCard: React.FC<MyStudySetsCardProps> = ({
             </div>
 
             <div className="flex-1 flex flex-col min-h-0">
-                <h3 className="text-sm font-bold text-gray-900 mb-1 line-clamp-1" style={{ color: '#1e3a8a' }}>
+                <h3 className={`text-sm font-bold mb-1 line-clamp-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                     {studySet.name}
                 </h3>
                 {studySet.description && (
-                    <p className="text-xs text-gray-600 mb-2.5 line-clamp-1">
+                    <p className={`text-xs mb-2.5 line-clamp-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                         {truncateText(studySet.description, 60)}
                     </p>
                 )}
 
-                <div className="mt-auto pt-2 border-t border-gray-200/50">
-                    <div className="flex items-center gap-3 text-xs text-gray-500">
+                <div className={`mt-auto pt-2 border-t ${isDarkMode ? 'border-gray-700/50' : 'border-gray-200/50'}`}>
+                    <div className={`flex items-center gap-3 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                         <span className="flex items-center gap-1">
                             <FileText className="w-3 h-3" />
                             {studySet.materialsCount || 0} materials

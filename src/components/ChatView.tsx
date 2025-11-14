@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Film, FlaskConical, Music, Wand2, Lightbulb, CreditCard, Globe, X, Share2, MessageSquare, Download, Copy, Mic, GraduationCap, ListChecks, ChevronUp, Search, Edit2, Trash2, Plus, Clock, ChevronDown, ThumbsUp, ThumbsDown, RefreshCw, Volume2, Check } from 'lucide-react';
+import { Globe, X, Share2, MessageSquare, Copy, Mic, GraduationCap, ListChecks, ChevronUp, Search, Edit2, Trash2, Plus, Clock, ChevronDown, ThumbsUp, ThumbsDown, RefreshCw, Volume2, Check } from 'lucide-react';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
 
 interface ChatViewProps {
@@ -7,6 +7,7 @@ interface ChatViewProps {
     studySetName?: string;
     onBack?: () => void;
     isCollapsed?: boolean;
+    isDarkMode?: boolean;
 }
 
 interface ChatMessage {
@@ -28,7 +29,7 @@ interface ChatSession {
     firstUserMessage?: string; // Tin nhắn đầu tiên của user
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, isCollapsed = false }) => {
+const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, isCollapsed = false, isDarkMode = false }) => {
     const [chatMessage, setChatMessage] = useState<string>('');
     const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
     const [isLoadingChat, setIsLoadingChat] = useState<boolean>(false);
@@ -104,20 +105,6 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
         return answer.trim();
     };
 
-    const suggestionCards = [
-        { id: 1, text: "Explain atoms like I'm 8", icon: Film, color: "bg-blue-50 hover:bg-blue-100 border-blue-200" },
-        { id: 2, text: "Difference between acids and bases", icon: FlaskConical, color: "bg-white hover:bg-gray-50 border-gray-200" },
-        { id: 3, text: "Write a song about the water cycle", icon: Music, color: "bg-pink-50 hover:bg-pink-100 border-pink-200" },
-        { id: 4, text: "", icon: null, color: "bg-white hover:bg-gray-50 border-gray-200" },
-        { id: 5, text: "", icon: Lightbulb, color: "bg-white hover:bg-gray-50 border-gray-200" },
-        { id: 6, text: "Make vocabulary flashcards", icon: CreditCard, color: "bg-green-50 hover:bg-green-100 border-green-200" }
-    ];
-
-    const handleSuggestionClick = (text: string) => {
-        if (text) {
-            setChatMessage(text);
-        }
-    };
 
     const handleSendMessage = async () => {
         if (!chatMessage.trim() || isLoadingChat) return;
@@ -355,31 +342,17 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
         }
     };
 
-    // ✅ Load chat history when component mounts if there's a current session
+    // ✅ Reset to new chat when component mounts - always show empty state when opening chat
     useEffect(() => {
-        // Try to load the most recent session on mount
-        const loadMostRecentSession = async () => {
-            try {
-                const response = await fetch(`http://localhost:3001/api/chat-history/sessions/chat`);
-                if (response.ok) {
-                    const sessions = await response.json();
-                    if (sessions.length > 0) {
-                        // Load the most recent session
-                        const mostRecentSession = sessions[0];
-                        console.log('📥 Auto-loading most recent session:', mostRecentSession.id);
-                        await loadChatSession(mostRecentSession.id);
-                    }
-                }
-            } catch (error) {
-                console.error('Error loading most recent session:', error);
-            }
-        };
-
-        // Only load if we don't have a current session and chat history is empty
-        if (!currentSessionId && chatHistory.length === 0) {
-            loadMostRecentSession();
-        }
-    }, []); // Only run on mount
+        // Reset to show new chat screen (empty state) when component first mounts
+        setChatHistory([]);
+        setCurrentSessionId(null);
+        setChatMessage('');
+        setSelectedMaterials([]);
+        setIsWebSearchEnabled(false);
+        setIsAcademicSearchEnabled(false);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Only run on mount - always show new chat screen when opening chat
 
     // Update session title
     const updateSessionTitle = async (sessionId: number, newTitle: string) => {
@@ -597,7 +570,7 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
         const displayedResults = results.slice(0, 5);
 
         return (
-            <div className="mt-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className={`mt-3 p-4 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
                 {/* Header */}
                 <div
                     className="flex items-center justify-between mb-3 cursor-pointer"
@@ -605,12 +578,12 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                 >
                     <div className="flex items-center space-x-2">
                         <span className="text-xl">🌐</span>
-                        <h3 className="font-semibold text-gray-800">Web Search</h3>
+                        <h3 className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Web Search</h3>
                     </div>
                     <div className="flex items-center space-x-2">
-                        <span className="text-sm text-gray-500">{displayedResults.length} results</span>
+                        <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{displayedResults.length} results</span>
                         <ChevronUp
-                            className={`w-4 h-4 text-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                            className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''} ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
                         />
                     </div>
                 </div>
@@ -619,7 +592,7 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                 {isExpanded && (
                     <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2" style={{
                         scrollbarWidth: 'thin',
-                        scrollbarColor: '#cbd5e0 #f7fafc'
+                        scrollbarColor: isDarkMode ? '#4b5563 #1f2937' : '#cbd5e0 #f7fafc'
                     }}>
                         {displayedResults.map((result, index) => {
                             const raw = result.link || '';
@@ -634,7 +607,10 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                     href={href}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="block p-3 bg-white rounded-lg border border-gray-200 hover:border-blue-300 transition-colors cursor-pointer"
+                                    className={`block p-3 rounded-lg border transition-colors cursor-pointer ${isDarkMode
+                                        ? 'bg-gray-800 border-gray-600 hover:border-blue-500'
+                                        : 'bg-white border-gray-200 hover:border-blue-300'
+                                        }`}
                                     onMouseDown={(e) => {
                                         // Open as early as possible, and prevent default to avoid duplicate opens
                                         e.preventDefault();
@@ -658,13 +634,13 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                             <div className="w-4 h-4 bg-blue-500 rounded flex-shrink-0 mt-1"></div>
                                         )}
                                         <div className="flex-1 min-w-0">
-                                            <h4 className="font-medium text-gray-900 text-sm mb-1 line-clamp-2">
+                                            <h4 className={`font-medium text-sm mb-1 line-clamp-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                                                 {result.title}
                                             </h4>
-                                            <p className="text-xs text-gray-600 mb-1 line-clamp-2">
+                                            <p className={`text-xs mb-1 line-clamp-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                                                 {result.snippet}
                                             </p>
-                                            <p className="text-xs text-blue-600 truncate">
+                                            <p className={`text-xs truncate ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
                                                 {result.displayLink || result.link}
                                             </p>
                                         </div>
@@ -679,9 +655,9 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
     };
 
     return (
-        <div className="flex-1 flex flex-col bg-white h-screen overflow-hidden">
+        <div className={`flex-1 flex flex-col h-screen overflow-hidden ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`}>
             {/* Header */}
-            <div className="border-b border-gray-200 bg-white px-6 py-3.5 flex items-center justify-between flex-shrink-0">
+            <div className={`border-b px-6 py-3.5 flex items-center justify-between flex-shrink-0 ${isDarkMode ? 'border-gray-700 bg-gray-900' : 'border-gray-200 bg-white'}`}>
                 <div className="flex items-center space-x-3">
                     <div className="flex items-center space-x-2">
                         <img
@@ -689,38 +665,45 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                             alt="Chat"
                             className="w-5 h-5 object-contain"
                         />
-                        <h1 className="text-base font-semibold text-gray-900 truncate max-w-md" title={currentSessionName}>
+                        <h1 className={`text-base font-semibold truncate max-w-md ${isDarkMode ? 'text-white' : 'text-gray-900'}`} title={currentSessionName}>
                             {currentSessionName}
                         </h1>
                     </div>
                     <div className="relative" ref={dropdownRef}>
                         <button
                             onClick={() => setShowChatHistory(!showChatHistory)}
-                            className="flex items-center space-x-1.5 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg border border-gray-200 transition-colors bg-blue-50 text-blue-700 border-blue-200"
+                            className={`flex items-center space-x-1.5 px-3 py-1.5 text-sm rounded-lg border transition-colors ${isDarkMode
+                                ? 'text-blue-300 hover:bg-gray-800 border-blue-600 bg-blue-900/30'
+                                : 'text-gray-700 hover:bg-gray-50 border-gray-200 bg-blue-50 text-blue-700 border-blue-200'
+                                }`}
                         >
                             <Clock className="w-4 h-4" />
-                            <span>Chat History</span>
-                            <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${showChatHistory ? 'rotate-180' : ''}`} />
+                            <span>Lịch sử trò chuyện</span>
+                            <ChevronDown className={`w-4 h-4 transition-transform ${showChatHistory ? 'rotate-180' : ''} ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} />
                         </button>
 
                         {/* Dropdown Menu */}
                         {showChatHistory && (
-                            <div className="absolute top-full left-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-[600px] flex flex-col">
+                            <div className={`absolute top-full left-0 mt-2 w-96 rounded-lg shadow-xl z-50 max-h-[600px] flex flex-col ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                                } border`}>
                                 {/* Header */}
-                                <div className="p-4 border-b">
-                                    <h2 className="text-lg font-semibold text-gray-800">Chat History</h2>
+                                <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700' : ''}`}>
+                                    <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Lịch sử trò chuyện</h2>
                                 </div>
 
                                 {/* Search Bar */}
-                                <div className="p-4 border-b">
+                                <div className={`p-4 border-b ${isDarkMode ? 'border-gray-700' : ''}`}>
                                     <div className="relative">
-                                        <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                                        <Search className={`absolute right-3 top-1/2 transform -translate-y-1/2 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`} size={16} />
                                         <input
                                             type="text"
-                                            placeholder="Search"
+                                            placeholder="Tìm kiếm"
                                             value={searchTerm}
                                             onChange={(e) => setSearchTerm(e.target.value)}
-                                            className="w-full pl-4 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                            className={`w-full pl-4 pr-10 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${isDarkMode
+                                                ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500'
+                                                : 'border-gray-300 bg-white text-gray-900'
+                                                }`}
                                         />
                                     </div>
                                 </div>
@@ -728,15 +711,16 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                 {/* Sessions List */}
                                 <div className="flex-1 overflow-y-auto p-2">
                                     {filteredSessions.length === 0 ? (
-                                        <div className="text-center text-gray-500 py-8 text-sm">
-                                            {searchTerm ? 'No sessions found' : 'No chat sessions yet'}
+                                        <div className={`text-center py-8 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            {searchTerm ? 'Không tìm thấy phiên' : 'Chưa có phiên trò chuyện'}
                                         </div>
                                     ) : (
                                         <div className="space-y-1">
                                             {filteredSessions.map((session) => (
                                                 <div
                                                     key={session.id}
-                                                    className="flex items-center p-3 rounded-lg hover:bg-gray-50 transition-colors group"
+                                                    className={`flex items-center p-3 rounded-lg transition-colors group ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                                                        }`}
                                                 >
                                                     {/* Chat Icon */}
                                                     <img
@@ -770,15 +754,17 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                                                         }
                                                                     }
                                                                 }}
-                                                                className="w-full text-sm font-medium text-gray-800 bg-transparent border-none outline-none"
+                                                                className={`w-full text-sm font-medium bg-transparent border-none outline-none ${isDarkMode ? 'text-white' : 'text-gray-800'
+                                                                    }`}
                                                                 autoFocus
                                                             />
                                                         ) : (
                                                             <>
-                                                                <div className="text-sm font-medium text-gray-800 cursor-pointer truncate">
+                                                                <div className={`text-sm font-medium cursor-pointer truncate ${isDarkMode ? 'text-gray-200' : 'text-gray-800'
+                                                                    }`}>
                                                                     {session.firstUserMessage || session.title}
                                                                 </div>
-                                                                <div className="text-xs text-gray-500">
+                                                                <div className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                                                                     {formatDate(session.updated_at)}
                                                                 </div>
                                                             </>
@@ -793,7 +779,10 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                                                 setEditingSession(session.id);
                                                                 setEditTitle(session.firstUserMessage || session.title);
                                                             }}
-                                                            className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors"
+                                                            className={`p-1.5 transition-colors ${isDarkMode
+                                                                ? 'text-gray-400 hover:text-gray-200'
+                                                                : 'text-gray-400 hover:text-gray-600'
+                                                                }`}
                                                         >
                                                             <Edit2 size={14} />
                                                         </button>
@@ -802,7 +791,10 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                                                 e.stopPropagation();
                                                                 deleteSession(session.id);
                                                             }}
-                                                            className="p-1.5 text-gray-400 hover:text-red-600 transition-colors"
+                                                            className={`p-1.5 transition-colors ${isDarkMode
+                                                                ? 'text-gray-400 hover:text-red-400'
+                                                                : 'text-gray-400 hover:text-red-600'
+                                                                }`}
                                                         >
                                                             <Trash2 size={14} />
                                                         </button>
@@ -814,32 +806,18 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                 </div>
 
                                 {/* Create New Chat Button */}
-                                <div className="p-4 border-t">
+                                <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700' : ''}`}>
                                     <button
                                         onClick={createNewChat}
                                         className="w-full bg-blue-600 text-white py-2.5 px-4 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2 text-sm font-medium"
                                     >
                                         <Plus size={16} />
-                                        <span>New Chat</span>
+                                        <span>Cuộc trò chuyện mới</span>
                                     </button>
                                 </div>
                             </div>
                         )}
                     </div>
-                </div>
-                <div className="flex items-center space-x-1.5">
-                    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Share">
-                        <Share2 className="w-4.5 h-4.5 text-gray-600" />
-                    </button>
-                    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Feedback">
-                        <MessageSquare className="w-4.5 h-4.5 text-gray-600" />
-                    </button>
-                    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Copy link">
-                        <Copy className="w-4.5 h-4.5 text-gray-600" />
-                    </button>
-                    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors" title="Download">
-                        <Download className="w-4.5 h-4.5 text-gray-600" />
-                    </button>
                 </div>
             </div>
 
@@ -863,49 +841,7 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                         </div>
 
                         {/* Greeting */}
-                        <h2 className="text-2xl font-bold text-gray-900 mb-8">Hello, I'm Spark.E</h2>
-
-                        {/* Suggestion Cards */}
-                        <div className="grid grid-cols-3 gap-3 w-full max-w-3xl mb-6">
-                            {suggestionCards.map((card) => (
-                                <button
-                                    key={card.id}
-                                    onClick={() => handleSuggestionClick(card.text)}
-                                    className={`${card.color} rounded-2xl border-2 p-5 flex flex-col items-center justify-center min-h-[120px] transition-all duration-200 transform hover:scale-[1.02] hover:shadow-md active:scale-[0.98] ${!card.text && !card.icon ? 'border-dashed border-gray-300' : ''
-                                        }`}
-                                >
-                                    {card.icon && (
-                                        <card.icon className={`w-8 h-8 mb-3 ${card.text ? 'text-gray-700' : 'text-gray-400'}`} />
-                                    )}
-                                    {card.text && (
-                                        <span className="text-sm font-medium text-gray-800 text-center leading-snug">{card.text}</span>
-                                    )}
-                                </button>
-                            ))}
-                        </div>
-
-                        {/* View More / Previous Sessions */}
-                        <div className="flex items-center space-x-4 mb-6">
-                            <button className="text-sm text-blue-600 hover:text-blue-700 hover:underline font-medium">
-                                View More
-                            </button>
-                            <span className="text-gray-300">•</span>
-                            <button className="text-sm text-blue-600 hover:text-blue-700 hover:underline font-medium">
-                                View Previous Chat Sessions
-                            </button>
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div className="flex items-center space-x-3">
-                            <button className="flex items-center space-x-2 px-5 py-2.5 bg-white hover:bg-gray-50 text-gray-700 rounded-xl text-sm font-medium transition-colors border border-gray-200 shadow-sm">
-                                <span className="text-lg">[ ]</span>
-                                <span>Personalities & Skillsets</span>
-                            </button>
-                            <button className="flex items-center space-x-2 px-5 py-2.5 bg-white hover:bg-gray-50 text-gray-700 rounded-xl text-sm font-medium transition-colors border border-gray-200 shadow-sm">
-                                <Sparkles className="w-4 h-4 text-purple-500" />
-                                <span>Scenarios</span>
-                            </button>
-                        </div>
+                        <h2 className={`text-2xl font-bold mb-8 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Xin chào, tôi là Spark.E</h2>
                     </div>
                 ) : (
                     /* Chat History */
@@ -929,13 +865,18 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                     <div
                                         className={`max-w-[85%] rounded-2xl px-4 py-3 ${msg.type === 'user'
                                             ? 'bg-blue-600 text-white shadow-sm'
-                                            : 'bg-gray-50 text-gray-900 border border-gray-200'
+                                            : isDarkMode
+                                                ? 'bg-gray-800 text-white border border-gray-700'
+                                                : 'bg-gray-50 text-gray-900 border border-gray-200'
                                             }`}
                                     >
                                         {msg.type === 'ai' ? (
                                             <>
                                                 <div
-                                                    className="text-sm leading-relaxed prose prose-sm max-w-none [&_strong]:font-semibold [&_strong]:text-gray-900 [&_em]:italic [&_code]:text-xs [&_p]:mb-2"
+                                                    className={`text-sm leading-relaxed prose prose-sm max-w-none [&_strong]:font-semibold [&_em]:italic [&_code]:text-xs [&_p]:mb-2 ${isDarkMode
+                                                        ? 'text-white [&_p]:text-white [&_strong]:text-white [&_em]:text-gray-200 [&_code]:bg-gray-700 [&_code]:text-gray-200 [&_li]:text-white [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_h4]:text-white [&_h5]:text-white [&_h6]:text-white'
+                                                        : 'text-gray-900 [&_strong]:text-gray-900'
+                                                        }`}
                                                     dangerouslySetInnerHTML={{
                                                         __html: msg.isTyping && msg.displayedLength !== undefined
                                                             ? msg.message.substring(0, msg.displayedLength)
@@ -944,7 +885,7 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                                 />
                                                 {/* ✅ Hiển thị cursor khi đang type */}
                                                 {msg.isTyping && (
-                                                    <span className="inline-block w-0.5 h-4 bg-gray-600 ml-1 animate-pulse"></span>
+                                                    <span className={`inline-block w-0.5 h-4 ml-1 animate-pulse ${isDarkMode ? 'bg-white' : 'bg-gray-600'}`}></span>
                                                 )}
                                                 {/* Web Search Results - chỉ hiển thị khi đã type xong */}
                                                 {msg.webSearchResults && msg.webSearchResults.length > 0 && !msg.isTyping && (
@@ -1030,9 +971,9 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                                     console.error('Failed to copy:', error);
                                                 }
                                             }}
-                                            className={`p-1.5 hover:bg-gray-100 rounded-lg transition-colors relative ${copiedMessageIndex === idx
-                                                ? 'text-green-600 hover:text-green-700'
-                                                : 'text-gray-600 hover:text-gray-900'
+                                            className={`p-1.5 rounded-lg transition-colors relative ${isDarkMode
+                                                ? `hover:bg-gray-700 ${copiedMessageIndex === idx ? 'text-green-400 hover:text-green-300' : 'text-gray-400 hover:text-gray-200'}`
+                                                : `hover:bg-gray-100 ${copiedMessageIndex === idx ? 'text-green-600 hover:text-green-700' : 'text-gray-600 hover:text-gray-900'}`
                                                 }`}
                                             title={copiedMessageIndex === idx ? "Copied!" : "Copy"}
                                         >
@@ -1066,9 +1007,9 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                                         : m
                                                 ));
                                             }}
-                                            className={`p-1.5 hover:bg-gray-100 rounded-lg transition-colors ${msg.liked
-                                                ? 'text-green-600 hover:text-green-700'
-                                                : 'text-gray-600 hover:text-gray-900'
+                                            className={`p-1.5 rounded-lg transition-colors ${isDarkMode
+                                                ? `hover:bg-gray-700 ${msg.liked ? 'text-green-400 hover:text-green-300' : 'text-gray-400 hover:text-gray-200'}`
+                                                : `hover:bg-gray-100 ${msg.liked ? 'text-green-600 hover:text-green-700' : 'text-gray-600 hover:text-gray-900'}`
                                                 }`}
                                             title="Thumbs Up"
                                         >
@@ -1083,9 +1024,9 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                                         : m
                                                 ));
                                             }}
-                                            className={`p-1.5 hover:bg-gray-100 rounded-lg transition-colors ${msg.disliked
-                                                ? 'text-red-600 hover:text-red-700'
-                                                : 'text-gray-600 hover:text-gray-900'
+                                            className={`p-1.5 rounded-lg transition-colors ${isDarkMode
+                                                ? `hover:bg-gray-700 ${msg.disliked ? 'text-red-400 hover:text-red-300' : 'text-gray-400 hover:text-gray-200'}`
+                                                : `hover:bg-gray-100 ${msg.disliked ? 'text-red-600 hover:text-red-700' : 'text-gray-600 hover:text-gray-900'}`
                                                 }`}
                                             title="Thumbs Down"
                                         >
@@ -1120,9 +1061,9 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                                     await retryAIMessage(idx, msg.userQuestion);
                                                 }
                                             }}
-                                            className={`p-1.5 hover:bg-gray-100 rounded-lg transition-colors ${retryingMessageIndex === idx
-                                                ? 'text-blue-600 hover:text-blue-700 animate-spin'
-                                                : 'text-gray-600 hover:text-gray-900'
+                                            className={`p-1.5 rounded-lg transition-colors ${isDarkMode
+                                                ? `hover:bg-gray-700 ${retryingMessageIndex === idx ? 'text-blue-400 hover:text-blue-300 animate-spin' : 'text-gray-400 hover:text-gray-200'}`
+                                                : `hover:bg-gray-100 ${retryingMessageIndex === idx ? 'text-blue-600 hover:text-blue-700 animate-spin' : 'text-gray-600 hover:text-gray-900'}`
                                                 }`}
                                             title="Regenerate"
                                             disabled={retryingMessageIndex === idx}
@@ -1165,9 +1106,9 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                                                     setSpeakingMessageIndex(null);
                                                 }
                                             }}
-                                            className={`p-1.5 hover:bg-gray-100 rounded-lg transition-colors ${speakingMessageIndex === idx
-                                                    ? 'text-blue-600 hover:text-blue-700'
-                                                    : 'text-gray-600 hover:text-gray-900'
+                                            className={`p-1.5 rounded-lg transition-colors ${isDarkMode
+                                                ? `hover:bg-gray-700 ${speakingMessageIndex === idx ? 'text-blue-400 hover:text-blue-300' : 'text-gray-400 hover:text-gray-200'}`
+                                                : `hover:bg-gray-100 ${speakingMessageIndex === idx ? 'text-blue-600 hover:text-blue-700' : 'text-gray-600 hover:text-gray-900'}`
                                                 }`}
                                             title="Read Aloud"
                                         >
@@ -1179,11 +1120,11 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                         ))}
                         {isLoadingChat && (
                             <div className="flex justify-start">
-                                <div className="bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3">
+                                <div className={`rounded-2xl px-4 py-3 border ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
                                     <div className="flex space-x-1.5">
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
-                                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
+                                        <div className={`w-2 h-2 rounded-full animate-bounce ${isDarkMode ? 'bg-gray-400' : 'bg-gray-400'}`}></div>
+                                        <div className={`w-2 h-2 rounded-full animate-bounce ${isDarkMode ? 'bg-gray-400' : 'bg-gray-400'}`} style={{ animationDelay: '0.15s' }}></div>
+                                        <div className={`w-2 h-2 rounded-full animate-bounce ${isDarkMode ? 'bg-gray-400' : 'bg-gray-400'}`} style={{ animationDelay: '0.3s' }}></div>
                                     </div>
                                 </div>
                             </div>
@@ -1203,23 +1144,26 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                 }}
             >
                 {/* Input Container */}
-                <div className="bg-white rounded-2xl border border-gray-300 shadow-sm max-w-3xl w-full">
+                <div className={`rounded-2xl border shadow-sm max-w-3xl w-full ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'}`}>
                     {/* Input Field Row */}
                     <div className="flex items-center px-4 py-3 space-x-3">
-                        <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors flex-shrink-0">
-                            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <button className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+                            <svg className={`w-5 h-5 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
                         </button>
                         <div className="flex-1">
                             <input
                                 type="text"
-                                placeholder="Ask your AI tutor anything..."
+                                placeholder="Hỏi gia sư AI của bạn bất cứ điều gì..."
                                 value={chatMessage}
                                 onChange={(e) => setChatMessage(e.target.value)}
                                 onKeyPress={handleKeyPress}
                                 disabled={isLoadingChat}
-                                className="w-full px-0 py-0 bg-transparent border-none focus:outline-none focus:ring-0 disabled:bg-transparent text-sm text-gray-900 placeholder-gray-400"
+                                className={`w-full px-0 py-0 bg-transparent border-none focus:outline-none focus:ring-0 disabled:bg-transparent text-sm ${isDarkMode
+                                    ? 'text-white placeholder-gray-500'
+                                    : 'text-gray-900 placeholder-gray-400'
+                                    }`}
                             />
                         </div>
                         <button
@@ -1239,34 +1183,45 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
                             <button
                                 onClick={() => setIsWebSearchEnabled(!isWebSearchEnabled)}
                                 className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${isWebSearchEnabled
-                                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                    : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                                    ? isDarkMode
+                                        ? 'bg-blue-900/50 text-blue-300 border border-blue-600'
+                                        : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                    : isDarkMode
+                                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
+                                        : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
                                     }`}
                             >
                                 <Globe className="w-3.5 h-3.5" />
-                                <span>Web Browsing</span>
+                                <span>Duyệt web</span>
                             </button>
                             <button
                                 onClick={() => setIsAcademicSearchEnabled(!isAcademicSearchEnabled)}
                                 className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${isAcademicSearchEnabled
-                                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                    : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                                    ? isDarkMode
+                                        ? 'bg-blue-900/50 text-blue-300 border border-blue-600'
+                                        : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                    : isDarkMode
+                                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
+                                        : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
                                     }`}
                             >
                                 <GraduationCap className="w-3.5 h-3.5" />
-                                <span>Search Academic Papers</span>
+                                <span>Tìm kiếm bài báo học thuật</span>
                             </button>
                             <button
                                 onClick={() => setShowMaterialPicker(!showMaterialPicker)}
-                                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white hover:bg-gray-50 transition-all border border-gray-200"
+                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${isDarkMode
+                                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600 border-gray-600'
+                                    : 'bg-white hover:bg-gray-50 border-gray-200'
+                                    }`}
                             >
-                                <ListChecks className="w-3.5 h-3.5 text-gray-600" />
-                                <span className="text-orange-600">Using {selectedMaterials.length} material(s)</span>
-                                <span className="text-blue-600 font-semibold">Select Materials</span>
+                                <ListChecks className={`w-3.5 h-3.5 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`} />
+                                <span className={isDarkMode ? 'text-orange-400' : 'text-orange-600'}>Đang dùng {selectedMaterials.length} tài liệu</span>
+                                <span className={isDarkMode ? 'text-blue-400 font-semibold' : 'text-blue-600 font-semibold'}>Chọn tài liệu</span>
                             </button>
                         </div>
-                        <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-                            <Mic className="w-4 h-4 text-gray-500" />
+                        <button className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+                            <Mic className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} />
                         </button>
                     </div>
                 </div>

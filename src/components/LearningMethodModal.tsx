@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, ChevronDown, BookOpen, CheckSquare, MessageCircle, Gamepad2, PenTool } from 'lucide-react';
+import { X, ChevronDown, BookOpen, CheckSquare, MessageCircle, Gamepad2, PenTool, Info, Sliders } from 'lucide-react';
 import { useFlashcardGeneration } from '../hooks/useFlashcardGeneration';
 import { clampCount } from '../utils/flashcardHelpers';
 import { useAuth } from '../hooks/useAuth';
@@ -35,6 +35,7 @@ interface LearningMethodModalProps {
     studySetId: string;
     subModule?: SubModule | null;
     materials?: Material[];
+    isDarkMode?: boolean;
 }
 
 const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
@@ -44,7 +45,8 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
     onSelectMethod,
     studySetId,
     subModule,
-    materials = []
+    materials = [],
+    isDarkMode = false
 }) => {
     const navigate = useNavigate();
     const { user } = useAuth();
@@ -54,6 +56,19 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
     const [createdFlashcardSetId, setCreatedFlashcardSetId] = useState<number | null>(null);
     const [flashcards, setFlashcards] = useState<any[]>([]);
     const [isGeneratingTest, setIsGeneratingTest] = useState(false);
+    const [showTestTypePicker, setShowTestTypePicker] = useState(false);
+    const [testTypeCounts, setTestTypeCounts] = useState({
+        multipleChoice: 10,
+        shortAnswer: 0,
+        freeResponse: 0,
+        fillBlank: 0
+    });
+    const [showFlashcardTypePicker, setShowFlashcardTypePicker] = useState(false);
+    const [flashcardTypeCounts, setFlashcardTypeCounts] = useState({
+        termDef: 10,
+        fillBlank: 0,
+        multipleChoice: 0
+    });
 
     const normalizeText = useCallback((value: string) => {
         return (value || '')
@@ -123,7 +138,7 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
     }, [subModule?.id, studySetId]);
 
     // Handle flashcards generation
-    const handleFlashcardsClick = useCallback(async () => {
+    const handleFlashcardsClick = useCallback(async (useCustomTypes = false) => {
         const moduleMaterials = getModuleMaterials();
 
         if (moduleMaterials.length === 0) {
@@ -211,11 +226,11 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
             // Auto-select first material
             const selectedMaterialIds = new Set<string>([String(moduleMaterials[0].id)]);
 
-            // Default type counts: 10 term-definition cards
+            // Use flashcardTypeCounts from state
             const typeCounts = {
-                termDef: 10,
-                fillBlank: 0,
-                multipleChoice: 0
+                termDef: flashcardTypeCounts.termDef || 0,
+                fillBlank: flashcardTypeCounts.fillBlank || 0,
+                multipleChoice: flashcardTypeCounts.multipleChoice || 0
             };
 
             await flashcardGen.generateFlashcards(
@@ -245,7 +260,8 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
     }, [isGenerating, createdFlashcardSetId, onSelectMethod]);
 
     // Handle quiz/test generation from flashcards
-    const handleQuizClick = useCallback(async () => {
+    const handleQuizClick = useCallback(async (currentTestTypeCounts = testTypeCounts) => {
+        console.log('🚀 [TEST] handleQuizClick called with testTypeCounts:', currentTestTypeCounts);
         try {
             setIsGeneratingTest(true);
 
@@ -327,7 +343,6 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
 
             // Tạo text từ flashcards
             let flashcardText = `Nội dung flashcard set: ${selectedFlashcardSet.name}\n\n`;
-            flashcardText += `Chủ đề: ${moduleTitle}\n\n`;
             flashcards.forEach((card: any, index: number) => {
                 flashcardText += `\n=== Flashcard ${index + 1} ===\n`;
 
@@ -359,25 +374,19 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
             const textBlob = new Blob([flashcardText], { type: 'text/plain' });
             const textFile = new File([textBlob], `${selectedFlashcardSet.name || 'flashcards'}.txt`, { type: 'text/plain' });
 
-            // Default test type counts for quiz - chỉ tạo 10 câu trắc nghiệm
-            const testTypeCounts = {
-                multipleChoice: 10,
-                shortAnswer: 0,
-                freeResponse: 0,
-                trueFalse: 0,
-                fillBlank: 0
-            };
-
             // Gửi request đến Flask để tạo câu hỏi
             const form = new FormData();
             form.append('document', textFile);
             form.append('requests', JSON.stringify({
-                multiple_choice: testTypeCounts.multipleChoice || 0,
-                short_answer: testTypeCounts.shortAnswer || 0,
-                free_response: testTypeCounts.freeResponse || 0,
-                true_false: testTypeCounts.trueFalse || 0,
-                fill_blank: testTypeCounts.fillBlank || 0,
+                multiple_choice: currentTestTypeCounts.multipleChoice || 0,
+                short_answer: currentTestTypeCounts.shortAnswer || 0,
+                free_response: currentTestTypeCounts.freeResponse || 0,
+                fill_blank: currentTestTypeCounts.fillBlank || 0,
             }));
+            // Add topic context if provided (for sub-module specific questions)
+            if (moduleTitle) {
+                form.append('topic_context', moduleTitle);
+            }
 
             const flaskUrl = (process.env.REACT_APP_FLASK_URL || 'http://localhost:5050') + '/api/generate';
             const genResp = await fetch(flaskUrl, { method: 'POST', body: form });
@@ -391,7 +400,7 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
 
             const genData = await genResp.json();
 
-            // Xử lý response và chuyển đổi thành test questions
+            // Xử lý response và chuyển đổi thành test questions (giống handleGenerateTestFromFlashcards)
             const questions: Array<{
                 id: string;
                 type: string;
@@ -466,6 +475,15 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                 });
             });
 
+            console.log('📝 [TEST] Generated questions:', {
+                total: questions.length,
+                multipleChoice: questions.filter(q => q.type === 'multipleChoice').length,
+                shortAnswer: questions.filter(q => q.type === 'shortAnswer').length,
+                fillBlank: questions.filter(q => q.type === 'fillBlank').length,
+                freeResponse: questions.filter(q => q.type === 'freeResponse').length,
+                allTypes: questions.map(q => q.type)
+            });
+
             // Lưu test vào database
             let savedTestId: number | null = null;
             try {
@@ -475,6 +493,20 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
 
                 const testName = `Câu hỏi về ${moduleTitle} - ${new Date().toLocaleDateString('vi-VN')}`;
                 const flashcardSetIds = [selectedFlashcardSet.id].filter(id => !isNaN(id));
+
+                const questionsToSave = questions.map((q, idx) => ({
+                    type: q.type,
+                    question: q.question,
+                    options: q.options || null,
+                    correctAnswer: q.correctAnswer,
+                    position: idx
+                }));
+
+                console.log('📝 [TEST] Saving questions to database:', {
+                    total: questionsToSave.length,
+                    types: questionsToSave.map(q => q.type),
+                    questions: questionsToSave.map((q, idx) => ({ index: idx, type: q.type, question: q.question.substring(0, 50) }))
+                });
 
                 const saveResponse = await fetch('http://localhost:3001/api/tests', {
                     method: 'POST',
@@ -486,13 +518,7 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                         userId: user.id,
                         name: testName,
                         description: `Bài kiểm tra được tạo từ flashcard: ${selectedFlashcardSet.name}`,
-                        questions: questions.map((q, idx) => ({
-                            type: q.type,
-                            question: q.question,
-                            options: q.options || null,
-                            correctAnswer: q.correctAnswer,
-                            position: idx
-                        })),
+                        questions: questionsToSave,
                         materialIds: [], // Không có material IDs khi tạo từ flashcard
                         flashcardSetIds: flashcardSetIds,
                         timeLimit: null
@@ -501,10 +527,10 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
 
                 if (!saveResponse.ok) {
                     const errorData = await saveResponse.json().catch(() => ({ error: 'Unknown error' }));
-                    console.error('Failed to save test:', errorData);
+                    console.error('❌ [TEST] Failed to save test:', errorData);
                 } else {
                     const savedTest = await saveResponse.json();
-                    console.log('Test saved successfully:', savedTest.id);
+                    console.log('✅ [TEST] Test saved successfully:', savedTest.id);
                     savedTestId = savedTest.id;
                 }
             } catch (saveError) {
@@ -718,10 +744,18 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                                 key={method.id}
                                 onClick={() => {
                                     if (method.id === 'flashcards') {
-                                        handleFlashcardsClick();
+                                        // Always show flashcard type picker when clicking flashcards
+                                        // Close test picker if open
+                                        setShowTestTypePicker(false);
+                                        setShowFlashcardTypePicker(true);
                                     } else if (method.id === 'quiz') {
-                                        handleQuizClick();
+                                        // Close flashcard picker if open
+                                        setShowFlashcardTypePicker(false);
+                                        setShowTestTypePicker(true);
                                     } else {
+                                        // Close all pickers when selecting other methods
+                                        setShowFlashcardTypePicker(false);
+                                        setShowTestTypePicker(false);
                                         onSelectMethod(method.id);
                                     }
                                 }}
@@ -764,13 +798,220 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                     </div>
                 </div>
 
-                {/* Explore More Options Button */}
-                <div className="px-6 pb-6">
-                    <button className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-gray-700 font-medium">
-                        <span>Explore more options</span>
-                        <ChevronDown className="w-5 h-5" />
-                    </button>
-                </div>
+                {/* Test Type Picker - Hiển thị khi chọn quiz */}
+                {showTestTypePicker && (
+                    <div className={`px-6 pb-6 border-t pt-6 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                        <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Chọn loại câu hỏi</h3>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            {/* Multiple Choice */}
+                            <div className={`flex items-center justify-between p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
+                                }`}>
+                                <div className="flex items-center gap-2">
+                                    <Info className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`} />
+                                    <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Trắc nghiệm</span>
+                                </div>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={testTypeCounts.multipleChoice}
+                                    onChange={(e) => setTestTypeCounts(prev => ({ ...prev, multipleChoice: parseInt(e.target.value) || 0 }))}
+                                    className={`w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode
+                                        ? 'bg-gray-800 border-gray-600 text-white'
+                                        : 'border-gray-300 bg-white text-gray-900'
+                                        }`}
+                                />
+                            </div>
+                            {/* Short Answer */}
+                            <div className={`flex items-center justify-between p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
+                                }`}>
+                                <div className="flex items-center gap-2">
+                                    <Info className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`} />
+                                    <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Câu trả lời ngắn</span>
+                                </div>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={testTypeCounts.shortAnswer}
+                                    onChange={(e) => setTestTypeCounts(prev => ({ ...prev, shortAnswer: parseInt(e.target.value) || 0 }))}
+                                    className={`w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode
+                                        ? 'bg-gray-800 border-gray-600 text-white'
+                                        : 'border-gray-300 bg-white text-gray-900'
+                                        }`}
+                                />
+                            </div>
+                            {/* Fill in the Blank */}
+                            <div className={`flex items-center justify-between p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
+                                }`}>
+                                <div className="flex items-center gap-2">
+                                    <Info className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`} />
+                                    <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Điền vào chỗ trống</span>
+                                </div>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={testTypeCounts.fillBlank}
+                                    onChange={(e) => setTestTypeCounts(prev => ({ ...prev, fillBlank: parseInt(e.target.value) || 0 }))}
+                                    className={`w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode
+                                        ? 'bg-gray-800 border-gray-600 text-white'
+                                        : 'border-gray-300 bg-white text-gray-900'
+                                        }`}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowTestTypePicker(false);
+                                    setShowFlashcardTypePicker(false);
+                                    setTestTypeCounts({
+                                        multipleChoice: 10,
+                                        shortAnswer: 0,
+                                        freeResponse: 0,
+                                        fillBlank: 0
+                                    });
+                                }}
+                                className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium ${isDarkMode
+                                    ? 'text-gray-200 bg-gray-700 hover:bg-gray-600'
+                                    : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+                                    }`}
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                onClick={() => {
+                                    console.log('🔵 [TEST] Create Test button clicked');
+                                    console.log('🔵 [TEST] Current testTypeCounts:', testTypeCounts);
+                                    const total = testTypeCounts.multipleChoice + testTypeCounts.shortAnswer + testTypeCounts.fillBlank;
+                                    console.log('🔵 [TEST] Total questions:', total);
+                                    if (total === 0) {
+                                        alert('Vui lòng chọn ít nhất một loại câu hỏi');
+                                        return;
+                                    }
+                                    setShowTestTypePicker(false);
+                                    setShowFlashcardTypePicker(false);
+                                    console.log('🔵 [TEST] Calling handleQuizClick...');
+                                    handleQuizClick(testTypeCounts);
+                                }}
+                                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                            >
+                                Tạo bài kiểm tra
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Flashcard Type Picker - Hiển thị khi chọn flashcards */}
+                {showFlashcardTypePicker && (
+                    <div className={`px-6 pb-6 border-t pt-6 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                        <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Chọn loại flashcard</h3>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            {/* Term and Definition */}
+                            <div className={`flex items-center justify-between p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
+                                }`}>
+                                <div className="flex items-center gap-2">
+                                    <Info className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`} />
+                                    <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Thuật ngữ và Định nghĩa</span>
+                                </div>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={flashcardTypeCounts.termDef}
+                                    onChange={(e) => setFlashcardTypeCounts(prev => ({ ...prev, termDef: parseInt(e.target.value) || 0 }))}
+                                    className={`w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode
+                                        ? 'bg-gray-800 border-gray-600 text-white'
+                                        : 'border-gray-300 bg-white text-gray-900'
+                                        }`}
+                                />
+                            </div>
+                            {/* Fill in the Blank */}
+                            <div className={`flex items-center justify-between p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
+                                }`}>
+                                <div className="flex items-center gap-2">
+                                    <Info className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`} />
+                                    <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Điền vào chỗ trống</span>
+                                </div>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={flashcardTypeCounts.fillBlank}
+                                    onChange={(e) => setFlashcardTypeCounts(prev => ({ ...prev, fillBlank: parseInt(e.target.value) || 0 }))}
+                                    className={`w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode
+                                        ? 'bg-gray-800 border-gray-600 text-white'
+                                        : 'border-gray-300 bg-white text-gray-900'
+                                        }`}
+                                />
+                            </div>
+                            {/* Multiple Choice */}
+                            <div className={`flex items-center justify-between p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
+                                }`}>
+                                <div className="flex items-center gap-2">
+                                    <Info className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`} />
+                                    <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Trắc nghiệm</span>
+                                </div>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={flashcardTypeCounts.multipleChoice}
+                                    onChange={(e) => setFlashcardTypeCounts(prev => ({ ...prev, multipleChoice: parseInt(e.target.value) || 0 }))}
+                                    className={`w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode
+                                        ? 'bg-gray-800 border-gray-600 text-white'
+                                        : 'border-gray-300 bg-white text-gray-900'
+                                        }`}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowFlashcardTypePicker(false);
+                                    setShowTestTypePicker(false);
+                                    setFlashcardTypeCounts({
+                                        termDef: 10,
+                                        fillBlank: 0,
+                                        multipleChoice: 0
+                                    });
+                                }}
+                                className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium ${isDarkMode
+                                    ? 'text-gray-200 bg-gray-700 hover:bg-gray-600'
+                                    : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+                                    }`}
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const total = flashcardTypeCounts.termDef + flashcardTypeCounts.fillBlank + flashcardTypeCounts.multipleChoice;
+                                    if (total === 0) {
+                                        alert('Vui lòng chọn ít nhất một loại flashcard');
+                                        return;
+                                    }
+                                    setShowFlashcardTypePicker(false);
+                                    setShowTestTypePicker(false);
+                                    handleFlashcardsClick(true);
+                                }}
+                                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                            >
+                                Tạo flashcard
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Explore More Options Button - Chỉ hiển thị khi không có picker nào mở */}
+                {!showTestTypePicker && !showFlashcardTypePicker && (
+                    <div className="px-6 pb-6 flex justify-end">
+                        <button
+                            onClick={() => {
+                                // Close test picker if open, show flashcard picker
+                                setShowTestTypePicker(false);
+                                setShowFlashcardTypePicker(true);
+                            }}
+                            className="w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                        >
+                            <Sliders className="w-5 h-5 text-gray-600" />
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

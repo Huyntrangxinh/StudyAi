@@ -54,7 +54,7 @@ router.post('/', async (req, res) => {
 
                     // Insert questions
                     const questionStmt = db.prepare(`
-                        INSERT INTO test_questions (test_id, question_type, question, options, correct_answer, order_index)
+                        INSERT INTO test_questions (test_id, question_type, question, options, correct_answer, position)
                         VALUES (?, ?, ?, ?, ?, ?)
                     `);
 
@@ -120,7 +120,7 @@ router.post('/', async (req, res) => {
                                     return reject(err);
                                 }
 
-                                db.all('SELECT * FROM test_questions WHERE test_id = ? ORDER BY order_index', [testId], (err, testQuestions: any[]) => {
+                                db.all('SELECT * FROM test_questions WHERE test_id = ? ORDER BY position', [testId], (err, testQuestions: any[]) => {
                                     testStmt.finalize();
                                     db.close();
                                     if (err) return reject(err);
@@ -190,7 +190,7 @@ router.get('/:testId', async (req, res) => {
                 return res.status(404).json({ error: 'Test not found' });
             }
 
-            db.all('SELECT * FROM test_questions WHERE test_id = ? ORDER BY order_index', [testId], (err: Error | null, questions: any[]) => {
+            db.all('SELECT * FROM test_questions WHERE test_id = ? ORDER BY position', [testId], (err: Error | null, questions: any[]) => {
                 db.close();
                 if (err) return reject(err);
 

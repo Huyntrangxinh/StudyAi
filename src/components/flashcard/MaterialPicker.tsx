@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, Link, Upload } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { Material } from '../../types/flashcard';
 
 interface MaterialPickerProps {
@@ -33,7 +33,7 @@ export const MaterialPicker: React.FC<MaterialPickerProps> = ({
             <div className="relative z-10">
                 <div className={`bg-white fixed top-0 right-0 z-10 transition-all duration-300 ${isCollapsed ? 'left-16' : 'left-40'}`}>
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                        <div className="flex items-center justify-between h-16">
+                        <div className="flex items-center h-16">
                             <div className="flex items-center space-x-4">
                                 <button
                                     onClick={onBack}
@@ -49,20 +49,6 @@ export const MaterialPicker: React.FC<MaterialPickerProps> = ({
                                     <h1 className="text-xl font-bold text-gray-900">{flashcardName || 'Flashcard'}</h1>
                                 </div>
                             </div>
-                            <div className="flex items-center space-x-3">
-                                <button className="px-3 py-2 text-blue-600 hover:bg-blue-50 rounded-lg flex items-center space-x-2">
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-                                    </svg>
-                                    <span className="text-sm">Chia sẻ</span>
-                                </button>
-                                <button className="p-2 text-gray-400 hover:text-gray-600">
-                                    <Link className="w-4 h-4" />
-                                </button>
-                                <button className="p-2 text-gray-400 hover:text-gray-600">
-                                    <Upload className="w-4 h-4" />
-                                </button>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -70,22 +56,22 @@ export const MaterialPicker: React.FC<MaterialPickerProps> = ({
                 <div className="px-8 pt-16">
                     <div className="flex items-center justify-between">
                         <div>
-                            <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Generate From Materials</h1>
-                            <p className="text-gray-500 mt-2">Select materials you want to generate this flashcard set from</p>
+                            <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">Tạo từ tài liệu</h1>
+                            <p className="text-gray-500 mt-2">Chọn tài liệu bạn muốn tạo bộ thẻ ghi nhớ từ đó</p>
                         </div>
                         <div className="flex items-center space-x-3">
                             <button
                                 onClick={onBack}
                                 className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
                             >
-                                Back
+                                Hủy
                             </button>
                             <button
                                 onClick={onContinue}
                                 className="px-5 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                                 disabled={selectedMaterialIds.size === 0}
                             >
-                                Continue
+                                Tiếp tục
                             </button>
                         </div>
                     </div>
@@ -95,7 +81,7 @@ export const MaterialPicker: React.FC<MaterialPickerProps> = ({
                             type="text"
                             value={searchTerm}
                             onChange={(e) => onSetSearchTerm(e.target.value)}
-                            placeholder="Search for materials"
+                            placeholder="Tìm kiếm tài liệu"
                             className="w-full md:w-96 px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
                     </div>
@@ -108,7 +94,7 @@ export const MaterialPicker: React.FC<MaterialPickerProps> = ({
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                             <div className="border-2 border-dashed border-gray-200 rounded-xl bg-white p-4 hover:border-gray-300 cursor-pointer flex items-center">
                                 <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center mr-3">+</div>
-                                <div className="font-medium text-gray-800">Upload New Material</div>
+                                <div className="font-medium text-gray-800">Tải lên tài liệu mới</div>
                             </div>
 
                             {materialsInSet
@@ -145,7 +131,7 @@ export const MaterialPicker: React.FC<MaterialPickerProps> = ({
                 <div className="px-8 py-8">
                     <button className="flex items-center space-x-2 text-gray-600 hover:text-gray-900">
                         <span className="text-lg">›</span>
-                        <span className="font-medium">Advanced</span>
+                        <span className="font-medium">Nâng cao</span>
                     </button>
                 </div>
             </div>

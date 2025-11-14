@@ -28,8 +28,8 @@ export const OptionSelector: React.FC<OptionSelectorProps> = ({
                         key={option.id}
                         onClick={() => onSelectOption(option.id)}
                         className={`relative p-3 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:shadow-md ${selectedOption === option.id
-                                ? 'border-blue-500 bg-blue-50 shadow-md'
-                                : `${option.color} border-gray-200`
+                            ? 'border-blue-500 bg-blue-50 shadow-md'
+                            : `${option.color} border-gray-200`
                             }`}
                     >
                         <div className="flex items-start space-x-2">

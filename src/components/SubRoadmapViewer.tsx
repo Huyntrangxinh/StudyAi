@@ -25,9 +25,10 @@ interface SubRoadmapViewerProps {
     studySetId: string;
     onBack: () => void;
     onFlashcardGenerated?: (flashcardSetId: number, subModuleId?: number) => void;
+    isDarkMode?: boolean;
 }
 
-const SubRoadmapViewer: React.FC<SubRoadmapViewerProps> = ({ moduleId, moduleTitle, studySetId, onBack, onFlashcardGenerated }) => {
+const SubRoadmapViewer: React.FC<SubRoadmapViewerProps> = ({ moduleId, moduleTitle, studySetId, onBack, onFlashcardGenerated, isDarkMode = false }) => {
     const [subModules, setSubModules] = useState<SubModule[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -246,24 +247,55 @@ const SubRoadmapViewer: React.FC<SubRoadmapViewerProps> = ({ moduleId, moduleTit
                                             </p>
                                         )}
 
-                                        {/* Materials List */}
-                                        {moduleMaterials.length > 0 && (
-                                            <div className="mb-2">
-                                                <p className="text-xs text-gray-700 mb-1.5">
-                                                    Materials ({moduleMaterials.length})
+                                        {/* Sub-module Stats */}
+                                        <div className="mb-2 space-y-1.5">
+                                            {subModule.topicsCount > 0 && (
+                                                <p className="text-xs text-gray-700">
+                                                    {subModule.topicsCount} topics
                                                 </p>
-                                                <div className="space-y-1">
-                                                    {moduleMaterials.slice(0, 3).map((material: any) => (
-                                                        <div
-                                                            key={material.id}
-                                                            className="flex items-center space-x-2 p-1.5 bg-gray-50 rounded-md border border-gray-200"
-                                                        >
-                                                            <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                                                            <span className="text-xs text-gray-700 truncate">
-                                                                {material.name}
-                                                            </span>
-                                                        </div>
-                                                    ))}
+                                            )}
+                                            {subModule.materialsCount > 0 && (
+                                                <div>
+                                                    <p className="text-xs text-gray-700 mb-1.5">
+                                                        Materials ({subModule.materialsCount})
+                                                    </p>
+                                                    {/* Materials List */}
+                                                    <div className="space-y-1">
+                                                        {moduleMaterials.slice(0, 3).map((material: any) => (
+                                                            <div
+                                                                key={material.id}
+                                                                className="flex items-center space-x-2 p-1.5 bg-gray-50 rounded-md border border-gray-200"
+                                                            >
+                                                                <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                                                <span className="text-xs text-gray-700 truncate">
+                                                                    {material.name}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Progress Bar - Hide for completed */}
+                                        {subModule.status !== 'completed' && (
+                                            <div className="mt-2">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <p className="text-xs text-gray-600 font-medium">
+                                                        Progress
+                                                    </p>
+                                                    <p className="text-xs text-gray-900 font-semibold">
+                                                        {Math.round(subModule.progress)}%
+                                                    </p>
+                                                </div>
+                                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                                    <div
+                                                        className={`h-2 rounded-full transition-all ${subModule.progress > 0
+                                                            ? 'bg-blue-500'
+                                                            : 'bg-gray-200'
+                                                            }`}
+                                                        style={{ width: `${Math.max(subModule.progress, 0)}%` }}
+                                                    ></div>
                                                 </div>
                                             </div>
                                         )}
@@ -303,6 +335,7 @@ const SubRoadmapViewer: React.FC<SubRoadmapViewerProps> = ({ moduleId, moduleTit
                 studySetId={studySetId}
                 subModule={selectedSubModule}
                 materials={materials}
+                isDarkMode={isDarkMode}
             />
         </div>
     );
