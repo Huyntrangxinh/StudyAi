@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { awardXP } from '../utils/xpHelper';
 
 interface NavState {
     prompt: string;
@@ -132,6 +133,11 @@ const ExplainerVideoGenerating: React.FC = () => {
                         }
                     }
                 } catch { }
+
+                // Award XP for video creation
+                if (user?.id) {
+                    await awardXP(user.id, 'video', 20);
+                }
 
                 navigate('/dashboard/explainers/video/result', {
                     state: {

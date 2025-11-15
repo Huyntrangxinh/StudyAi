@@ -93,7 +93,7 @@ router.post('/generate', async (req, res) => {
                     `${i + 1}. ${r.title}\n   ${r.snippet}\n   Nguồn: ${r.link}`
                 ).join('\n\n')}\n\nHãy sử dụng thông tin trên để tạo nội dung chi tiết và chính xác về "${prompt}".`;
                 console.log(`✅ Found ${webSearchResults.length} web search results, adding to context`);
-            } else {
+                                } else {
                 console.log('⚠️ No web search results, proceeding without additional context');
             }
 
@@ -101,7 +101,7 @@ router.post('/generate', async (req, res) => {
             console.log('📡 Step 2: Generating text with OpenAI...');
             attemptLog.push('OpenAI Text Generation');
 
-            const baseInstruction = getDetailedInstruction(prompt, language);
+                const baseInstruction = getDetailedInstruction(prompt, language);
             const additionalWarning = language === 'en'
                 ? '\n\n⚠️ CRITICAL: Write actual content, NOT templates. Do NOT include phrases like "PART 1 is", "PART 2 is" in your response. Write the actual lesson content directly.'
                 : '\n\n⚠️ QUAN TRỌNG: Viết nội dung thực tế, KHÔNG dùng template. KHÔNG bao gồm các cụm từ như "PHẦN 1 là", "PHẦN 2 là" trong câu trả lời. Viết nội dung bài học trực tiếp.';
@@ -129,8 +129,8 @@ router.post('/generate', async (req, res) => {
                     console.log('   - Model:', openaiTextResult.model);
                     if (openaiTextResult.usage) {
                         console.log('   - Tokens used:', openaiTextResult.usage.totalTokens);
-                    }
-                } else {
+                        }
+                    } else {
                     console.log('⚠️ OpenAI response too short or empty');
                 }
             } catch (openaiError: any) {
@@ -171,35 +171,35 @@ router.post('/generate', async (req, res) => {
                         }
                     }
 
-                    // Expand fallback if it's too short
-                    let expandedFallback = fallbackScript;
-                    const fallbackWords = fallbackScript.split(' ').length;
+            // Expand fallback if it's too short
+            let expandedFallback = fallbackScript;
+            const fallbackWords = fallbackScript.split(' ').length;
 
-                    if (fallbackWords < 400) {
-                        console.log('   - Expanding fallback from', fallbackWords, 'to 400+ words');
-                        if (language === 'en') {
-                            expandedFallback += ` To ensure you fully understand ${prompt}, let's dive deeper into its practical applications. Consider how this concept appears in everyday life, scientific research, and professional fields. When studying, create detailed notes, draw diagrams if helpful, and practice with real-world examples. Connect this knowledge to other topics you've learned to build a comprehensive understanding. Remember that learning is an active process - engage with the material, ask questions, and seek clarification when needed.`;
-                        } else {
-                            expandedFallback += ` Để đảm bảo bạn hiểu đầy đủ về ${prompt}, hãy cùng đi sâu vào các ứng dụng thực tế của nó. Hãy xem xét cách khái niệm này xuất hiện trong đời sống hàng ngày, nghiên cứu khoa học, và các lĩnh vực chuyên nghiệp. Khi học, hãy tạo ghi chú chi tiết, vẽ sơ đồ nếu hữu ích, và thực hành với các ví dụ thực tế. Kết nối kiến thức này với các chủ đề khác đã học để xây dựng hiểu biết toàn diện. Nhớ rằng học tập là một quá trình chủ động - tương tác với tài liệu, đặt câu hỏi, và tìm kiếm sự làm rõ khi cần thiết.`;
-                        }
-                    }
-
-                    script = expandedFallback;
-                    console.log('   - Fallback length:', script.length, 'chars');
-                    console.log('   - Fallback words:', script.split(' ').length);
-                    console.log('   - Fallback preview:', script.substring(0, 150));
+            if (fallbackWords < 400) {
+                console.log('   - Expanding fallback from', fallbackWords, 'to 400+ words');
+                if (language === 'en') {
+                    expandedFallback += ` To ensure you fully understand ${prompt}, let's dive deeper into its practical applications. Consider how this concept appears in everyday life, scientific research, and professional fields. When studying, create detailed notes, draw diagrams if helpful, and practice with real-world examples. Connect this knowledge to other topics you've learned to build a comprehensive understanding. Remember that learning is an active process - engage with the material, ask questions, and seek clarification when needed.`;
+                } else {
+                    expandedFallback += ` Để đảm bảo bạn hiểu đầy đủ về ${prompt}, hãy cùng đi sâu vào các ứng dụng thực tế của nó. Hãy xem xét cách khái niệm này xuất hiện trong đời sống hàng ngày, nghiên cứu khoa học, và các lĩnh vực chuyên nghiệp. Khi học, hãy tạo ghi chú chi tiết, vẽ sơ đồ nếu hữu ích, và thực hành với các ví dụ thực tế. Kết nối kiến thức này với các chủ đề khác đã học để xây dựng hiểu biết toàn diện. Nhớ rằng học tập là một quá trình chủ động - tương tác với tài liệu, đặt câu hỏi, và tìm kiếm sự làm rõ khi cần thiết.`;
                 }
             }
 
-            console.log('\n📊 FINAL SCRIPT STATS:');
-            console.log('   - Length:', script.length, 'characters');
-            console.log('   - Words:', script.split(' ').length);
-            console.log('   - Attempt log:', attemptLog.join(' → '));
-            console.log('   - First 250 chars:', script.substring(0, 250));
+            script = expandedFallback;
+            console.log('   - Fallback length:', script.length, 'chars');
+            console.log('   - Fallback words:', script.split(' ').length);
+            console.log('   - Fallback preview:', script.substring(0, 150));
+                }
+        }
+
+        console.log('\n📊 FINAL SCRIPT STATS:');
+        console.log('   - Length:', script.length, 'characters');
+        console.log('   - Words:', script.split(' ').length);
+        console.log('   - Attempt log:', attemptLog.join(' → '));
+        console.log('   - First 250 chars:', script.substring(0, 250));
 
             // 2) Generate audio using OpenAI TTS
-            console.log('\n🎵 Starting TTS generation...');
-            console.log('   - Language:', language);
+        console.log('\n🎵 Starting TTS generation...');
+        console.log('   - Language:', language);
             console.log('\n📤 OpenAI TTS Payload:');
             console.log('   - Script length:', script.length, 'characters');
             console.log('   - Script word count:', script.split(' ').length, 'words');
@@ -215,27 +215,27 @@ router.post('/generate', async (req, res) => {
                     language as 'en' | 'vi'
                 );
 
-                console.log('\n========================================');
-                console.log('🎉 Audio generation completed!');
+                    console.log('\n========================================');
+                    console.log('🎉 Audio generation completed!');
                 console.log('   Provider: OpenAI TTS (gpt-4o-mini-tts)');
-                console.log('   Language:', language);
+                    console.log('   Language:', language);
                 console.log('   Voice:', ttsResult.voice);
                 console.log('   URL:', ttsResult.audioUrl);
-                console.log('========================================\n');
+                    console.log('========================================\n');
 
-                return res.json({
+                    return res.json({
                     audioUrl: ttsResult.audioUrl,
-                    script,
+                        script,
                     path: ttsResult.path,
                     provider: 'openai',
                     voice: ttsResult.voice,
-                    language: language,
-                    stats: {
-                        scriptLength: script.length,
-                        wordCount: script.split(' ').length,
-                        attempts: attemptLog
-                    }
-                });
+                        language: language,
+                        stats: {
+                            scriptLength: script.length,
+                            wordCount: script.split(' ').length,
+                            attempts: attemptLog
+                        }
+                    });
 
             } catch (ttsError: any) {
                 console.error('❌ TTS generation failed:', ttsError.message);
