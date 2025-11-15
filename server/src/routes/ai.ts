@@ -681,7 +681,7 @@ async function performWebSearch(query: string): Promise<WebSearchResult[]> {
 router.post('/chat', async (req, res) => {
     try {
         console.log('📥 Chat request:', req.body);
-        const { message, studySetId, materialId, forceWebSearch } = req.body;
+        const { message, studySetId, materialId, forceWebSearch, disableAutoWebSearch, webSearchQuery } = req.body;
         if (!message || !studySetId) {
             return res.status(400).json({ error: 'Message and studySetId are required' });
         }
@@ -765,13 +765,20 @@ router.post('/chat', async (req, res) => {
 
         // If forceWebSearch is true, always search. Otherwise, use needsWebSearch logic
         // ✅ Không search web cho yêu cầu tóm tắt (trừ khi user force)
+        // ✅ Nếu disableAutoWebSearch = true, chỉ search khi forceWebSearch = true
+        // ✅ Nếu có webSearchQuery, dùng nó thay vì message để search chính xác hơn
         let webSearchResults: WebSearchResult[] = [];
-        if (!isSummaryRequest && (forceWebSearch || needsWebSearch(message, top))) {
-            console.log(`🔍 Performing web search for: "${message}" ${forceWebSearch ? '(forced by user)' : '(auto-detected)'}`);
-            webSearchResults = await performWebSearch(message);
+        const shouldSearchWeb = forceWebSearch || (!disableAutoWebSearch && !isSummaryRequest && needsWebSearch(message, top));
+        if (shouldSearchWeb) {
+            // ✅ Ưu tiên dùng webSearchQuery nếu có (cho Review Test), nếu không thì dùng message
+            const searchQuery = webSearchQuery || message;
+            console.log(`🔍 Performing web search for: "${searchQuery}" ${forceWebSearch ? '(forced by user)' : '(auto-detected)'} ${webSearchQuery ? '(using user query)' : ''}`);
+            webSearchResults = await performWebSearch(searchQuery);
             console.log(`📊 Found ${webSearchResults.length} web search results`);
         } else if (isSummaryRequest) {
             console.log('📝 Summary request detected, skipping web search for faster response');
+        } else if (disableAutoWebSearch) {
+            console.log('🚫 Auto web search disabled, only searching if forceWebSearch is true');
         }
 
         // 3) Pass-1: Scholar Analysis - Phân tích cấu trúc JSON hoặc trả lời câu hỏi cụ thể

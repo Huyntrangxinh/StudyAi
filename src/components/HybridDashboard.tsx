@@ -58,10 +58,18 @@ import {
     Laptop,
     FileEdit,
     Award,
-    Grid
+    Grid,
+    Globe,
+    Mic,
+    Copy,
+    ThumbsUp,
+    ThumbsDown,
+    RefreshCw,
+    Check
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useViewTestHandler } from '../hooks/useViewTestHandler';
+import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import DashboardContent from './DashboardContent';
 import StudySetCard from './StudySetCard';
 import StudySetDetail from './StudySetDetail';
@@ -79,7 +87,9 @@ import MyStudySets from './MyStudySets';
 import Materials from './Materials';
 import UploadMaterials from './UploadMaterials';
 import SubRoadmapViewer from './SubRoadmapViewer';
+import Leaderboard from './Leaderboard';
 import toast from 'react-hot-toast';
+import { awardXP } from '../utils/xpHelper';
 
 type SettingsTab = 'settings' | 'subscription' | 'privacy' | 'support';
 
@@ -148,6 +158,8 @@ const HybridDashboard: React.FC = () => {
     const [gameProfileTab, setGameProfileTab] = useState<'level-up' | 'leaderboards'>('level-up');
     const [showSettingsView, setShowSettingsView] = useState<boolean>(false);
     const [settingsTab, setSettingsTab] = useState<SettingsTab>('settings');
+    const [showLeaderboard, setShowLeaderboard] = useState<boolean>(false);
+    const [xpData, setXpData] = useState<{ current_xp: number; level: number; bones: number } | null>(null);
     const [recentMaterials, setRecentMaterials] = useState<Array<{ id: string; name: string; created_at: string }>>([]);
     const [savedTests, setSavedTests] = useState<Array<{ id: number; name: string; description?: string; created_at: string; study_set_id: number }>>([]);
     const [isLoadingTests, setIsLoadingTests] = useState(false);
@@ -186,11 +198,21 @@ const HybridDashboard: React.FC = () => {
     const [sidebarWidth, setSidebarWidth] = useState(600);
     const [chatMessage, setChatMessage] = useState('');
     // Store chat history per question (questionIndex -> chat messages)
-    const [chatHistoryMap, setChatHistoryMap] = useState<Map<number, Array<{ type: 'user' | 'ai', message: string; citations?: Array<{ page: number; excerpt?: string; materialId?: string; materialName?: string }>; correctAnswer?: string }>>>(new Map());
+    const [chatHistoryMap, setChatHistoryMap] = useState<Map<number, Array<{ type: 'user' | 'ai', message: string; citations?: Array<{ page: number; excerpt?: string; materialId?: string; materialName?: string }>; correctAnswer?: string; webSearchResults?: Array<{ title: string; link: string; snippet: string; displayLink: string }> }>>>(new Map());
     // Current chat history for display (derived from chatHistoryMap based on selectedQuestionForChat)
-    const [chatHistory, setChatHistory] = useState<Array<{ type: 'user' | 'ai', message: string; citations?: Array<{ page: number; excerpt?: string; materialId?: string; materialName?: string }>; correctAnswer?: string }>>([]);
+    const [chatHistory, setChatHistory] = useState<Array<{ type: 'user' | 'ai', message: string; citations?: Array<{ page: number; excerpt?: string; materialId?: string; materialName?: string }>; correctAnswer?: string; webSearchResults?: Array<{ title: string; link: string; snippet: string; displayLink: string }> }>>([]);
     const [isLoadingChat, setIsLoadingChat] = useState(false);
     const [selectedQuestionForChat, setSelectedQuestionForChat] = useState<number | null>(null);
+    // Review Test Chat states
+    const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
+    const [isAcademicSearchEnabled, setIsAcademicSearchEnabled] = useState(false);
+    const [selectedMaterials, setSelectedMaterials] = useState<number[]>([]);
+    const [showMaterialPicker, setShowMaterialPicker] = useState(false);
+    // Review Test Chat interaction states
+    const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
+    const [speakingMessageIndex, setSpeakingMessageIndex] = useState<number | null>(null);
+    const [retryingMessageIndex, setRetryingMessageIndex] = useState<number | null>(null);
+    const { speakText, unlockTTS } = useTextToSpeech();
     const [testMaterialId, setTestMaterialId] = useState<string | null>(null);
     const [testMaterialName, setTestMaterialName] = useState<string | null>(null);
     const [citationMaterialId, setCitationMaterialId] = useState<string | null>(null);
@@ -1513,6 +1535,16 @@ const HybridDashboard: React.FC = () => {
                         responseData: responseData,
                         timestamp: new Date().toISOString()
                     });
+
+                    // Award XP for test completion
+                    const percentageScore = (score.correct / score.total) * 100;
+                    if (percentageScore === 100) {
+                        // Perfect score - award 30 XP
+                        await awardXP(user.id, 'test_perfect', 30);
+                    } else {
+                        // Regular completion - award 15 XP
+                        await awardXP(user.id, 'test', 15);
+                    }
                 }
 
                 const latest = await fetchLatestResult(testIdToUse);
@@ -1551,22 +1583,62 @@ const HybridDashboard: React.FC = () => {
             return;
         }
 
-        // Reset all states first (but don't reset showSubRoadmap if we're navigating to Subroadmap)
-        setShowPractice(false);
-        setShowCreateTest(false);
-        setShowMaterialSelection(false);
-        setShowTestTypeSelection(false);
-        setShowTestView(false);
-        setShowReviewTest(false);
-        setShowExplainerVideo(false);
-        setShowExplainerVideoGenerating(false);
-        // Only reset showSubRoadmap if we're NOT going to Subroadmap
-        if (path !== '/dashboard/Subroadmap' && !path.startsWith('/dashboard/Subroadmap')) {
-            setShowSubRoadmap(false);
-        }
-
         // Set states based on URL
         const ready = (location.state as any)?.ready === true;
+        if (path === '/dashboard/leaderboard' || path.startsWith('/dashboard/leaderboard')) {
+            console.log('Route match: leaderboard', { path });
+            setShowLeaderboard(true);
+            // Reset other states
+            setShowMaterials(false);
+            setShowUploadMaterials(false);
+            setShowFlashcards(false);
+            setShowChatView(false);
+            setShowArcade(false);
+            setShowExplainerVideo(false);
+            setShowGameProfile(false);
+        } else if (path === '/dashboard/tailieu' || path.startsWith('/dashboard/tailieu')) {
+            console.log('Route match: tailieu -> setShowMaterials(true)', { path });
+            // Reset all other states first
+            setShowPractice(false);
+            setShowCreateTest(false);
+            setShowMaterialSelection(false);
+            setShowTestTypeSelection(false);
+            setShowTestView(false);
+            setShowReviewTest(false);
+            setShowExplainerVideo(false);
+            setShowExplainerVideoGenerating(false);
+            setShowFlashcards(false);
+            setShowChatView(false);
+            setShowArcade(false);
+            setShowGameProfile(false);
+            setShowLeaderboard(false);
+            setShowSubRoadmap(false);
+            // Set materials view
+            setShowMaterials(true);
+            setShowUploadMaterials(false);
+            setActiveSection('notes');
+            // Ensure we have a study set selected
+            if (!selectedStudySet && studySets.length > 0) {
+                setSelectedStudySet(studySets[0]);
+            }
+        } else {
+            // Reset leaderboard when not on leaderboard route
+            setShowLeaderboard(false);
+            // Reset all states first (but don't reset showSubRoadmap if we're navigating to Subroadmap)
+            setShowPractice(false);
+            setShowCreateTest(false);
+            setShowMaterialSelection(false);
+            setShowTestTypeSelection(false);
+            setShowTestView(false);
+            setShowReviewTest(false);
+            setShowExplainerVideo(false);
+            setShowExplainerVideoGenerating(false);
+            // Only reset showSubRoadmap if we're NOT going to Subroadmap
+            if (path !== '/dashboard/Subroadmap' && !path.startsWith('/dashboard/Subroadmap')) {
+                setShowSubRoadmap(false);
+            }
+        }
+
         if (path === '/dashboard/practice' || path.startsWith('/dashboard/practice')) {
             console.log('Route match: practice -> setShowPractice(true)', { path });
             setShowArcade(false);
@@ -1781,6 +1853,27 @@ const HybridDashboard: React.FC = () => {
                 setShowSubRoadmap(true);
                 setShowStudySetDetail(false);
             }
+        } else if (path === '/dashboard/chat' || path.startsWith('/dashboard/chat')) {
+            console.log('Route match: chat -> setShowChatView(true)', { path });
+            // Reset all other states first
+            setShowPractice(false);
+            setShowCreateTest(false);
+            setShowMaterialSelection(false);
+            setShowTestTypeSelection(false);
+            setShowTestView(false);
+            setShowReviewTest(false);
+            setShowExplainerVideo(false);
+            setShowExplainerVideoGenerating(false);
+            setShowFlashcards(false);
+            setShowArcade(false);
+            setShowGameProfile(false);
+            setShowLeaderboard(false);
+            setShowSubRoadmap(false);
+            setShowMaterials(false);
+            setShowUploadMaterials(false);
+            // Set chat view
+            setShowChatView(true);
+            setActiveSection('chat');
         }
     }, [location.pathname, navigate]);
 
@@ -1987,7 +2080,11 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 },
                 body: JSON.stringify({
                     message: testPrompt,
-                    studySetId: selectedStudySet?.id || ''
+                    studySetId: selectedStudySet?.id || '',
+                    forceWebSearch: isWebSearchEnabled, // ✅ Chỉ search web khi user bật nút
+                    disableAutoWebSearch: true, // ✅ Tắt auto web search cho Review Test
+                    materialId: selectedMaterials.length > 0 ? selectedMaterials[0] : undefined,
+                    webSearchQuery: isWebSearchEnabled ? userMessage : undefined // ✅ Dùng câu hỏi thực của user để search web
                 })
             });
 
@@ -2158,7 +2255,8 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                     type: 'ai' as const,
                     message: cleanedResponse,
                     citations: citations.length > 0 ? citations : undefined,
-                    correctAnswer: correctAnswerText
+                    correctAnswer: correctAnswerText,
+                    webSearchResults: data.webSearchResults || [] // ✅ Lưu web search results từ API
                 };
                 setChatHistory(prev => [...prev, aiMsg]);
                 setChatHistoryMap(prev => {
@@ -2286,6 +2384,17 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
 
     // Navigation items based on user role
     const getNavigationItems = () => {
+        // If user is admin, only show admin items
+        if (user?.role === 'admin') {
+            return [
+                { id: 'admin', label: 'Quản trị hệ thống', icon: Settings, admin: true },
+                { id: 'add-teacher', label: 'Thêm giáo viên', icon: UserPlus, admin: true },
+                { id: 'add-student', label: 'Thêm sinh viên', icon: GraduationCap, admin: true },
+                { id: 'upload-file', label: 'Tải lên file', icon: FileSpreadsheet, admin: true }
+            ];
+        }
+
+        // For non-admin users, show regular items
         const baseItems: Array<{
             id: string;
             label: string;
@@ -2316,19 +2425,6 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 icon: BookOpen, // Will be replaced with custom icon in render
                 studySetId: navigationStudySet.id
             });
-        }
-
-        // Add admin items if user is admin
-        if (user?.role === 'admin') {
-            baseItems.push(
-                { id: 'admin', label: 'Quản trị hệ thống', icon: Settings, admin: true },
-                { id: 'add-teacher', label: 'Thêm giáo viên', icon: UserPlus, admin: true },
-                { id: 'add-student', label: 'Thêm sinh viên', icon: GraduationCap, admin: true },
-                { id: 'upload-file', label: 'Tải lên file', icon: FileSpreadsheet, admin: true },
-                { id: 'ai-learning', label: 'AI Học tập', icon: Brain, admin: true },
-                { id: 'progress', label: 'Tiến độ học tập', icon: BarChart3, admin: true },
-                { id: 'assignments', label: 'Bài tập', icon: ClipboardList, admin: true }
-            );
         }
 
         return baseItems;
@@ -2407,31 +2503,53 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
         }
     };
 
+    // Get unique color for each navigation item
     const getIconColor = (itemId: string) => {
+        // Fixed color map for each navigation item to ensure unique colors
         const colorMap: { [key: string]: string } = {
-            'home': 'text-blue-600',
-            'sets': 'text-green-600',
-            'calendar': 'text-purple-600',
-            'study': 'text-purple-600',
-            'chat': 'text-gray-600',
-            'lecture': 'text-green-600',
-            'flashcards': 'text-blue-600',
-            'tests': 'text-yellow-600',
-            'tutor': 'text-purple-600',
-            'arcade': 'text-pink-600',
-            'essay': 'text-green-600',
-            'explainers': 'text-blue-600',
-            'audio': 'text-purple-600',
-            'notes': 'text-yellow-600',
-            'admin': 'text-orange-600',
-            'add-teacher': 'text-orange-600',
-            'add-student': 'text-orange-600',
-            'upload-file': 'text-orange-600',
-            'ai-learning': 'text-orange-600',
-            'progress': 'text-orange-600',
-            'assignments': 'text-orange-600'
+            'home': '#ec4899', // Pink
+            'sets': '#f97316', // Orange
+            'calendar': '#06b6d4', // Cyan
+            'chat': '#3b82f6', // Blue
+            'lecture': '#10b981', // Green
+            'flashcards': '#8b5cf6', // Purple
+            'tests': '#ef4444', // Red
+            'tutor': '#a855f7', // Purple
+            'arcade': '#14b8a6', // Teal
+            'explainers': '#f59e0b', // Amber
+            'notes': '#6366f1', // Indigo
+            'admin': '#dc2626', // Red
+            'add-teacher': '#ea580c', // Orange
+            'add-student': '#059669', // Green
+            'upload-file': '#0284c7', // Blue
         };
-        return colorMap[itemId] || 'text-gray-600';
+
+        // If item has a fixed color, use it
+        if (colorMap[itemId]) {
+            return colorMap[itemId];
+        }
+
+        // For study sets or other dynamic items, use hash-based color
+        const colors = [
+            '#ec4899', // Pink
+            '#f97316', // Orange
+            '#06b6d4', // Cyan
+            '#3b82f6', // Blue
+            '#10b981', // Green
+            '#8b5cf6', // Purple
+            '#ef4444', // Red
+            '#a855f7', // Purple
+            '#14b8a6', // Teal
+            '#f59e0b', // Amber
+            '#6366f1', // Indigo
+            '#dc2626', // Red
+            '#ea580c', // Orange
+            '#059669', // Green
+            '#0284c7', // Blue
+        ];
+        const hash = itemId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        const index = hash % colors.length;
+        return colors[index];
     };
 
     const handleNavigation = (itemId: string) => {
@@ -2458,12 +2576,13 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 setShowPractice(false);
                 setShowExplainerVideo(false);
                 setShowArcade(false);
+                setShowLeaderboard(false);
                 return;
             }
         }
 
         // Các section đã được implement
-        const implementedSections = ['home', 'admin', 'add-teacher', 'add-student', 'upload-file', 'ai-learning', 'progress', 'assignments'];
+        const implementedSections = ['home', 'admin', 'add-teacher', 'add-student', 'upload-file'];
 
         // Nếu đang làm bài và còn câu chưa trả lời, hỏi xác nhận trước khi rời
         if (showTestView) {
@@ -2489,6 +2608,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             setShowChatView(false);
             setShowGameProfile(false);
             setShowSettingsView(false);
+            setShowLeaderboard(false);
 
             // Đặc biệt cho "Trang chủ": đảm bảo về dashboard chính
             if (itemId === 'home') {
@@ -2513,6 +2633,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                 setShowGameProfile(false);
                 setShowSettingsView(false);
                 setShowChatView(false);
+                setShowLeaderboard(false);
                 navigate('/dashboard');
                 setTestQuestions([]);
                 setCurrentQuestionIndex(0);
@@ -2562,11 +2683,18 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
         } else if (itemId === 'flashcards') {
             // Xử lý click vào "Thẻ ghi nhớ"
             if (selectedStudySet) {
-                setActiveSection(''); // Reset active section
+                setActiveSection('flashcards'); // Set active section để highlight menu
                 setShowFlashcards(true);
                 setShowChatView(false);
+                setShowMaterials(false);
+                setShowUploadMaterials(false);
+                setShowArcade(false);
+                setShowExplainerVideo(false);
                 setShowGameProfile(false);
                 setShowSettingsView(false);
+                setShowReviewTest(false); // ✅ Đóng màn review test
+                setShowTestView(false); // ✅ Đóng màn test view
+                setShowPractice(false); // ✅ Đóng màn practice
             } else {
                 toast.error('Vui lòng chọn một bộ học trước khi xem thẻ ghi nhớ', {
                     duration: 3000,
@@ -2575,13 +2703,16 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             }
         } else if (itemId === 'tests') {
             // Xử lý click vào "Tests & QuizFetch"
-            setActiveSection(''); // Reset active section
+            setActiveSection('tests'); // Set active section để highlight menu
             setShowFlashcards(false);
             setShowMaterialViewer(false);
             setShowStudySetDetail(false);
+            setShowMaterials(false);
+            setShowUploadMaterials(false);
             setShowPractice(true);
             setShowArcade(false);
             setShowChatView(false);
+            setShowExplainerVideo(false);
             setShowGameProfile(false);
             setShowSettingsView(false);
             // Load tests when Practice view is shown
@@ -2592,10 +2723,12 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
         } else if (itemId === 'explainers') {
             // Xử lý click vào "Giải thích"
             console.log('Navigating to explainers page');
-            setActiveSection(''); // Reset active section
+            setActiveSection('explainers'); // Set active section để highlight menu
             setShowFlashcards(false);
             setShowMaterialViewer(false);
             setShowStudySetDetail(false);
+            setShowMaterials(false);
+            setShowUploadMaterials(false);
             setShowPractice(false);
             setShowArcade(false);
             setShowChatView(false);
@@ -2610,6 +2743,8 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             setShowFlashcards(false);
             setShowMaterialViewer(false);
             setShowStudySetDetail(false);
+            setShowMaterials(false);
+            setShowUploadMaterials(false);
             setShowPractice(false);
             setShowExplainerVideo(false);
             setShowArcade(false);
@@ -2620,10 +2755,12 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
         } else if (itemId === 'arcade') {
             // Xử lý click vào "Trò chơi"
             console.log('Navigating to arcade page');
-            setActiveSection(''); // Reset active section
+            setActiveSection('arcade'); // Set active section để highlight menu
             setShowFlashcards(false);
             setShowMaterialViewer(false);
             setShowStudySetDetail(false);
+            setShowMaterials(false);
+            setShowUploadMaterials(false);
             setShowPractice(false);
             setShowExplainerVideo(false);
             setShowArcade(true);
@@ -2631,6 +2768,24 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             setShowGameProfile(false);
             setShowSettingsView(false);
             navigate('/dashboard/arcade');
+        } else if (itemId === 'notes') {
+            // Xử lý click vào "Ghi chú & Tài liệu"
+            setActiveSection('notes'); // Set active section để highlight menu
+            setShowFlashcards(false);
+            setShowChatView(false);
+            setShowArcade(false);
+            setShowExplainerVideo(false);
+            setShowGameProfile(false);
+            setShowSettingsView(false);
+            // Ensure we have a study set selected
+            if (!selectedStudySet && studySets.length > 0) {
+                setSelectedStudySet(studySets[0]);
+            }
+            if (selectedStudySet) {
+                setShowMaterials(true);
+                setShowUploadMaterials(false);
+                navigate('/dashboard/tailieu');
+            }
         } else if (itemId === 'sets') {
             // Xử lý click vào "Bộ học của tôi"
             setActiveSection('sets');
@@ -3484,6 +3639,92 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
     const renderReviewTest = () => {
         const labels = ['A', 'B', 'C', 'D', 'E', 'F'];
 
+        // Web Search Results Component
+        const WebSearchResults: React.FC<{ results: Array<{ title: string; link: string; snippet: string; displayLink: string }> }> = ({ results }) => {
+            const [isExpanded, setIsExpanded] = useState(true);
+
+            if (!results || results.length === 0) return null;
+
+            // ✅ Hiển thị 5 kết quả đầu tiên
+            const displayedResults = results.slice(0, 5);
+
+            return (
+                <div className="mt-3 p-4 rounded-lg border bg-gray-50 border-gray-200">
+                    {/* Header */}
+                    <div
+                        className="flex items-center justify-between mb-3 cursor-pointer"
+                        onClick={() => setIsExpanded(!isExpanded)}
+                    >
+                        <div className="flex items-center space-x-2">
+                            <span className="text-xl">🌐</span>
+                            <h3 className="font-semibold text-gray-800">Web Search</h3>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <span className="text-sm text-gray-500">{displayedResults.length} results</span>
+                            <ChevronDown
+                                className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''} text-gray-500`}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Results - Có scrollbar, hiển thị 5 kết quả */}
+                    {isExpanded && (
+                        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2" style={{
+                            scrollbarWidth: 'thin',
+                            scrollbarColor: '#cbd5e0 #f7fafc'
+                        }}>
+                            {displayedResults.map((result, index) => {
+                                const raw = result.link || '';
+                                const href = raw && /^https?:\/\//i.test(raw) ? raw : (raw ? `https://${raw}` : (result.displayLink ? `https://${result.displayLink}` : '#'));
+                                // derive hostname for favicon
+                                let host = '';
+                                try { host = new URL(href).hostname; } catch { host = result.displayLink || ''; }
+                                const faviconUrl = host ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32` : '';
+                                return (
+                                    <a
+                                        key={index}
+                                        href={href}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="block p-3 rounded-lg border transition-colors cursor-pointer bg-white border-gray-200 hover:border-blue-300"
+                                        onMouseDown={(e) => {
+                                            // Prevent default để tránh mở link ngay lập tức
+                                            e.preventDefault();
+                                            // Mở link trong tab mới
+                                            window.open(href, '_blank', 'noopener,noreferrer');
+                                        }}
+                                        onClick={(e) => {
+                                            // Also prevent default to avoid second open; rely on programmatic open above
+                                            e.preventDefault();
+                                        }}
+                                    >
+                                        <div className="flex items-start space-x-2">
+                                            {faviconUrl ? (
+                                                <img src={faviconUrl} alt={host} className="w-4 h-4 rounded flex-shrink-0 mt-1" />
+                                            ) : (
+                                                <div className="w-4 h-4 bg-blue-500 rounded flex-shrink-0 mt-1"></div>
+                                            )}
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className="font-medium text-gray-900 text-sm mb-1 line-clamp-2">
+                                                    {result.title}
+                                                </h4>
+                                                <p className="text-xs text-gray-600 mb-1 line-clamp-2">
+                                                    {result.snippet}
+                                                </p>
+                                                <p className="text-xs text-blue-600 truncate">
+                                                    {result.displayLink || result.link}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </a>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
         // Helper to get correct answer index
         const getCorrectAnswerIndex = (question: typeof testQuestions[0]): number | undefined => {
             if (typeof question.correctAnswer === 'number') {
@@ -3812,40 +4053,209 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 {chatHistory.length > 0 ? (
                                     <div className="flex-1 overflow-y-auto p-4 space-y-4">
                                         {chatHistory.map((msg, index) => (
-                                            <div key={index} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                                <div className={`${msg.type === 'ai' ? 'flex flex-col' : ''} max-w-[80%]`}>
-                                                    <div className={`rounded-lg px-4 py-2 ${msg.type === 'user'
-                                                        ? 'bg-blue-500 text-white'
-                                                        : 'bg-white text-gray-800'
-                                                        }`}>
-                                                        <div
-                                                            className={`text-sm prose prose-sm max-w-none ${msg.type === 'user' ? 'prose-invert [&_*]:!text-white' : ''}`}
-                                                            dangerouslySetInnerHTML={{ __html: renderMessage(msg.message, msg.type === 'user', msg.correctAnswer) }}
-                                                        />
-                                                    </div>
-                                                    {/* Citations */}
-                                                    {msg.type === 'ai' && msg.citations && msg.citations.length > 0 && (
-                                                        <div className="mt-2 flex flex-wrap gap-2">
-                                                            {msg.citations.map((citation, citIndex) => (
-                                                                <button
-                                                                    key={citIndex}
-                                                                    onClick={(e) => {
-                                                                        e.preventDefault();
-                                                                        e.stopPropagation();
-                                                                        handleOpenCitation(citation.materialId, citation.page);
-                                                                    }}
-                                                                    className="text-xs px-3 py-1.5 bg-blue-50 hover:bg-blue-100 active:bg-blue-200 border border-blue-200 rounded-lg text-blue-700 font-medium transition-all cursor-pointer flex items-center space-x-1 shadow-sm hover:shadow-md"
-                                                                    title={citation.materialName ? `Click để xem ${citation.materialName} - Trang ${citation.page}` : `Click để xem trang ${citation.page}`}
-                                                                >
-                                                                    <FileText className="w-3 h-3 flex-shrink-0" />
-                                                                    <span className="whitespace-nowrap">
-                                                                        {citation.materialName ? `${citation.materialName} - ` : ''}Trang {citation.page}
-                                                                    </span>
-                                                                </button>
-                                                            ))}
+                                            <div
+                                                key={index}
+                                                className={`flex flex-col ${msg.type === 'user' ? 'items-end' : 'items-start'}`}
+                                            >
+                                                <div className={`flex items-start gap-3 ${msg.type === 'user' ? 'flex-row-reverse' : ''}`}>
+                                                    {/* Avatar cho AI */}
+                                                    {msg.type === 'ai' && (
+                                                        <div className="flex-shrink-0 w-8 h-8 rounded-full overflow-hidden">
+                                                            <img
+                                                                src={`${process.env.PUBLIC_URL || ''}/SPARKE.gif`}
+                                                                alt="Spark.E"
+                                                                className="w-full h-full object-contain"
+                                                            />
                                                         </div>
                                                     )}
+                                                    <div
+                                                        className={`max-w-[85%] rounded-2xl px-4 py-3 ${msg.type === 'user'
+                                                            ? 'bg-blue-600 text-white shadow-sm'
+                                                            : 'bg-gray-50 text-gray-900 border border-gray-200'
+                                                            }`}
+                                                    >
+                                                        <div
+                                                            className={`text-sm leading-relaxed prose prose-sm max-w-none [&_strong]:font-semibold [&_em]:italic [&_code]:text-xs [&_p]:mb-2 ${msg.type === 'user'
+                                                                ? 'prose-invert [&_*]:!text-white'
+                                                                : 'text-gray-900 [&_strong]:text-gray-900'
+                                                                }`}
+                                                            dangerouslySetInnerHTML={{ __html: renderMessage(msg.message, msg.type === 'user', msg.correctAnswer) }}
+                                                        />
+                                                        {/* Web Search Results */}
+                                                        {msg.webSearchResults && msg.webSearchResults.length > 0 && (
+                                                            <WebSearchResults results={msg.webSearchResults} />
+                                                        )}
+                                                    </div>
                                                 </div>
+                                                {/* Action buttons cho tin nhắn AI */}
+                                                {msg.type === 'ai' && (
+                                                    <div className="flex items-center gap-2 mt-2 ml-11 relative">
+                                                        <button
+                                                            onClick={async () => {
+                                                                try {
+                                                                    const tempDiv = document.createElement('div');
+                                                                    tempDiv.style.position = 'absolute';
+                                                                    tempDiv.style.left = '-9999px';
+                                                                    tempDiv.style.whiteSpace = 'pre-wrap';
+                                                                    document.body.appendChild(tempDiv);
+                                                                    tempDiv.innerHTML = msg.message;
+
+                                                                    let htmlForParsing = msg.message;
+                                                                    htmlForParsing = htmlForParsing
+                                                                        .replace(/<\/p>/gi, '\n\n')
+                                                                        .replace(/<p[^>]*>/gi, '')
+                                                                        .replace(/<\/div>/gi, '\n')
+                                                                        .replace(/<div[^>]*>/gi, '')
+                                                                        .replace(/<br\s*\/?>/gi, '\n')
+                                                                        .replace(/<\/h[1-6]>/gi, '\n\n')
+                                                                        .replace(/<h[1-6][^>]*>/gi, '')
+                                                                        .replace(/<\/li>/gi, '\n')
+                                                                        .replace(/<li[^>]*>/gi, '• ')
+                                                                        .replace(/<\/ul>/gi, '\n')
+                                                                        .replace(/<ul[^>]*>/gi, '')
+                                                                        .replace(/<\/ol>/gi, '\n')
+                                                                        .replace(/<ol[^>]*>/gi, '')
+                                                                        .replace(/<\/strong>/gi, '')
+                                                                        .replace(/<strong[^>]*>/gi, '')
+                                                                        .replace(/<\/em>/gi, '')
+                                                                        .replace(/<em[^>]*>/gi, '')
+                                                                        .replace(/<\/code>/gi, '')
+                                                                        .replace(/<code[^>]*>/gi, '')
+                                                                        .replace(/<[^>]+>/g, '')
+                                                                        .replace(/&nbsp;/g, ' ')
+                                                                        .replace(/&amp;/g, '&')
+                                                                        .replace(/&lt;/g, '<')
+                                                                        .replace(/&gt;/g, '>')
+                                                                        .replace(/&quot;/g, '"')
+                                                                        .replace(/&apos;/g, "'");
+
+                                                                    htmlForParsing = htmlForParsing
+                                                                        .replace(/\n{3,}/g, '\n\n')
+                                                                        .replace(/[ \t]+/g, ' ')
+                                                                        .trim();
+
+                                                                    tempDiv.innerHTML = htmlForParsing;
+                                                                    let textContent = tempDiv.innerText || tempDiv.textContent || htmlForParsing;
+                                                                    document.body.removeChild(tempDiv);
+
+                                                                    await navigator.clipboard.writeText(textContent);
+                                                                    setCopiedMessageIndex(index);
+                                                                    setTimeout(() => {
+                                                                        setCopiedMessageIndex(null);
+                                                                    }, 2000);
+                                                                } catch (error) {
+                                                                    console.error('Failed to copy:', error);
+                                                                }
+                                                            }}
+                                                            className={`p-1.5 rounded-lg transition-colors relative hover:bg-gray-100 ${copiedMessageIndex === index ? 'text-green-600 hover:text-green-700' : 'text-gray-600 hover:text-gray-900'}`}
+                                                            title={copiedMessageIndex === index ? "Copied!" : "Copy"}
+                                                        >
+                                                            {copiedMessageIndex === index ? (
+                                                                <Check size={16} className="text-green-600" strokeWidth={3} />
+                                                            ) : (
+                                                                <Copy size={16} />
+                                                            )}
+                                                            {copiedMessageIndex === index && (
+                                                                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 z-50">
+                                                                    <div className="bg-gray-800 text-white px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap relative shadow-lg">
+                                                                        Copied!
+                                                                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1">
+                                                                            <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800"></div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                const updatedHistory = chatHistory.map((m, i) =>
+                                                                    i === index
+                                                                        ? { ...m, liked: !(m as any).liked, disliked: (m as any).liked ? false : (m as any).disliked }
+                                                                        : m
+                                                                );
+                                                                setChatHistory(updatedHistory);
+                                                                const historyForQuestion = chatHistoryMap.get(selectedQuestionForChat || 0) || [];
+                                                                const updatedHistoryForQuestion = historyForQuestion.map((m, i) =>
+                                                                    i === index
+                                                                        ? { ...m, liked: !(m as any).liked, disliked: (m as any).liked ? false : (m as any).disliked }
+                                                                        : m
+                                                                );
+                                                                setChatHistoryMap(new Map(chatHistoryMap).set(selectedQuestionForChat || 0, updatedHistoryForQuestion));
+                                                            }}
+                                                            className={`p-1.5 rounded-lg transition-colors hover:bg-gray-100 ${(msg as any).liked ? 'text-green-600 hover:text-green-700' : 'text-gray-600 hover:text-gray-900'}`}
+                                                            title="Thumbs Up"
+                                                        >
+                                                            <ThumbsUp size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                const updatedHistory = chatHistory.map((m, i) =>
+                                                                    i === index
+                                                                        ? { ...m, disliked: !(m as any).disliked, liked: (m as any).disliked ? false : (m as any).liked }
+                                                                        : m
+                                                                );
+                                                                setChatHistory(updatedHistory);
+                                                                const historyForQuestion = chatHistoryMap.get(selectedQuestionForChat || 0) || [];
+                                                                const updatedHistoryForQuestion = historyForQuestion.map((m, i) =>
+                                                                    i === index
+                                                                        ? { ...m, disliked: !(m as any).disliked, liked: (m as any).disliked ? false : (m as any).liked }
+                                                                        : m
+                                                                );
+                                                                setChatHistoryMap(new Map(chatHistoryMap).set(selectedQuestionForChat || 0, updatedHistoryForQuestion));
+                                                            }}
+                                                            className={`p-1.5 rounded-lg transition-colors hover:bg-gray-100 ${(msg as any).disliked ? 'text-red-600 hover:text-red-700' : 'text-gray-600 hover:text-gray-900'}`}
+                                                            title="Thumbs Down"
+                                                        >
+                                                            <ThumbsDown size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={async () => {
+                                                                setRetryingMessageIndex(index);
+                                                                let userQuestion = '';
+                                                                for (let i = index - 1; i >= 0; i--) {
+                                                                    if (chatHistory[i].type === 'user') {
+                                                                        userQuestion = chatHistory[i].message;
+                                                                        break;
+                                                                    }
+                                                                }
+                                                                if (userQuestion) {
+                                                                    await sendReviewChatMessage(userQuestion);
+                                                                }
+                                                                setRetryingMessageIndex(null);
+                                                            }}
+                                                            className={`p-1.5 rounded-lg transition-colors hover:bg-gray-100 ${retryingMessageIndex === index ? 'text-blue-600 hover:text-blue-700 animate-spin' : 'text-gray-600 hover:text-gray-900'}`}
+                                                            title="Regenerate"
+                                                            disabled={retryingMessageIndex === index}
+                                                        >
+                                                            <RefreshCw size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={async () => {
+                                                                try {
+                                                                    unlockTTS();
+                                                                    const tempDiv = document.createElement('div');
+                                                                    tempDiv.innerHTML = msg.message;
+                                                                    const textToSpeak = tempDiv.innerText || tempDiv.textContent || msg.message.replace(/<[^>]*>/g, '').trim();
+                                                                    if (!textToSpeak || textToSpeak.trim() === '') return;
+                                                                    setSpeakingMessageIndex(index);
+                                                                    await speakText(textToSpeak, 'auto');
+                                                                    const wordCount = textToSpeak.split(/\s+/).length;
+                                                                    const estimatedDuration = Math.max(3000, (wordCount / 150) * 60 * 1000);
+                                                                    setTimeout(() => {
+                                                                        setSpeakingMessageIndex(null);
+                                                                    }, estimatedDuration);
+                                                                } catch (error) {
+                                                                    console.error('Error reading message:', error);
+                                                                    setSpeakingMessageIndex(null);
+                                                                }
+                                                            }}
+                                                            className={`p-1.5 rounded-lg transition-colors hover:bg-gray-100 ${speakingMessageIndex === index ? 'text-blue-600 hover:text-blue-700' : 'text-gray-600 hover:text-gray-900'}`}
+                                                            title="Read Aloud"
+                                                        >
+                                                            <Volume2 size={16} className={speakingMessageIndex === index ? 'animate-pulse' : ''} />
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                         {isLoadingChat && (
@@ -3941,37 +4351,70 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 )}
                             </div>
 
-                            {/* Bottom Input Area */}
-                            <div className="p-3 md:p-4 bg-white/80 backdrop-blur w-full overflow-hidden sticky bottom-0">
-                                <div className="flex items-center w-full">
-                                    <div className="flex items-center w-full bg-white rounded-full px-4 py-3 shadow">
-                                        <button className="w-8 h-8 bg-white hover:bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0 mr-3">
-                                            <span className="text-gray-600 text-sm">🖼️</span>
+                            {/* Bottom Input Area - Same style as ChatView */}
+                            <div className="p-4 bg-white/80 backdrop-blur w-full overflow-hidden sticky bottom-0">
+                                {/* Input Container */}
+                                <div className="rounded-2xl border shadow-sm bg-white border-gray-300">
+                                    {/* Input Field Row */}
+                                    <div className="flex items-center px-4 py-3 space-x-3">
+                                        <button className="p-1.5 rounded-lg transition-colors flex-shrink-0 hover:bg-gray-100">
+                                            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                            </svg>
                                         </button>
-                                        <input
-                                            type="text"
-                                            placeholder="Ask your AI tutor anything..."
-                                            className="flex-1 min-w-0 bg-transparent outline-none text-sm md:text-base placeholder-gray-400"
-                                            value={chatMessage}
-                                            onChange={(e) => setChatMessage(e.target.value)}
-                                            onKeyPress={handleKeyPress}
-                                            disabled={isLoadingChat}
-                                        />
+                                        <div className="flex-1">
+                                            <input
+                                                type="text"
+                                                placeholder="Hỏi gia sư AI của bạn bất cứ điều gì..."
+                                                value={chatMessage}
+                                                onChange={(e) => setChatMessage(e.target.value)}
+                                                onKeyPress={handleKeyPress}
+                                                disabled={isLoadingChat}
+                                                className="w-full px-0 py-0 bg-transparent border-none focus:outline-none focus:ring-0 disabled:bg-transparent text-sm text-gray-900 placeholder-gray-400"
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                sendReviewChatMessage();
+                                            }}
+                                            disabled={isLoadingChat || !chatMessage.trim()}
+                                            className="w-9 h-9 flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0 shadow-sm"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                                            </svg>
+                                        </button>
                                     </div>
-                                    <button
-                                        className="ml-2 w-10 h-10 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center transition-colors flex-shrink-0 shadow disabled:opacity-50"
-                                        onClick={(e) => {
-                                            e.preventDefault();
-                                            sendReviewChatMessage();
-                                        }}
-                                        disabled={isLoadingChat || !chatMessage.trim()}
-                                    >
-                                        {isLoadingChat ? (
-                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                        ) : (
-                                            <span className="text-sm">↑</span>
-                                        )}
-                                    </button>
+
+                                    {/* Chips Row */}
+                                    <div className="flex items-center justify-between px-4 pb-3 pt-1">
+                                        <div className="flex items-center space-x-2">
+                                            <button
+                                                onClick={() => setIsWebSearchEnabled(!isWebSearchEnabled)}
+                                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${isWebSearchEnabled
+                                                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                                    : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                                                    }`}
+                                            >
+                                                <Globe className="w-3.5 h-3.5 flex-shrink-0" />
+                                                <span>Duyệt web</span>
+                                            </button>
+                                            <button
+                                                onClick={() => setIsAcademicSearchEnabled(!isAcademicSearchEnabled)}
+                                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${isAcademicSearchEnabled
+                                                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                                    : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                                                    }`}
+                                            >
+                                                <GraduationCap className="w-3.5 h-3.5 flex-shrink-0" />
+                                                <span>Tìm kiếm bài báo học thuật</span>
+                                            </button>
+                                        </div>
+                                        <button className="p-1.5 rounded-lg transition-colors hover:bg-gray-100 flex-shrink-0">
+                                            <Mic className="w-4 h-4 text-gray-500" />
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -4350,12 +4793,47 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
         );
     };
 
+    // Fetch XP data from API
+    useEffect(() => {
+        const fetchXP = async () => {
+            if (!user?.id) return;
+
+            try {
+                const response = await fetch(`http://localhost:3001/api/xp?userId=${user.id}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setXpData({
+                        current_xp: data.current_xp || 0,
+                        level: data.level || 1,
+                        bones: data.bones || 0
+                    });
+                }
+            } catch (error) {
+                console.error('Error fetching XP:', error);
+            }
+        };
+
+        fetchXP();
+
+        // Refresh XP every 10 seconds to update progress bar when on game profile
+        if (showGameProfile) {
+            const interval = setInterval(fetchXP, 10000);
+            return () => clearInterval(interval);
+        }
+    }, [user?.id, showGameProfile]);
+
     const renderGameProfile = () => {
-        const currentXP = 30;
-        const maxXP = 87;
-        const level = 4;
-        const bones = 312;
         const username = user?.email?.split('@')[0] || 'huyềntrang1695119';
+
+        // Calculate level and progress based on XP
+        const currentXP = xpData?.current_xp || 0;
+        const level = xpData?.level || 1;
+        const bones = xpData?.bones || 0;
+
+        // Calculate XP within current level (0-999 for level 1, 1000-1999 for level 2, etc.)
+        const xpInCurrentLevel = currentXP % 1000;
+        const maxXPForLevel = 1000; // Each level requires 1000 XP
+        const progressPercentage = (xpInCurrentLevel / maxXPForLevel) * 100;
 
         return (
             <div className={`flex-1 transition-all duration-300 min-h-screen bg-white`}>
@@ -4366,7 +4844,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                         className="mb-8 flex items-center text-gray-700 hover:text-gray-900 transition-colors font-medium"
                     >
                         <ArrowLeft className="w-5 h-5 mr-2" />
-                        <span className="text-lg">Back</span>
+                        <span className="text-lg">Quay lại</span>
                     </button>
 
                     {/* BONES Section - Top Center */}
@@ -4377,7 +4855,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                         </div>
                         <button className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors">
                             <ShoppingCart className="w-5 h-5" />
-                            Bone Shop
+                            Cửa hàng xương
                         </button>
                     </div>
 
@@ -4405,11 +4883,12 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                             <div className="w-80 bg-gray-200 rounded-full h-2 mb-0.5">
                                                 <div
                                                     className="bg-green-500 h-2 rounded-full transition-all"
-                                                    style={{ width: `${(currentXP / maxXP) * 100}%` }}
+                                                    style={{ width: `${progressPercentage}%` }}
                                                 ></div>
                                             </div>
                                             <div className="flex items-center justify-between text-xs">
                                                 <span className="text-gray-700 font-medium">Level {level}</span>
+                                                <span className="text-gray-500">{xpInCurrentLevel} / {maxXPForLevel} XP</span>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2 text-sm text-gray-700 mb-4">
@@ -4418,22 +4897,22 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                                 alt="Streak"
                                                 className="w-4 h-4 object-contain"
                                             />
-                                            <span className="font-medium">Current Streak: {streakInfo.current} Day(s)</span>
+                                            <span className="font-medium">Chuỗi ngày hiện tại: {streakInfo.current} Ngày</span>
                                         </div>
                                         <div className="mb-4">
                                             <p className="text-gray-600 text-sm leading-relaxed">
-                                                <span className="font-semibold text-gray-800">Collect Bones:</span><br />
-                                                Every time you level up, you receive Spark.E Bones!
+                                                <span className="font-semibold text-gray-800">Thu thập xương:</span><br />
+                                                Mỗi khi lên cấp, bạn sẽ nhận được Spark.E Bones!
                                             </p>
                                         </div>
                                         <div className="flex gap-2">
                                             <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-semibold text-white transition-colors">
                                                 <Settings className="w-3.5 h-3.5" />
-                                                My Collection
+                                                Bộ sưu tập của tôi
                                             </button>
                                             <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-semibold text-white transition-colors">
                                                 <Play className="w-3.5 h-3.5" />
-                                                Tutorials
+                                                Hướng dẫn
                                             </button>
                                         </div>
                                     </div>
@@ -4450,7 +4929,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                             : 'text-gray-500 hover:text-gray-700'
                                             }`}
                                     >
-                                        How To Level Up
+                                        Cách Lên Cấp
                                     </button>
                                     <button
                                         onClick={() => setGameProfileTab('leaderboards')}
@@ -4459,7 +4938,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                             : 'text-gray-500 hover:text-gray-700'
                                             }`}
                                     >
-                                        Leaderboards
+                                        Bảng Xếp Hạng
                                     </button>
                                 </div>
 
@@ -4467,62 +4946,142 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                                         {[
                                             {
-                                                title: 'Chat with Spark.E',
-                                                xp: '5 XP',
-                                                note: 'Max: 250 XP/day',
-                                                icon: `${process.env.PUBLIC_URL || ''}/SPARKE.gif`
+                                                title: 'Trò chuyện với Spark.E',
+                                                xp: '10 XP',
+                                                note: 'Tối đa: 250 XP/ngày',
+                                                icon: `${process.env.PUBLIC_URL || ''}/SPARKE.gif`,
+                                                action: 'chat'
                                             },
                                             {
-                                                title: 'Edit a Document using Spark.E AI',
+                                                title: 'Học thẻ ghi nhớ',
                                                 xp: '5 XP',
-                                                note: 'Max: 500 XP/day',
+                                                note: 'Tối đa: 100 XP/ngày',
                                                 icon: null,
-                                                glyph: <FileEdit className="w-8 h-8 text-blue-500" />
+                                                glyph: <CreditCard className="w-8 h-8 text-blue-500" />,
+                                                action: 'flashcards'
                                             },
                                             {
-                                                title: 'Use Spark.E Visuals',
+                                                title: 'Hoàn thành bài kiểm tra',
+                                                xp: '15 XP',
+                                                note: 'Tối đa: 75 XP/ngày',
+                                                icon: null,
+                                                glyph: <Laptop className="w-8 h-8 text-blue-500" />,
+                                                action: 'tests'
+                                            },
+                                            {
+                                                title: 'Điểm tuyệt đối trong bài kiểm tra',
+                                                xp: '30 XP',
+                                                note: 'Tối đa: 150 XP/ngày',
+                                                icon: null,
+                                                glyph: <Award className="w-8 h-8 text-blue-500" />,
+                                                action: 'tests'
+                                            },
+                                            {
+                                                title: 'Hoàn thành trò chơi ghép',
+                                                xp: '10 XP',
+                                                note: 'Tối đa: 50 XP/ngày',
+                                                icon: null,
+                                                glyph: <Grid className="w-8 h-8 text-blue-500" />,
+                                                action: 'arcade'
+                                            },
+                                            {
+                                                title: 'Điểm tuyệt đối trong trò chơi ghép',
+                                                xp: '25 XP',
+                                                note: 'Tối đa: 125 XP/ngày',
+                                                icon: null,
+                                                glyph: <Rocket className="w-8 h-8 text-blue-500" />,
+                                                action: 'arcade'
+                                            },
+                                            {
+                                                title: 'Tạo video giải thích',
+                                                xp: '20 XP',
+                                                note: 'Tối đa: 100 XP/ngày',
+                                                icon: null,
+                                                glyph: <Play className="w-8 h-8 text-blue-500" />,
+                                                action: 'explainers'
+                                            },
+                                            {
+                                                title: 'Tải lên tài liệu',
+                                                xp: '5 XP',
+                                                note: 'Tối đa: 25 XP/ngày',
+                                                icon: null,
+                                                glyph: <Upload className="w-8 h-8 text-blue-500" />,
+                                                action: 'upload'
+                                            },
+                                            {
+                                                title: 'Đọc tài liệu',
                                                 xp: '3 XP',
-                                                note: 'Max: 150 XP/day',
-                                                icon: `${process.env.PUBLIC_URL || ''}/SPARKE.gif`
-                                            },
-                                            {
-                                                title: 'Share a Study Set',
-                                                xp: '50 XP',
-                                                note: 'Max: 400 XP/day',
-                                                icon: `${process.env.PUBLIC_URL || ''}/SPARKE.gif`
-                                            },
-                                            {
-                                                title: 'Complete a Test',
-                                                xp: '10 XP',
-                                                note: 'Max: 50 XP/day',
+                                                note: 'Tối đa: 60 XP/ngày',
                                                 icon: null,
-                                                glyph: <Laptop className="w-8 h-8 text-blue-500" />
-                                            },
-                                            {
-                                                title: 'Perfect Score on a Test',
-                                                xp: '25 XP',
-                                                note: 'Max: 125 XP/day',
-                                                icon: null,
-                                                glyph: <Award className="w-8 h-8 text-blue-500" />
-                                            },
-                                            {
-                                                title: 'Complete a Match Game',
-                                                xp: '10 XP',
-                                                note: 'Max: 50 XP/day',
-                                                icon: null,
-                                                glyph: <Grid className="w-8 h-8 text-blue-500" />
-                                            },
-                                            {
-                                                title: 'Perfect Score on a Match Game',
-                                                xp: '25 XP',
-                                                note: 'Max: 125 XP/day',
-                                                icon: null,
-                                                glyph: <Rocket className="w-8 h-8 text-blue-500" />
+                                                glyph: <FileText className="w-8 h-8 text-blue-500" />,
+                                                action: 'materials'
                                             }
                                         ].map((card) => (
                                             <div
                                                 key={card.title}
-                                                className="flex items-center gap-3 px-4 py-4 rounded-2xl border border-gray-200 hover:border-blue-200 hover:shadow-md transition-all bg-white"
+                                                onClick={() => {
+                                                    switch (card.action) {
+                                                        case 'chat':
+                                                            setShowGameProfile(false);
+                                                            setShowFlashcards(false);
+                                                            setShowMaterials(false);
+                                                            setShowUploadMaterials(false);
+                                                            setShowArcade(false);
+                                                            setShowExplainerVideo(false);
+                                                            setShowChatView(true);
+                                                            setActiveSection('chat');
+                                                            navigate('/dashboard/chat');
+                                                            break;
+                                                        case 'flashcards':
+                                                            setShowGameProfile(false);
+                                                            setShowChatView(false); // Ensure chat view is closed
+                                                            // Ensure we have a study set selected
+                                                            if (!selectedStudySet && studySets.length > 0) {
+                                                                setSelectedStudySet(studySets[0]);
+                                                            }
+                                                            setShowFlashcards(true); // Show flashcards study view, not selection view
+                                                            setActiveSection('flashcards');
+                                                            break;
+                                                        case 'tests':
+                                                            setShowGameProfile(false);
+                                                            setShowTestTypeSelection(true);
+                                                            setActiveSection('tests');
+                                                            break;
+                                                        case 'arcade':
+                                                            setShowGameProfile(false);
+                                                            setShowArcade(true);
+                                                            setActiveSection('arcade');
+                                                            navigate('/dashboard/arcade');
+                                                            break;
+                                                        case 'explainers':
+                                                            setShowGameProfile(false);
+                                                            setShowExplainerVideo(true);
+                                                            setActiveSection('explainers');
+                                                            navigate('/dashboard/explainers');
+                                                            break;
+                                                        case 'upload':
+                                                            setShowGameProfile(false);
+                                                            // Ensure we have a study set selected
+                                                            if (!selectedStudySet && studySets.length > 0) {
+                                                                setSelectedStudySet(studySets[0]);
+                                                            }
+                                                            setShowUploadMaterials(true);
+                                                            setActiveSection('notes');
+                                                            break;
+                                                        case 'materials':
+                                                            setShowGameProfile(false);
+                                                            // Ensure we have a study set selected
+                                                            if (!selectedStudySet && studySets.length > 0) {
+                                                                setSelectedStudySet(studySets[0]);
+                                                            }
+                                                            setShowMaterials(true);
+                                                            setActiveSection('notes');
+                                                            break;
+                                                        default:
+                                                            break;
+                                                    }
+                                                }}
+                                                className="flex items-center gap-3 px-4 py-4 rounded-2xl border border-gray-200 hover:border-blue-200 hover:shadow-md transition-all bg-white cursor-pointer"
                                             >
                                                 <div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center overflow-hidden flex-shrink-0">
                                                     {card.icon ? (
@@ -4544,7 +5103,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
 
                                 {gameProfileTab === 'leaderboards' && (
                                     <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-6 text-center text-sm text-gray-500">
-                                        Leaderboards coming soon...
+                                        Bảng xếp hạng sắp ra mắt...
                                     </div>
                                 )}
                             </div>
@@ -4554,46 +5113,62 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                         <div className="w-[26rem]">
                             {/* Daily Objectives */}
                             <div className="bg-white border border-gray-200 rounded-2xl p-3">
-                                <h3 className="text-lg font-bold text-gray-900 mb-3">Daily Objectives</h3>
+                                <h3 className="text-lg font-bold text-gray-900 mb-3">Mục tiêu hàng ngày</h3>
                                 <div className="space-y-2.5 mb-3">
                                     <div className="bg-gray-50 rounded-lg px-2.5 py-2">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <FileEdit className="w-4 h-4 text-gray-600 flex-shrink-0" />
-                                            <span className="text-xs text-gray-800 font-medium whitespace-nowrap">Edit a Document using Spark.E AI</span>
+                                            <img
+                                                src={`${process.env.PUBLIC_URL || ''}/SPARKE.gif`}
+                                                alt="Spark.E"
+                                                className="w-4 h-4 object-contain flex-shrink-0"
+                                            />
+                                            <span className="text-xs text-gray-800 font-medium whitespace-nowrap">Trò chuyện với Spark.E</span>
                                         </div>
                                         <div className="pl-5">
                                             <div className="w-full bg-gray-200 rounded-full h-[3px] mb-0.5">
                                                 <div className="bg-blue-600 h-[3px] rounded-full" style={{ width: '0%' }}></div>
                                             </div>
-                                            <p className="text-[10px] text-gray-500">0 / 3</p>
+                                            <p className="text-[10px] text-gray-500">0 / 25 phút</p>
+                                        </div>
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg px-2.5 py-2">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <CreditCard className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                                            <span className="text-xs text-gray-800 font-medium whitespace-nowrap">Học thẻ ghi nhớ</span>
+                                        </div>
+                                        <div className="pl-5">
+                                            <div className="w-full bg-gray-200 rounded-full h-[3px] mb-0.5">
+                                                <div className="bg-blue-600 h-[3px] rounded-full" style={{ width: '0%' }}></div>
+                                            </div>
+                                            <p className="text-[10px] text-gray-500">0 / 20 thẻ</p>
                                         </div>
                                     </div>
                                     <div className="bg-gray-50 rounded-lg px-2.5 py-2">
                                         <div className="flex items-center gap-2 mb-1">
                                             <Laptop className="w-4 h-4 text-gray-600 flex-shrink-0" />
-                                            <span className="text-xs text-gray-800 font-medium whitespace-nowrap">Complete a Test</span>
+                                            <span className="text-xs text-gray-800 font-medium whitespace-nowrap">Hoàn thành bài kiểm tra</span>
                                         </div>
                                         <div className="pl-5">
                                             <div className="w-full bg-gray-200 rounded-full h-[3px] mb-0.5">
                                                 <div className="bg-blue-600 h-[3px] rounded-full" style={{ width: '0%' }}></div>
                                             </div>
-                                            <p className="text-[10px] text-gray-500">0 / 3</p>
+                                            <p className="text-[10px] text-gray-500">0 / 1 bài</p>
                                         </div>
                                     </div>
                                     <div className="bg-gray-50 rounded-lg px-2.5 py-2">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <Rocket className="w-4 h-4 text-gray-600 flex-shrink-0" />
-                                            <span className="text-xs text-gray-800 font-medium whitespace-nowrap">Perfect Score on a Match Game</span>
+                                            <Grid className="w-4 h-4 text-gray-600 flex-shrink-0" />
+                                            <span className="text-xs text-gray-800 font-medium whitespace-nowrap">Hoàn thành trò chơi ghép</span>
                                         </div>
                                         <div className="pl-5">
                                             <div className="w-full bg-gray-200 rounded-full h-[3px] mb-0.5">
                                                 <div className="bg-blue-600 h-[3px] rounded-full" style={{ width: '0%' }}></div>
                                             </div>
-                                            <p className="text-[10px] text-gray-500">0 / 1</p>
+                                            <p className="text-[10px] text-gray-500">0 / 1 trò chơi</p>
                                         </div>
                                     </div>
                                 </div>
-                                <p className="text-[10px] text-gray-500 text-center pt-2.5 border-t border-gray-200">Resets in 20h 24m 25s</p>
+                                <p className="text-[10px] text-gray-500 text-center pt-2.5 border-t border-gray-200">Đặt lại sau 20h 24m 25s</p>
                             </div>
                         </div>
                     </div>
@@ -4735,8 +5310,13 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
 
     const renderMainContent = () => {
         // If admin section, use old DashboardContent logic
-        if (user?.role === 'admin' && ['admin', 'add-teacher', 'add-student', 'upload-file', 'ai-learning', 'progress', 'assignments'].includes(activeSection)) {
+        if (user?.role === 'admin' && ['admin', 'add-teacher', 'add-student', 'upload-file'].includes(activeSection)) {
             return <DashboardContent activeSection={activeSection} />;
+        }
+
+        // Show Leaderboard if requested
+        if (showLeaderboard) {
+            return <Leaderboard onBack={() => navigate('/dashboard')} />;
         }
 
         // Show Settings view if requested
@@ -4747,6 +5327,53 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
         // Show Game Profile if requested
         if (showGameProfile) {
             return renderGameProfile();
+        }
+
+        // Show Flashcards if flashcards was clicked (check BEFORE Chat View to avoid conflict)
+        if (showFlashcards && selectedStudySet) {
+            // If we have a specific flashcard set ID (from auto-generation), load and show those flashcards
+            if (selectedFlashcardSetId) {
+                return (
+                    <Flashcards
+                        studySetId={selectedStudySet.id}
+                        studySetName={selectedStudySet.name}
+                        onBack={() => {
+                            setShowFlashcards(false);
+                            setSelectedFlashcardSetId(null);
+                            // If we came from sub-roadmap, go back to sub-roadmap
+                            if (currentSubModuleId && selectedModule && selectedStudySet) {
+                                handleBackFromFlashcards();
+                            } else {
+                                // Otherwise, go back to home or study set detail
+                                setShowGameProfile(false);
+                                setActiveSection('home');
+                            }
+                        }}
+                        isCollapsed={isCollapsed}
+                        initialFlashcardSetId={selectedFlashcardSetId}
+                        isDarkMode={isDarkMode}
+                    />
+                );
+            }
+            return (
+                <Flashcards
+                    studySetId={selectedStudySet.id}
+                    studySetName={selectedStudySet.name}
+                    onBack={() => {
+                        setShowFlashcards(false);
+                        // If we came from sub-roadmap, go back to sub-roadmap
+                        if (currentSubModuleId && selectedModule && selectedStudySet) {
+                            handleBackFromFlashcards();
+                        } else {
+                            // Otherwise, go back to home
+                            setShowGameProfile(false);
+                            setActiveSection('home');
+                        }
+                    }}
+                    isCollapsed={isCollapsed}
+                    isDarkMode={isDarkMode}
+                />
+            );
         }
 
         // Show Chat View if requested
@@ -4890,46 +5517,6 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
             );
         }
 
-        // Show Flashcards if flashcards was clicked (check BEFORE Study Set Detail)
-        if (showFlashcards && selectedStudySet) {
-            // If we have a specific flashcard set ID (from auto-generation), load and show those flashcards
-            if (selectedFlashcardSetId) {
-                return (
-                    <Flashcards
-                        studySetId={selectedStudySet.id}
-                        studySetName={selectedStudySet.name}
-                        onBack={() => {
-                            setShowFlashcards(false);
-                            setSelectedFlashcardSetId(null);
-                            // Go back to Study Set Detail
-                            setShowStudySetDetail(true);
-                        }}
-                        isCollapsed={isCollapsed}
-                        initialFlashcardSetId={selectedFlashcardSetId}
-                        isDarkMode={isDarkMode}
-                    />
-                );
-            }
-            return (
-                <Flashcards
-                    studySetId={selectedStudySet.id}
-                    studySetName={selectedStudySet.name}
-                    onBack={() => {
-                        // If we came from sub-roadmap, go back to sub-roadmap
-                        if (currentSubModuleId && selectedModule && selectedStudySet) {
-                            handleBackFromFlashcards();
-                        } else {
-                            // Otherwise, go back to Study Set Detail
-                            setShowFlashcards(false);
-                            setShowStudySetDetail(true);
-                        }
-                    }}
-                    isCollapsed={isCollapsed}
-                    isDarkMode={isDarkMode}
-                />
-            );
-        }
-
         // Show Upload Materials page if requested (check BEFORE Study Set Detail)
         if (showUploadMaterials && selectedStudySet) {
             return (
@@ -5054,8 +5641,7 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                         setShowAddSetModal(true);
                     }}
                     onCreateFolder={() => {
-                        // TODO: Implement create folder
-                        toast.success('Tính năng tạo folder sẽ sớm được cập nhật!');
+                        // Logic handled in MyStudySets component
                     }}
                 />
             );
@@ -5165,10 +5751,10 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 </div>
                                 <div>
                                     <h1 className="text-3xl font-bold text-gray-900">
-                                    Đã đến giờ học rồi ,{user?.name || 'Người dùng'}📚 !
+                                        Đã đến giờ học rồi ,{user?.name || 'Người dùng'}📚 !
                                     </h1>
                                     <p className="text-lg text-gray-600 mt-1">
-                                    Hôm nay mình học tiếp gì đây? 🚀
+                                        Hôm nay mình học tiếp gì đây? 🚀
                                     </p>
                                 </div>
                             </div>
@@ -5297,29 +5883,34 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
 
                         {/* Right Column - 3 Cards */}
                         <div className="w-80 space-y-6">
-                            {/* Streak Card */}
-                            <div className="bg-white rounded-xl p-6 shadow-sm">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center space-x-3">
-                                        <img
-                                            src="/fire.gif"
-                                            alt="Streak"
-                                            className="w-10 h-10 rounded-full object-cover shadow-sm"
-                                        />
-                                        <div>
-                                            <div className="text-xl font-bold text-gray-900">
-                                                {isLoadingStreak ? 'Đang cập nhật...' : `${streakInfo.current} ngày streak!`}
+                            {/* Streak Card - Hidden for admin */}
+                            {user?.role !== 'admin' && (
+                                <div className="bg-white rounded-xl p-6 shadow-sm">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center space-x-3">
+                                            <img
+                                                src="/fire.gif"
+                                                alt="Streak"
+                                                className="w-10 h-10 rounded-full object-cover shadow-sm"
+                                            />
+                                            <div>
+                                                <div className="text-xl font-bold text-gray-900">
+                                                    {isLoadingStreak ? 'Đang cập nhật...' : `${streakInfo.current} ngày streak!`}
+                                                </div>
+                                                <p className="text-xs text-gray-500">
+                                                    Kỷ lục: {streakInfo.best} ngày
+                                                </p>
                                             </div>
-                                            <p className="text-xs text-gray-500">
-                                                Kỷ lục: {streakInfo.best} ngày
-                                            </p>
                                         </div>
+                                        <button
+                                            onClick={() => navigate('/dashboard/leaderboard')}
+                                            className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                                        >
+                                            Xem bảng xếp hạng
+                                        </button>
                                     </div>
-                                    <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">
-                                        Xem bảng xếp hạng
-                                    </button>
                                 </div>
-                            </div>
+                            )}
 
                             {/* Materials Card */}
                             <div className="bg-white rounded-xl p-6 shadow-sm">
@@ -5502,16 +6093,18 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                             {!isCollapsed && (
                                 <>
                                     <span className={`font-bold text-lg ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>STUDY FETCH</span>
-                                    <div className="flex items-center space-x-1.5 ml-1">
-                                        <img
-                                            src={`${process.env.PUBLIC_URL || ''}/fire.gif`}
-                                            alt="Streak"
-                                            className="w-5 h-5 object-contain"
-                                        />
-                                        <span className={`text-base font-semibold ${isDarkMode ? 'text-gray-300' : 'text-gray-900'}`}>
-                                            {isLoadingStreak ? '...' : streakInfo.current}
-                                        </span>
-                                    </div>
+                                    {user?.role !== 'admin' && (
+                                        <div className="flex items-center space-x-1.5 ml-1">
+                                            <img
+                                                src={`${process.env.PUBLIC_URL || ''}/fire.gif`}
+                                                alt="Streak"
+                                                className="w-5 h-5 object-contain"
+                                            />
+                                            <span className={`text-base font-semibold ${isDarkMode ? 'text-gray-300' : 'text-gray-900'}`}>
+                                                {isLoadingStreak ? '...' : streakInfo.current}
+                                            </span>
+                                        </div>
+                                    )}
                                 </>
                             )}
                         </div>
@@ -5557,6 +6150,9 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                             } else if (item.id === 'chat') {
                                 // Chat active khi: đang xem chat view
                                 isActive = showChatView || activeSection === 'chat';
+                            } else if (item.id === 'notes') {
+                                // Notes active khi: đang xem materials hoặc upload materials hoặc activeSection là 'notes'
+                                isActive = showMaterials || showUploadMaterials || showMaterialViewer || activeSection === 'notes';
                             } else if (item.id.startsWith('study-set-')) {
                                 // Study set active khi: đang xem StudySetDetail của study set đó
                                 const studySetId = item.id.replace('study-set-', '');
@@ -5573,24 +6169,21 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                 ? getRandomIconColor(navigationStudySet.id)
                                 : null;
 
+                            const iconColor = getIconColor(item.id);
+
                             return (
                                 <li key={item.id}>
                                     <button
                                         onClick={(e) => handleNavigationClick(item.id, e)}
                                         className={`w-full flex items-center space-x-2 px-2 py-1.5 rounded-md text-left transition-all duration-200 text-sm transform hover:scale-105 active:scale-95 ${isActive
                                             ? isDarkMode
-                                                ? 'bg-blue-800 text-blue-100'
+                                                ? 'bg-blue-800'
                                                 : 'bg-blue-50'
-                                            : isAdmin
-                                                ? isDarkMode ? 'text-orange-300 hover:bg-orange-900/40' : 'text-orange-600 hover:bg-orange-50'
-                                                : isDarkMode ? 'text-slate-200 hover:bg-slate-700/70' : 'text-gray-700 hover:bg-gray-50'
+                                            : isDarkMode ? 'hover:bg-slate-700/70' : 'hover:bg-gray-50'
                                             }`}
                                         title={isCollapsed ? item.label : undefined}
                                         style={isActive && studySetIconColor ? {
-                                            backgroundColor: `${studySetIconColor}20`,
-                                            color: studySetIconColor
-                                        } : isActive && !studySetIconColor ? {
-                                            color: '#2563eb'
+                                            backgroundColor: `${studySetIconColor}20`
                                         } : undefined}
                                     >
                                         {isStudySetItem && navigationStudySet ? (
@@ -5601,23 +6194,22 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
                                                 <FileText className="w-3 h-3 text-white" />
                                             </div>
                                         ) : (
-                                            <Icon className={`${isCollapsed ? 'w-5 h-5' : 'w-4 h-4'} flex-shrink-0 ${getIconColor(item.id)}`} />
+                                            <Icon
+                                                className={`${isCollapsed ? 'w-5 h-5' : 'w-4 h-4'} flex-shrink-0`}
+                                                style={{ color: iconColor }}
+                                            />
                                         )}
-                                        {!isCollapsed && <span className="font-medium">{item.label}</span>}
+                                        {!isCollapsed && (
+                                            <span className={`font-medium ${isDarkMode ? 'text-white' : 'text-black'}`}>
+                                                {item.label}
+                                            </span>
+                                        )}
                                     </button>
                                 </li>
                             );
                         })}
                     </ul>
                 </nav>
-
-                {/* Upload Button */}
-                <div className="p-1 border-t">
-                    <button className="w-full flex items-center justify-center space-x-2 bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700 transition-colors text-sm">
-                        <Upload className={`${isCollapsed ? 'w-4 h-4' : 'w-4 h-4'}`} />
-                        {!isCollapsed && <span>Tải lên</span>}
-                    </button>
-                </div>
             </div>
 
             {/* Collapse Button - Positioned at sidebar border */}
@@ -5833,4 +6425,3 @@ Hãy trả lời câu hỏi một cách trực tiếp và hữu ích.`;
 };
 
 export default HybridDashboard;
-export { };

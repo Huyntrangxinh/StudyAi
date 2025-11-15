@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { ArrowLeft, Star, Share, Upload, Plus, Link, Lightbulb, Brain, Book } from 'lucide-react';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import { useAIChat } from '../hooks/useAIChat';
@@ -21,6 +21,7 @@ import { ScrollbarStyles } from './study/ScrollbarStyles';
 import { useCardNavigation } from '../hooks/useCardNavigation';
 import { useSidebarResize } from '../hooks/useSidebarResize';
 import { useAuth } from '../hooks/useAuth';
+import { awardXP } from '../utils/xpHelper';
 
 interface StudyFlashcardsProps {
     flashcards: Array<{
@@ -57,6 +58,8 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
     const [audioEnabled, setAudioEnabled] = useState<boolean>(() => {
         try { return localStorage.getItem('ttsEnabled') === '1'; } catch { return false; }
     });
+    const [studiedCardsCount, setStudiedCardsCount] = useState(0);
+    const studiedCardsRef = useRef<Set<string>>(new Set());
     // AI Sidebar state - can be closed
     const [showAiSidebar, setShowAiSidebar] = useState<boolean>(true);
     const [showHint, setShowHint] = useState<boolean>(false);
@@ -177,6 +180,23 @@ const StudyFlashcards: React.FC<StudyFlashcardsProps> = ({ flashcards, onBack, i
             ? displayedFlashcards.findIndex(card => card.id === flashcards[currentCardIndex]?.id)
             : currentCardIndex);
     const currentCard = displayedFlashcards[displayedIndex >= 0 ? displayedIndex : 0] || flashcards[currentCardIndex];
+
+    // Track flashcard study for XP
+    useEffect(() => {
+        if (currentCard && user?.id) {
+            const cardId = String(currentCard.id);
+            if (!studiedCardsRef.current.has(cardId)) {
+                studiedCardsRef.current.add(cardId);
+                const newCount = studiedCardsRef.current.size;
+                setStudiedCardsCount(newCount);
+
+                // Award 5 XP for every 5 cards studied
+                if (newCount % 5 === 0) {
+                    awardXP(user.id, 'flashcard', 5);
+                }
+            }
+        }
+    }, [currentCard, user?.id]);
 
     const { speakText, unlockTTS, hasUserInteracted } = useTextToSpeech();
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, FolderPlus, FileText } from 'lucide-react';
+import { Search, Plus, FolderPlus, FileText, X } from 'lucide-react';
 import MyStudySetsCard from './MyStudySetsCard';
 import RenameStudySetModal from './modals/RenameStudySetModal';
 import type { StudySet } from '../types/studySet';
@@ -29,6 +29,9 @@ const MyStudySets: React.FC<MyStudySetsProps> = ({
     const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
     const [renameValue, setRenameValue] = useState('');
     const [renameError, setRenameError] = useState('');
+    const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
+    const [folderName, setFolderName] = useState('');
+    const [folderError, setFolderError] = useState('');
 
     // Load study sets
     useEffect(() => {
@@ -196,31 +199,61 @@ const MyStudySets: React.FC<MyStudySetsProps> = ({
         }
     };
 
+    const handleCreateFolder = () => {
+        setIsCreateFolderModalOpen(true);
+        setFolderName('');
+        setFolderError('');
+    };
+
+    const handleCreateFolderSubmit = async () => {
+        const trimmedName = folderName.trim();
+        if (!trimmedName) {
+            setFolderError('Tên folder không được để trống.');
+            return;
+        }
+
+        try {
+            setIsProcessing(true);
+            setFolderError('');
+            // TODO: Implement API call to create folder
+            // For now, just show success message
+            await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
+
+            setIsCreateFolderModalOpen(false);
+            setFolderName('');
+            // Show success toast if available
+            if (onCreateFolder) {
+                onCreateFolder();
+            }
+        } catch (error) {
+            console.error('Error creating folder:', error);
+            setFolderError('Không thể tạo folder. Vui lòng thử lại.');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleCreateFolderCancel = () => {
+        setIsCreateFolderModalOpen(false);
+        setFolderName('');
+        setFolderError('');
+    };
+
     return (
-        <div className={`flex-1 p-6 min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+        <div className={`flex-1 p-6 min-h-screen ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`}>
             {/* Header */}
             <div className="mb-5 flex items-center justify-between pt-12">
                 <div>
-                    <h1 className={`text-xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>My Study Sets</h1>
-                    <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Manage and access all your study materials in one place</p>
+                    <h1 className={`text-xl font-bold mb-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Bộ học của tôi</h1>
+                    <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Quản lý và truy cập tất cả tài liệu học tập của bạn ở một nơi</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button
-                        onClick={onCreateFolder}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${isDarkMode
-                            ? 'text-gray-200 bg-gray-800 border border-gray-700 hover:bg-gray-700'
-                            : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
-                            }`}
-                    >
-                        <FolderPlus className="w-4 h-4" />
-                        <span className="text-sm font-medium">Create Folder</span>
-                    </button>
                     <button
                         onClick={onCreateStudySet}
                         className="flex items-center gap-2 px-3 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                     >
                         <Plus className="w-4 h-4" />
-                        <span className="text-sm font-medium">Create Study Set</span>
+                        <span className="text-sm font-medium">Tạo Bộ Học</span>
                     </button>
                 </div>
             </div>
@@ -231,7 +264,7 @@ const MyStudySets: React.FC<MyStudySetsProps> = ({
                     <Search className={`absolute left-4 top-1/2 transform -translate-y-1/2 w-4 h-4 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`} />
                     <input
                         type="text"
-                        placeholder="Search study sets..."
+                        placeholder="Tìm kiếm bộ học..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className={`w-full pl-10 pr-4 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${isDarkMode
@@ -245,21 +278,21 @@ const MyStudySets: React.FC<MyStudySetsProps> = ({
             {/* Study Sets List */}
             {isLoading ? (
                 <div className="flex items-center justify-center py-12">
-                    <div className={isDarkMode ? 'text-gray-400' : 'text-gray-500'}>Loading study sets...</div>
+                    <div className={isDarkMode ? 'text-gray-400' : 'text-gray-500'}>Đang tải bộ học...</div>
                 </div>
             ) : filteredStudySets.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                     <FileText className={`w-16 h-16 mb-4 ${isDarkMode ? 'text-gray-700' : 'text-gray-300'}`} />
-                    <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>No study sets found</h3>
+                    <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Không tìm thấy bộ học</h3>
                     <p className={isDarkMode ? 'text-gray-400 mb-4' : 'text-gray-500 mb-4'}>
-                        {searchTerm ? 'Try a different search term' : 'Create your first study set to get started'}
+                        {searchTerm ? 'Thử từ khóa tìm kiếm khác' : 'Tạo bộ học đầu tiên của bạn để bắt đầu'}
                     </p>
                     {!searchTerm && (
                         <button
                             onClick={onCreateStudySet}
                             className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                         >
-                            Create Study Set
+                            Tạo Bộ Học
                         </button>
                     )}
                 </div>
@@ -296,6 +329,66 @@ const MyStudySets: React.FC<MyStudySetsProps> = ({
                 onCancel={handleRenameCancel}
                 onSubmit={handleRenameSubmit}
             />
+
+            {/* Create Folder Modal */}
+            {isCreateFolderModalOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className={`rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Tạo Folder</h3>
+                            <button
+                                onClick={handleCreateFolderCancel}
+                                className={`p-1 rounded-lg hover:bg-gray-100 ${isDarkMode ? 'hover:bg-gray-700' : ''}`}
+                            >
+                                <X className={`w-5 h-5 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                            </button>
+                        </div>
+                        <div className="mb-4">
+                            <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                Tên folder
+                            </label>
+                            <input
+                                type="text"
+                                value={folderName}
+                                onChange={(e) => {
+                                    setFolderName(e.target.value);
+                                    setFolderError('');
+                                }}
+                                placeholder="Nhập tên folder"
+                                className={`w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 ${folderError
+                                    ? 'border-red-500'
+                                    : isDarkMode
+                                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                                        : 'bg-white border-gray-300 text-gray-900'
+                                    }`}
+                                autoFocus
+                            />
+                            {folderError && (
+                                <p className="mt-1 text-sm text-red-500">{folderError}</p>
+                            )}
+                        </div>
+                        <div className="flex items-center justify-end gap-2">
+                            <button
+                                onClick={handleCreateFolderCancel}
+                                disabled={isProcessing}
+                                className={`px-4 py-2 rounded-lg transition-colors ${isDarkMode
+                                    ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                    } disabled:opacity-50`}
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                onClick={handleCreateFolderSubmit}
+                                disabled={isProcessing || !folderName.trim()}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isProcessing ? 'Đang tạo...' : 'Tạo'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

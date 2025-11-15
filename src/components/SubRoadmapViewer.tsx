@@ -326,6 +326,13 @@ const SubRoadmapViewer: React.FC<SubRoadmapViewerProps> = ({ moduleId, moduleTit
                         if (onFlashcardGenerated) {
                             onFlashcardGenerated(generatedFlashcardSetId, currentSubModule?.id);
                         }
+                    } else if (methodId === 'chat') {
+                        // Navigate to chat view
+                        setShowLearningModal(false);
+                        setSelectedSubModule(null);
+                        // Navigate to chat - this will be handled by parent component
+                        // The parent (HybridDashboard) should handle this via onSelectMethod callback
+                        // For now, we'll just close the modal and let the parent handle navigation
                     } else {
                         // TODO: Handle other methods (quiz, test, game)
                         setShowLearningModal(false);

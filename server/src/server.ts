@@ -33,6 +33,7 @@ import gamesRouter from "./routes/games";
 import ttsRouter from "./routes/tts";
 import studyPathsRouter from "./routes/studyPaths";
 import streakRouter from "./routes/streaks";
+import xpRouter from "./routes/xp";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -105,6 +106,7 @@ app.use('/api/games', gamesRouter);
 app.use('/api/tts', ttsRouter);
 app.use('/api/study-paths', studyPathsRouter);
 app.use('/api/streaks', streakRouter);
+app.use('/api/xp', xpRouter);
 
 // Ensure uploads directory exists
 // Align with routes that write to server/uploads (from server/src/routes -> ../../uploads resolves to server/uploads)

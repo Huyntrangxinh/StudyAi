@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Globe, X, Share2, MessageSquare, Copy, Mic, GraduationCap, ListChecks, ChevronUp, Search, Edit2, Trash2, Plus, Clock, ChevronDown, ThumbsUp, ThumbsDown, RefreshCw, Volume2, Check } from 'lucide-react';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
+import { useAuth } from '../hooks/useAuth';
 
 interface ChatViewProps {
     studySetId?: string;
@@ -30,6 +31,7 @@ interface ChatSession {
 }
 
 const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, isCollapsed = false, isDarkMode = false }) => {
+    const { user } = useAuth();
     const [chatMessage, setChatMessage] = useState<string>('');
     const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
     const [isLoadingChat, setIsLoadingChat] = useState<boolean>(false);
@@ -37,6 +39,90 @@ const ChatView: React.FC<ChatViewProps> = ({ studySetId, studySetName, onBack, i
     const [showMaterialPicker, setShowMaterialPicker] = useState(false);
     const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
     const [isAcademicSearchEnabled, setIsAcademicSearchEnabled] = useState(false);
+
+    // XP tracking states
+    const chatStartTimeRef = useRef<number | null>(null);
+    const accumulatedChatTimeRef = useRef<number>(0); // Total accumulated chat time in milliseconds
+    const lastXPAwardTimeRef = useRef<number>(0); // Accumulated time when last XP was awarded
+    const xpCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Award XP function
+    const awardXP = async (xpAmount: number) => {
+        if (!user?.id) return;
+
+        try {
+            const response = await fetch('http://localhost:3001/api/xp/award', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    userId: user.id,
+                    activityType: 'chat',
+                    xpAmount: xpAmount
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ XP awarded:', data);
+            } else {
+                const error = await response.json();
+                console.warn('⚠️ XP award failed:', error);
+            }
+        } catch (error) {
+            console.error('Error awarding XP:', error);
+        }
+    };
+
+    // Track chat time and award XP every 5 minutes
+    useEffect(() => {
+        if (!user?.id) return;
+
+        // Start tracking when component mounts
+        chatStartTimeRef.current = Date.now();
+        accumulatedChatTimeRef.current = 0;
+        lastXPAwardTimeRef.current = 0;
+
+        // Check every 30 seconds if we've accumulated 1 minute
+        xpCheckIntervalRef.current = setInterval(() => {
+            if (!chatStartTimeRef.current) return;
+
+            const now = Date.now();
+            // Calculate time elapsed since component mounted
+            const elapsedTime = now - chatStartTimeRef.current;
+            accumulatedChatTimeRef.current = elapsedTime;
+
+            // Calculate time since last XP award
+            const timeSinceLastAward = accumulatedChatTimeRef.current - lastXPAwardTimeRef.current;
+            const oneMinuteInMs = 1 * 60 * 1000; // 1 minute = 60,000ms
+
+            if (timeSinceLastAward >= oneMinuteInMs) {
+                // Award 10 XP per minute (so 10 minutes = 100 XP)
+                awardXP(10);
+                lastXPAwardTimeRef.current = accumulatedChatTimeRef.current;
+            }
+        }, 30 * 1000); // Check every 30 seconds
+
+        // Cleanup on unmount
+        return () => {
+            if (xpCheckIntervalRef.current) {
+                clearInterval(xpCheckIntervalRef.current);
+            }
+
+            // Award remaining XP if user has been chatting for at least 1 minute total
+            if (chatStartTimeRef.current && user?.id) {
+                const finalTime = Date.now();
+                const totalTime = finalTime - chatStartTimeRef.current;
+                const timeSinceLastAward = totalTime - lastXPAwardTimeRef.current;
+                const oneMinuteInMs = 1 * 60 * 1000;
+
+                if (timeSinceLastAward >= oneMinuteInMs) {
+                    awardXP(10);
+                }
+            }
+        };
+    }, [user?.id]);
 
     // Chat History dropdown states
     const [showChatHistory, setShowChatHistory] = useState(false);

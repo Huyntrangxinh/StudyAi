@@ -354,21 +354,6 @@ const DashboardContent: React.FC<DashboardContentProps> = ({ activeSection }) =>
     const renderAdmin = () => (
         <div className="space-y-6">
             <h1 className="text-2xl font-bold text-gray-900">Quản trị hệ thống</h1>
-            <div className="bg-white rounded-xl shadow-sm border p-6">
-                <div className="flex items-center space-x-3 mb-4">
-                    <Users className="h-8 w-8 text-red-600" />
-                    <h2 className="text-xl font-semibold">Quản lý người dùng</h2>
-                </div>
-                <p className="text-gray-600 mb-4">
-                    Quản lý người dùng, giáo viên và sinh viên
-                </p>
-                <button
-                    onClick={() => navigate('/admin')}
-                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
-                >
-                    Đi tới Admin Panel
-                </button>
-            </div>
         </div>
     );
 

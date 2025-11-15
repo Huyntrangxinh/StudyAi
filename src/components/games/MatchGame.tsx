@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle2, RotateCcw, ArrowLeft, Play } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { awardXP } from '../../utils/xpHelper';
 
 export interface MatchGameProps {
     gameData?: {
@@ -222,6 +223,20 @@ const MatchGame: React.FC<MatchGameProps> = ({ gameData: propGameData }) => {
                                 const finalScore = currentScore;
                                 toast.success(`Hoàn thành! Điểm: ${finalScore}`, { duration: 3000 });
                                 saveGameSession(finalScore, timeSpent);
+
+                                // Award XP for game completion
+                                const user = JSON.parse(localStorage.getItem('user') || '{}');
+                                if (user?.id) {
+                                    const perfectScore = pairs.length * 10; // Each pair is worth 10 points
+                                    if (finalScore === perfectScore && attempts === pairs.length) {
+                                        // Perfect score (all correct, no mistakes)
+                                        awardXP(user.id, 'match_game_perfect', 25);
+                                    } else {
+                                        // Regular completion
+                                        awardXP(user.id, 'match_game', 10);
+                                    }
+                                }
+
                                 return finalScore;
                             });
                         }, 500);

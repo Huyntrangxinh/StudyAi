@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { awardXP } from '../utils/xpHelper';
 
 interface NavState {
     prompt: string;
@@ -19,28 +20,19 @@ const ExplainerVideoGenerating: React.FC = () => {
 
     const params = (location.state || {}) as Partial<NavState>;
     const startAt = useMemo(() => Date.now(), []);
-    const estimatedTotalMs = useMemo(() => {
-        const text = (params.prompt || '').trim();
-        const words = text ? text.split(/\s+/).length : 0;
-        // Heuristic: 1-3 mins depending on prompt length
-        if (words > 180) return 180000; // ~3m
-        if (words > 120) return 150000; // 2.5m
-        if (words > 80) return 120000;  // 2m
-        if (words > 40) return 90000;   // 1.5m
-        return 60000;                   // 1m
-    }, [params.prompt]);
-    const [remaining, setRemaining] = useState<string>('00:00');
+    const [elapsed, setElapsed] = useState<string>('00:00');
 
     useEffect(() => {
         const t = setInterval(() => {
             const diff = Date.now() - startAt;
-            const left = Math.max(0, estimatedTotalMs - diff);
-            const mm = Math.floor(left / 60000).toString().padStart(2, '0');
-            const ss = Math.floor((left % 60000) / 1000).toString().padStart(2, '0');
-            setRemaining(`${mm}:${ss}`);
+            // Hiển thị thời gian đã trôi qua (elapsed time) thay vì thời gian còn lại
+            const totalSeconds = Math.floor(diff / 1000);
+            const mm = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+            const ss = (totalSeconds % 60).toString().padStart(2, '0');
+            setElapsed(`${mm}:${ss}`);
         }, 500);
         return () => clearInterval(t);
-    }, [startAt, estimatedTotalMs]);
+    }, [startAt]);
 
     useEffect(() => {
         let hasStarted = false;
@@ -142,6 +134,11 @@ const ExplainerVideoGenerating: React.FC = () => {
                     }
                 } catch { }
 
+                // Award XP for video creation
+                if (user?.id) {
+                    await awardXP(user.id, 'video', 20);
+                }
+
                 navigate('/dashboard/explainers/video/result', {
                     state: {
                         id: videoData.id || null,
@@ -194,8 +191,8 @@ const ExplainerVideoGenerating: React.FC = () => {
                             <img src="/car.gif" alt="loading" className="mx-auto mb-4 w-36 h-36 md:w-40 md:h-40 object-contain" />
                             <h2 className="text-2xl font-bold text-gray-900 mb-1">Đang tạo video...</h2>
                             <p className="text-sm text-gray-600 mb-3">AI đang xử lý nội dung và ghép giọng đọc.</p>
-                            <div className="text-xs text-gray-500 mb-1">Thời gian dự kiến còn lại</div>
-                            <div className="text-3xl font-mono tracking-widest text-blue-600">{remaining}</div>
+                            <div className="text-xs text-gray-500 mb-1">Thời gian đã xử lý</div>
+                            <div className="text-3xl font-mono tracking-widest text-blue-600">{elapsed}</div>
                             <div className="text-xs text-gray-500 mt-3">Sau khi hoàn tất, chúng tôi sẽ thông báo cho bạn.</div>
                         </div>
                     </div>

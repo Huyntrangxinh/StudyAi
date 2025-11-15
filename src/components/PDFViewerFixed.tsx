@@ -2,8 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowLeft, FileText, Maximize2, Users, MessageSquare, Bold, Italic, PenTool, Palette, AlignLeft, AlignCenter, AlignRight, AlignJustify, Undo, Redo, Plus, Printer, History, ChevronUp, MicOff, Image as ImageIcon, Minimize2, Menu } from 'lucide-react';
+import { ArrowLeft, FileText, Maximize2, Users, MessageSquare, Bold, Italic, PenTool, Palette, AlignLeft, AlignCenter, AlignRight, AlignJustify, Undo, Redo, Plus, Printer, History, ChevronUp, MicOff, Mic, Image as ImageIcon, Minimize2, Menu } from 'lucide-react';
 import ChatHistoryModal from './ChatHistoryModal';
+import { speechToTextService, SpeechToTextService } from '../services/speechToTextService';
+import { useAuth } from '../hooks/useAuth';
+import { awardXP } from '../utils/xpHelper';
 
 // Set up PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
@@ -18,7 +21,11 @@ interface PDFViewerFixedProps {
 }
 
 const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetName, onBack, isCollapsed = false, initialPage, targetMaterialId }) => {
+    const { user } = useAuth();
     const [numPages, setNumPages] = useState<number | null>(null);
+    const readStartTimeRef = useRef<number | null>(null);
+    const lastXPAwardTimeRef = useRef<number>(0);
+    const accumulatedReadTimeRef = useRef<number>(0);
     const [pageNumber, setPageNumber] = useState(initialPage || 1);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
@@ -49,6 +56,8 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
     const [noteContent, setNoteContent] = useState('');
     const [currentMaterial, setCurrentMaterial] = useState<{ id: number; name: string; totalPages: number } | null>(null);
     const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
+    const [isListening, setIsListening] = useState(false);
+    const finalTranscriptRef = useRef<string>('');
 
     // Floating Bottom Tabs states (minimize + drag)
     const [isTabsMinimized, setIsTabsMinimized] = useState(false);
@@ -857,6 +866,49 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
         loadMaterials();
     }, [studySetId, targetMaterialId]);
 
+    // Track reading time for XP
+    useEffect(() => {
+        if (pdfUrl && user?.id) {
+            // Start tracking when PDF is loaded
+            readStartTimeRef.current = Date.now();
+            lastXPAwardTimeRef.current = 0;
+            accumulatedReadTimeRef.current = 0;
+
+            // Check every 30 seconds
+            const interval = setInterval(() => {
+                if (readStartTimeRef.current) {
+                    const now = Date.now();
+                    const elapsed = now - readStartTimeRef.current;
+                    accumulatedReadTimeRef.current = elapsed;
+
+                    // Award 3 XP for every 5 minutes (300000ms) of reading
+                    const fiveMinutesInMs = 5 * 60 * 1000;
+                    const timeSinceLastAward = accumulatedReadTimeRef.current - lastXPAwardTimeRef.current;
+
+                    if (timeSinceLastAward >= fiveMinutesInMs) {
+                        awardXP(user.id, 'read_document', 3);
+                        lastXPAwardTimeRef.current = accumulatedReadTimeRef.current;
+                    }
+                }
+            }, 30 * 1000); // Check every 30 seconds
+
+            return () => {
+                clearInterval(interval);
+                // Award remaining XP on unmount
+                if (readStartTimeRef.current && user?.id) {
+                    const finalTime = Date.now();
+                    const totalTime = finalTime - readStartTimeRef.current;
+                    const timeSinceLastAward = totalTime - lastXPAwardTimeRef.current;
+                    const fiveMinutesInMs = 5 * 60 * 1000;
+
+                    if (timeSinceLastAward >= fiveMinutesInMs) {
+                        awardXP(user.id, 'read_document', 3);
+                    }
+                }
+            };
+        }
+    }, [pdfUrl, user?.id]);
+
     const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
         console.log('PDF loaded successfully, pages:', numPages);
         setNumPages(numPages);
@@ -1192,6 +1244,78 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
         extract();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isTranscript, pdfUrl]);
+
+    // Initialize Speech-to-Text service
+    useEffect(() => {
+        if (!SpeechToTextService.isSupported()) {
+            console.warn('Web Speech API is not supported in this browser');
+            return;
+        }
+
+        // Initialize with Vietnamese language
+        const initialized = speechToTextService.initialize({
+            language: 'vi-VN',
+            continuous: true,
+            interimResults: true,
+        });
+
+        if (!initialized) {
+            console.error('Failed to initialize Speech-to-Text service');
+            return;
+        }
+
+        // Set up callbacks
+        finalTranscriptRef.current = '';
+        speechToTextService.onResult((result) => {
+            if (result.isFinal) {
+                // When final result, append to final transcript
+                finalTranscriptRef.current += result.transcript + ' ';
+                setChatMessage(finalTranscriptRef.current.trim());
+            } else {
+                // Show interim results in real-time (append to final + interim)
+                setChatMessage(finalTranscriptRef.current + result.transcript);
+            }
+        });
+
+        speechToTextService.onError((error) => {
+            console.error('Speech recognition error:', error);
+            setIsListening(false);
+            // Optionally show toast notification
+        });
+
+        speechToTextService.onStart(() => {
+            setIsListening(true);
+        });
+
+        speechToTextService.onEnd(() => {
+            setIsListening(false);
+        });
+
+        // Cleanup on unmount
+        return () => {
+            speechToTextService.destroy();
+        };
+    }, []);
+
+    // Toggle microphone
+    const handleToggleMic = () => {
+        if (!SpeechToTextService.isSupported()) {
+            alert('Trình duyệt của bạn không hỗ trợ nhận dạng giọng nói. Vui lòng sử dụng Chrome hoặc Edge.');
+            return;
+        }
+
+        if (isListening) {
+            speechToTextService.stopListening();
+            setIsListening(false);
+            finalTranscriptRef.current = ''; // Reset when stopping
+        } else {
+            finalTranscriptRef.current = ''; // Reset when starting
+            const started = speechToTextService.startListening();
+            if (!started) {
+                alert('Không thể bắt đầu nhận dạng giọng nói. Vui lòng kiểm tra quyền truy cập microphone.');
+            }
+        }
+    };
 
     return (
         <>
@@ -1833,7 +1957,21 @@ const PDFViewerFixed: React.FC<PDFViewerFixedProps> = ({ studySetId, studySetNam
                                     >
                                         <span className="text-base">↑</span>
                                     </button>
-                                    <MicOff className="w-5 h-5 text-gray-400 ml-3" />
+                                    <button
+                                        onClick={handleToggleMic}
+                                        disabled={isLoadingChat}
+                                        className={`ml-3 p-2 rounded-full transition-all ${isListening
+                                            ? 'bg-red-500 text-white animate-pulse'
+                                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                                            }`}
+                                        title={isListening ? 'Đang nghe... (Click để dừng)' : 'Bật mic để nói'}
+                                    >
+                                        {isListening ? (
+                                            <Mic className="w-5 h-5" />
+                                        ) : (
+                                            <MicOff className="w-5 h-5" />
+                                        )}
+                                    </button>
                                 </div>
 
                                 {/* Chips Row (inside the box) */}

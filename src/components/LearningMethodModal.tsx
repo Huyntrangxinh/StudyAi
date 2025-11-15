@@ -4,6 +4,7 @@ import { X, ChevronDown, BookOpen, CheckSquare, MessageCircle, Gamepad2, PenTool
 import { useFlashcardGeneration } from '../hooks/useFlashcardGeneration';
 import { clampCount } from '../utils/flashcardHelpers';
 import { useAuth } from '../hooks/useAuth';
+import toast from 'react-hot-toast';
 
 interface LearningMethod {
     id: string;
@@ -142,7 +143,17 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
         const moduleMaterials = getModuleMaterials();
 
         if (moduleMaterials.length === 0) {
-            alert('Không tìm thấy tài liệu để tạo flashcard. Vui lòng upload tài liệu trước.');
+            toast.error('Không tìm thấy tài liệu để tạo flashcard. Vui lòng upload tài liệu trước.', {
+                duration: 4000,
+                position: 'top-center',
+                style: {
+                    background: '#fff',
+                    color: '#333',
+                    padding: '16px',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                },
+            });
             return;
         }
 
@@ -246,7 +257,17 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
             // We'll use useEffect to watch for this change
         } catch (error) {
             console.error('Error generating flashcards:', error);
-            alert('Có lỗi xảy ra khi tạo flashcard');
+            toast.error('Có lỗi xảy ra khi tạo flashcard', {
+                duration: 4000,
+                position: 'top-center',
+                style: {
+                    background: '#fff',
+                    color: '#333',
+                    padding: '16px',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                },
+            });
             setIsGenerating(false);
         }
     }, [getModuleMaterials, flashcardGen, moduleTitle, studySetId, subModule, onSelectMethod, normalizeText]);
@@ -258,6 +279,169 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
             onSelectMethod('flashcards', createdFlashcardSetId);
         }
     }, [isGenerating, createdFlashcardSetId, onSelectMethod]);
+
+    // Handle game creation from flashcards
+    const handleGameClick = useCallback(async () => {
+        const moduleMaterials = getModuleMaterials();
+
+        if (moduleMaterials.length === 0) {
+            toast.error('Không tìm thấy tài liệu để tạo flashcard. Vui lòng upload tài liệu trước.', {
+                duration: 4000,
+                position: 'top-center',
+                style: {
+                    background: '#fff',
+                    color: '#333',
+                    padding: '16px',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                },
+            });
+            return;
+        }
+
+        // Generate flashcard name from module title (same as card 1)
+        const flashcardName = `Khái niệm ${moduleTitle}`;
+        const normalizedFlashcardName = normalizeText(flashcardName);
+        const normalizedModuleTitle = normalizeText(moduleTitle);
+
+        try {
+            // Mark progress
+            await bumpProgressOnSelect();
+
+            // Find the flashcard set that was created from card 1 (same logic as handleFlashcardsClick)
+            const flashcardSetsRes = await fetch(`http://localhost:3001/api/flashcard-sets`);
+            if (!flashcardSetsRes.ok) {
+                throw new Error('Không tải được flashcard sets.');
+            }
+            const allFlashcardSets = await flashcardSetsRes.json();
+
+            // Filter flashcard sets by study_set_id
+            const flashcardSetsInSet = allFlashcardSets.filter((set: any) =>
+                String(set.study_set_id) === String(studySetId)
+            );
+
+            // Try to find existing flashcard set for this sub-module (same logic as card 1)
+            let targetFlashcardSet = null;
+
+            if (flashcardSetsInSet.length > 0) {
+                // Strategy 1: Find by name matching module title
+                const nameMatch = flashcardSetsInSet.find((set: any) => {
+                    const normalizedSetName = normalizeText(set.name || '');
+                    if (!normalizedSetName) return false;
+                    if (normalizedSetName === normalizedFlashcardName) {
+                        return true;
+                    }
+                    return normalizedSetName.includes(normalizedModuleTitle) ||
+                        normalizedModuleTitle.includes(normalizedSetName);
+                });
+
+                if (nameMatch) {
+                    targetFlashcardSet = nameMatch;
+                } else if (subModule && subModule.materialIds && subModule.materialIds.length > 0) {
+                    // Strategy 2: Find by matching materials
+                    for (const set of flashcardSetsInSet) {
+                        const flashcardsRes = await fetch(`http://localhost:3001/api/flashcards?flashcardSetId=${set.id}`);
+                        if (flashcardsRes.ok) {
+                            const flashcards = await flashcardsRes.json();
+                            const hasMatchingMaterial = flashcards.some((card: any) =>
+                                card.material_id && subModule.materialIds?.includes(card.material_id)
+                            );
+                            if (hasMatchingMaterial && flashcards.length > 0) {
+                                targetFlashcardSet = set;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If no flashcard set found, show message asking user to create flashcard first
+            if (!targetFlashcardSet) {
+                toast.error('Bạn vẫn chưa tạo flashcard. Hãy bắt đầu với flashcard trước nhé!', {
+                    duration: 5000,
+                    position: 'top-center',
+                    style: {
+                        background: '#fff',
+                        color: '#333',
+                        padding: '16px',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                        fontSize: '15px',
+                    },
+                    icon: '📚',
+                });
+                // Close game picker if open and show flashcard picker instead
+                setShowTestTypePicker(false);
+                setShowFlashcardTypePicker(true);
+                return;
+            }
+
+            // Verify flashcard set has flashcards
+            const flashcardsRes = await fetch(`http://localhost:3001/api/flashcards?flashcardSetId=${targetFlashcardSet.id}`);
+            if (!flashcardsRes.ok) {
+                throw new Error('Không tải được flashcards.');
+            }
+            const flashcards = await flashcardsRes.json();
+            if (!flashcards || flashcards.length === 0) {
+                toast.error('Flashcard set không có flashcard nào. Vui lòng tạo flashcard trước.', {
+                    duration: 4000,
+                    position: 'top-center',
+                    style: {
+                        background: '#fff',
+                        color: '#333',
+                        padding: '16px',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    },
+                });
+                return;
+            }
+
+            // Create game from flashcard set
+            console.log('🎮 Creating game from flashcard set:', targetFlashcardSet.id);
+            const gameResponse = await fetch('http://localhost:3001/api/games', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: user?.id,
+                    studySetId: studySetId,
+                    gameType: 'match', // Default to match game
+                    inputMethod: 'flashcards',
+                    flashcardSetIds: [targetFlashcardSet.id],
+                    style: null
+                })
+            });
+
+            if (!gameResponse.ok) {
+                const error = await gameResponse.json().catch(() => ({ error: 'Unknown error' }));
+                throw new Error(error.error || 'Không thể tạo game');
+            }
+
+            const gameData = await gameResponse.json();
+            console.log('✅ Game created successfully:', gameData);
+
+            // Navigate to game
+            navigate(`/dashboard/arcade/game/${gameData.id}`, {
+                state: { gameData: gameData }
+            });
+
+            // Close modal
+            onClose();
+        } catch (error: any) {
+            console.error('Error creating game from flashcards:', error);
+            toast.error(error.message || 'Có lỗi xảy ra khi tạo game từ flashcard', {
+                duration: 4000,
+                position: 'top-center',
+                style: {
+                    background: '#fff',
+                    color: '#333',
+                    padding: '16px',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                },
+            });
+        }
+    }, [getModuleMaterials, moduleTitle, studySetId, subModule, normalizeText, user, navigate, onClose, flashcardGen, flashcardTypeCounts]);
 
     // Handle quiz/test generation from flashcards
     const handleQuizClick = useCallback(async (currentTestTypeCounts = testTypeCounts) => {
@@ -271,7 +455,17 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
             // Load all flashcard sets for this study set
             const flashcardSetsRes = await fetch(`http://localhost:3001/api/flashcard-sets`);
             if (!flashcardSetsRes.ok) {
-                alert('Không tải được flashcard sets.');
+                toast.error('Không tải được flashcard sets.', {
+                    duration: 4000,
+                    position: 'top-center',
+                    style: {
+                        background: '#fff',
+                        color: '#333',
+                        padding: '16px',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    },
+                });
                 setIsGeneratingTest(false);
                 return;
             }
@@ -283,7 +477,17 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
             );
 
             if (flashcardSetsInSet.length === 0) {
-                alert('Không tìm thấy flashcard set nào trong bộ học này. Vui lòng tạo flashcard trước.');
+                toast.error('Không tìm thấy flashcard set nào trong bộ học này. Vui lòng tạo flashcard trước.', {
+                    duration: 4000,
+                    position: 'top-center',
+                    style: {
+                        background: '#fff',
+                        color: '#333',
+                        padding: '16px',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    },
+                });
                 setIsGeneratingTest(false);
                 return;
             }
@@ -329,14 +533,34 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
             // Load flashcards từ flashcard set
             const flashcardsRes = await fetch(`http://localhost:3001/api/flashcards?flashcardSetId=${selectedFlashcardSet.id}`);
             if (!flashcardsRes.ok) {
-                alert('Không tải được flashcards.');
+                toast.error('Không tải được flashcards.', {
+                    duration: 4000,
+                    position: 'top-center',
+                    style: {
+                        background: '#fff',
+                        color: '#333',
+                        padding: '16px',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    },
+                });
                 setIsGeneratingTest(false);
                 return;
             }
             const flashcards = await flashcardsRes.json();
 
             if (!flashcards || flashcards.length === 0) {
-                alert('Flashcard set này không có flashcard nào.');
+                toast.error('Flashcard set này không có flashcard nào.', {
+                    duration: 4000,
+                    position: 'top-center',
+                    style: {
+                        background: '#fff',
+                        color: '#333',
+                        padding: '16px',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    },
+                });
                 setIsGeneratingTest(false);
                 return;
             }
@@ -393,7 +617,17 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
 
             if (!genResp.ok) {
                 const errText = await genResp.text().catch(() => '');
-                alert('AI tạo câu hỏi thất bại: ' + (errText || ('HTTP ' + genResp.status)));
+                toast.error('AI tạo câu hỏi thất bại: ' + (errText || ('HTTP ' + genResp.status)), {
+                    duration: 5000,
+                    position: 'top-center',
+                    style: {
+                        background: '#fff',
+                        color: '#333',
+                        padding: '16px',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    },
+                });
                 setIsGeneratingTest(false);
                 return;
             }
@@ -553,7 +787,17 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
             onClose();
         } catch (error) {
             console.error('Error generating test from flashcards:', error);
-            alert('Có lỗi xảy ra khi tạo câu hỏi từ flashcard');
+            toast.error('Có lỗi xảy ra khi tạo câu hỏi từ flashcard', {
+                duration: 4000,
+                position: 'top-center',
+                style: {
+                    background: '#fff',
+                    color: '#333',
+                    padding: '16px',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                },
+            });
             setIsGeneratingTest(false);
         }
     }, [studySetId, moduleTitle, user, navigate, onClose, subModule]);
@@ -635,35 +879,25 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
 
     const mainTopic = getMainTopic(moduleTitle);
 
-    // Determine the third learning method - random between Test and Game
-    const getThirdMethod = (): LearningMethod => {
-        // Random between 0 and 1
-        const random = Math.random();
-
-        if (random < 0.5) {
-            // Test option
-            return {
-                id: 'test',
-                title: `Test về ${mainTopic}`,
-                description: 'Get exam-ready with realistic practice questions',
-                difficulty: 'Hard',
-                icon: <PenTool className="w-8 h-8 text-orange-600" />,
-                color: 'bg-orange-100'
-            };
-        } else {
-            // Game option
-            return {
-                id: 'game',
-                title: `Chơi trò chơi về ${mainTopic}`,
-                description: 'Turn studying into a game you actually want to play',
-                difficulty: 'Hard',
-                icon: <Gamepad2 className="w-8 h-8 text-pink-600" />,
-                color: 'bg-pink-100'
-            };
-        }
+    // Third learning method is always Game (Medium difficulty)
+    const thirdMethod: LearningMethod = {
+        id: 'game',
+        title: `Chơi trò chơi về ${mainTopic}`,
+        description: 'Turn studying into a game you actually want to play',
+        difficulty: 'Medium',
+        icon: <Gamepad2 className="w-8 h-8 text-pink-600" />,
+        color: 'bg-pink-100'
     };
 
-    const thirdMethod = getThirdMethod();
+    // Fourth learning method is Chat with AI
+    const chatMethod: LearningMethod = {
+        id: 'chat',
+        title: `Chat với AI về ${mainTopic}`,
+        description: 'Chat để hiểu hơn',
+        difficulty: 'Easy',
+        icon: <MessageCircle className="w-8 h-8 text-blue-600" />,
+        color: 'bg-blue-100'
+    };
 
     const learningMethods: LearningMethod[] = [
         {
@@ -674,15 +908,16 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
             icon: <BookOpen className="w-8 h-8 text-green-600" />,
             color: 'bg-green-100'
         },
+        thirdMethod, // Game (Medium)
+        chatMethod, // Chat with AI (Easy)
         {
             id: 'quiz',
             title: `Câu hỏi về ${mainTopic}`,
             description: 'Quick quizzes that adapt to what you need to learn',
-            difficulty: 'Medium',
+            difficulty: 'Hard',
             icon: <CheckSquare className="w-8 h-8 text-yellow-600" />,
             color: 'bg-yellow-100'
-        },
-        thirdMethod
+        }
     ];
 
     const getDifficultyColor = (difficulty: string) => {
@@ -738,11 +973,14 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                             </div>
                         </div>
                     )}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         {learningMethods.map((method) => (
                             <button
                                 key={method.id}
-                                onClick={() => {
+                                onClick={(e) => {
+                                    // Prevent event bubbling to avoid conflicts
+                                    e.stopPropagation();
+
                                     if (method.id === 'flashcards') {
                                         // Always show flashcard type picker when clicking flashcards
                                         // Close test picker if open
@@ -752,6 +990,19 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                                         // Close flashcard picker if open
                                         setShowFlashcardTypePicker(false);
                                         setShowTestTypePicker(true);
+                                    } else if (method.id === 'game') {
+                                        // Close all pickers when selecting game
+                                        setShowFlashcardTypePicker(false);
+                                        setShowTestTypePicker(false);
+                                        // Create game from flashcard set (same as card 1)
+                                        handleGameClick();
+                                    } else if (method.id === 'chat') {
+                                        // Close all pickers when selecting chat
+                                        setShowFlashcardTypePicker(false);
+                                        setShowTestTypePicker(false);
+                                        // Navigate to chat view
+                                        onClose();
+                                        navigate('/dashboard/chat');
                                     } else {
                                         // Close all pickers when selecting other methods
                                         setShowFlashcardTypePicker(false);
@@ -800,12 +1051,12 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
 
                 {/* Test Type Picker - Hiển thị khi chọn quiz */}
                 {showTestTypePicker && (
-                    <div className={`px-6 pb-6 border-t pt-6 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <div className={`px-6 pb-6 border-t pt-6 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`} onClick={(e) => e.stopPropagation()}>
                         <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Chọn loại câu hỏi</h3>
                         <div className="grid grid-cols-2 gap-4 mb-4">
                             {/* Multiple Choice */}
                             <div className={`flex items-center justify-between p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
-                                }`}>
+                                }`} onClick={(e) => e.stopPropagation()}>
                                 <div className="flex items-center gap-2">
                                     <Info className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`} />
                                     <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Trắc nghiệm</span>
@@ -815,6 +1066,8 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                                     min="0"
                                     value={testTypeCounts.multipleChoice}
                                     onChange={(e) => setTestTypeCounts(prev => ({ ...prev, multipleChoice: parseInt(e.target.value) || 0 }))}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onFocus={(e) => e.stopPropagation()}
                                     className={`w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode
                                         ? 'bg-gray-800 border-gray-600 text-white'
                                         : 'border-gray-300 bg-white text-gray-900'
@@ -823,7 +1076,7 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                             </div>
                             {/* Short Answer */}
                             <div className={`flex items-center justify-between p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
-                                }`}>
+                                }`} onClick={(e) => e.stopPropagation()}>
                                 <div className="flex items-center gap-2">
                                     <Info className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`} />
                                     <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Câu trả lời ngắn</span>
@@ -833,6 +1086,8 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                                     min="0"
                                     value={testTypeCounts.shortAnswer}
                                     onChange={(e) => setTestTypeCounts(prev => ({ ...prev, shortAnswer: parseInt(e.target.value) || 0 }))}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onFocus={(e) => e.stopPropagation()}
                                     className={`w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode
                                         ? 'bg-gray-800 border-gray-600 text-white'
                                         : 'border-gray-300 bg-white text-gray-900'
@@ -841,7 +1096,7 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                             </div>
                             {/* Fill in the Blank */}
                             <div className={`flex items-center justify-between p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
-                                }`}>
+                                }`} onClick={(e) => e.stopPropagation()}>
                                 <div className="flex items-center gap-2">
                                     <Info className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`} />
                                     <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Điền vào chỗ trống</span>
@@ -851,6 +1106,8 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                                     min="0"
                                     value={testTypeCounts.fillBlank}
                                     onChange={(e) => setTestTypeCounts(prev => ({ ...prev, fillBlank: parseInt(e.target.value) || 0 }))}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onFocus={(e) => e.stopPropagation()}
                                     className={`w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode
                                         ? 'bg-gray-800 border-gray-600 text-white'
                                         : 'border-gray-300 bg-white text-gray-900'
@@ -858,9 +1115,10 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                                 />
                             </div>
                         </div>
-                        <div className="flex items-center justify-end gap-3">
+                        <div className="flex items-center justify-end gap-3" onClick={(e) => e.stopPropagation()}>
                             <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                    e.stopPropagation();
                                     setShowTestTypePicker(false);
                                     setShowFlashcardTypePicker(false);
                                     setTestTypeCounts({
@@ -878,13 +1136,24 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                                 Hủy
                             </button>
                             <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                    e.stopPropagation();
                                     console.log('🔵 [TEST] Create Test button clicked');
                                     console.log('🔵 [TEST] Current testTypeCounts:', testTypeCounts);
                                     const total = testTypeCounts.multipleChoice + testTypeCounts.shortAnswer + testTypeCounts.fillBlank;
                                     console.log('🔵 [TEST] Total questions:', total);
                                     if (total === 0) {
-                                        alert('Vui lòng chọn ít nhất một loại câu hỏi');
+                                        toast.error('Vui lòng chọn ít nhất một loại câu hỏi', {
+                                            duration: 3000,
+                                            position: 'top-center',
+                                            style: {
+                                                background: '#fff',
+                                                color: '#333',
+                                                padding: '16px',
+                                                borderRadius: '8px',
+                                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                            },
+                                        });
                                         return;
                                     }
                                     setShowTestTypePicker(false);
@@ -902,12 +1171,12 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
 
                 {/* Flashcard Type Picker - Hiển thị khi chọn flashcards */}
                 {showFlashcardTypePicker && (
-                    <div className={`px-6 pb-6 border-t pt-6 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <div className={`px-6 pb-6 border-t pt-6 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`} onClick={(e) => e.stopPropagation()}>
                         <h3 className={`text-lg font-semibold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Chọn loại flashcard</h3>
                         <div className="grid grid-cols-2 gap-4 mb-4">
                             {/* Term and Definition */}
                             <div className={`flex items-center justify-between p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
-                                }`}>
+                                }`} onClick={(e) => e.stopPropagation()}>
                                 <div className="flex items-center gap-2">
                                     <Info className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`} />
                                     <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Thuật ngữ và Định nghĩa</span>
@@ -917,6 +1186,8 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                                     min="0"
                                     value={flashcardTypeCounts.termDef}
                                     onChange={(e) => setFlashcardTypeCounts(prev => ({ ...prev, termDef: parseInt(e.target.value) || 0 }))}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onFocus={(e) => e.stopPropagation()}
                                     className={`w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode
                                         ? 'bg-gray-800 border-gray-600 text-white'
                                         : 'border-gray-300 bg-white text-gray-900'
@@ -925,7 +1196,7 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                             </div>
                             {/* Fill in the Blank */}
                             <div className={`flex items-center justify-between p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
-                                }`}>
+                                }`} onClick={(e) => e.stopPropagation()}>
                                 <div className="flex items-center gap-2">
                                     <Info className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`} />
                                     <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Điền vào chỗ trống</span>
@@ -935,6 +1206,8 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                                     min="0"
                                     value={flashcardTypeCounts.fillBlank}
                                     onChange={(e) => setFlashcardTypeCounts(prev => ({ ...prev, fillBlank: parseInt(e.target.value) || 0 }))}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onFocus={(e) => e.stopPropagation()}
                                     className={`w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode
                                         ? 'bg-gray-800 border-gray-600 text-white'
                                         : 'border-gray-300 bg-white text-gray-900'
@@ -943,7 +1216,7 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                             </div>
                             {/* Multiple Choice */}
                             <div className={`flex items-center justify-between p-3 rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'
-                                }`}>
+                                }`} onClick={(e) => e.stopPropagation()}>
                                 <div className="flex items-center gap-2">
                                     <Info className={`w-4 h-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`} />
                                     <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>Trắc nghiệm</span>
@@ -953,6 +1226,8 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                                     min="0"
                                     value={flashcardTypeCounts.multipleChoice}
                                     onChange={(e) => setFlashcardTypeCounts(prev => ({ ...prev, multipleChoice: parseInt(e.target.value) || 0 }))}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onFocus={(e) => e.stopPropagation()}
                                     className={`w-16 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode
                                         ? 'bg-gray-800 border-gray-600 text-white'
                                         : 'border-gray-300 bg-white text-gray-900'
@@ -960,9 +1235,10 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                                 />
                             </div>
                         </div>
-                        <div className="flex items-center justify-end gap-3">
+                        <div className="flex items-center justify-end gap-3" onClick={(e) => e.stopPropagation()}>
                             <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                    e.stopPropagation();
                                     setShowFlashcardTypePicker(false);
                                     setShowTestTypePicker(false);
                                     setFlashcardTypeCounts({
@@ -979,10 +1255,21 @@ const LearningMethodModal: React.FC<LearningMethodModalProps> = ({
                                 Hủy
                             </button>
                             <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                    e.stopPropagation();
                                     const total = flashcardTypeCounts.termDef + flashcardTypeCounts.fillBlank + flashcardTypeCounts.multipleChoice;
                                     if (total === 0) {
-                                        alert('Vui lòng chọn ít nhất một loại flashcard');
+                                        toast.error('Vui lòng chọn ít nhất một loại flashcard', {
+                                            duration: 3000,
+                                            position: 'top-center',
+                                            style: {
+                                                background: '#fff',
+                                                color: '#333',
+                                                padding: '16px',
+                                                borderRadius: '8px',
+                                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                            },
+                                        });
                                         return;
                                     }
                                     setShowFlashcardTypePicker(false);

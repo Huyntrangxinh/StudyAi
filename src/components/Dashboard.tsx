@@ -54,7 +54,7 @@ const Dashboard: React.FC = () => {
 
                             {isAdmin && (
                                 <button
-                                    onClick={() => navigate('/admin')}
+                                    onClick={() => navigate('/dashboard')}
                                     className="btn-secondary flex items-center space-x-1"
                                 >
                                     <Users className="h-4 w-4" />

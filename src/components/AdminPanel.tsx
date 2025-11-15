@@ -273,27 +273,6 @@ const AdminPanel: React.FC = () => {
                                 Quản lý tài khoản giáo viên và sinh viên trong hệ thống
                             </p>
                         </div>
-                        <div className="flex space-x-2">
-                            <button
-                                onClick={() => navigate('/users')}
-                                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                            >
-                                <Users className="h-4 w-4 mr-2" />
-                                Xem danh sách người dùng
-                            </button>
-                            <button
-                                onClick={() => {
-                                    if (window.confirm('Bạn có chắc chắn muốn reset database về dữ liệu mẫu? Tất cả dữ liệu hiện tại sẽ bị mất!')) {
-                                        localStorage.removeItem('users_data');
-                                        window.location.reload();
-                                    }
-                                }}
-                                className="flex items-center px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
-                            >
-                                <RotateCcw className="h-4 w-4 mr-2" />
-                                Reset Database
-                            </button>
-                        </div>
                     </div>
                 </div>
 
