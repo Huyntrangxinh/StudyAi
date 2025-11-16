@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import YouTubeModal from './YouTubeModal';
 import UploadFilesModal from './UploadFilesModal';
+import { useAuth } from '../hooks/useAuth';
+import { awardXP } from '../utils/xpHelper';
 
 interface UploadMaterialsProps {
     studySetId: string;
@@ -28,6 +30,7 @@ interface UploadMaterialsProps {
 }
 
 const UploadMaterials: React.FC<UploadMaterialsProps> = ({ studySetId, studySetName, onBack, onViewMaterial, onViewStudyPlan, isCollapsed = false }) => {
+    const { user } = useAuth();
     const [dragActive, setDragActive] = useState(false);
     const [showMoreTypes, setShowMoreTypes] = useState(false);
     const [showYouTubeModal, setShowYouTubeModal] = useState(false);
@@ -176,6 +179,11 @@ const UploadMaterials: React.FC<UploadMaterialsProps> = ({ studySetId, studySetN
             }
 
             console.log('All materials uploaded successfully');
+
+            // Award XP for document upload
+            if (user?.id) {
+                await awardXP(user.id, 'upload', 5);
+            }
 
             // Tự động tạo study path sau khi upload thành công
             try {

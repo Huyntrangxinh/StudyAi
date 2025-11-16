@@ -50,7 +50,7 @@ function App() {
                                 path="/admin"
                                 element={
                                     <ProtectedRoute requireAdmin>
-                                        <AdminPanel />
+                                        <Navigate to="/dashboard" replace />
                                     </ProtectedRoute>
                                 }
                             />
@@ -58,7 +58,7 @@ function App() {
                                 path="/users"
                                 element={
                                     <ProtectedRoute requireAdmin>
-                                        <UserList />
+                                        <Navigate to="/dashboard" replace />
                                     </ProtectedRoute>
                                 }
                             />
